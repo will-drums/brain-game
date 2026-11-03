@@ -24,13 +24,18 @@ import {
   DAILY_HABIT_TRACKER_STORAGE_KEY,
   SANCTUARY_BLOOM_STORAGE_KEY,
   SANCTUARY_BLOOM_INTENSITY_STORAGE_KEY,
+  SANCTUARY_BLOOM_PRESET_STORAGE_KEY,
   DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT,
+  DEFAULT_SANCTUARY_BLOOM_PRESET_ID,
+  SANCTUARY_BLOOM_PRESET_LIST,
+  getSanctuaryBloomPresetConfig,
   clampSanctuaryBloomIntensityPct,
   computeHudFlowPulseState,
   computeAdaptiveDifficultyScaling,
   computeRunningFiveSessionHrvAverage,
   syncDailyHabitTrackerWithStreak,
   toggleDailyHabitExercise,
+  type SanctuaryBloomPresetId,
   type DailyHabitExerciseId,
   type DailyHabitTrackerState,
   type NeuralLogEntry,
@@ -160,6 +165,29 @@ export default function App() {
     }
     return false;
   });
+  const [sanctuaryBloomPresetId, setSanctuaryBloomPresetId] = useState<SanctuaryBloomPresetId>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const rawPreset = window.localStorage.getItem(SANCTUARY_BLOOM_PRESET_STORAGE_KEY);
+        if (
+          rawPreset === 'morning_glow' ||
+          rawPreset === 'midnight_forest' ||
+          rawPreset === 'neural_zenith'
+        ) {
+          return rawPreset;
+        }
+        window.localStorage.setItem(
+          SANCTUARY_BLOOM_PRESET_STORAGE_KEY,
+          DEFAULT_SANCTUARY_BLOOM_PRESET_ID
+        );
+      } catch {
+        // Ignore storage errors
+      }
+    }
+    return DEFAULT_SANCTUARY_BLOOM_PRESET_ID;
+  });
+  const activeBloomPreset = getSanctuaryBloomPresetConfig(sanctuaryBloomPresetId);
+
   const [sanctuaryBloomIntensityPct, setSanctuaryBloomIntensityPct] = useState<number>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -878,6 +906,50 @@ export default function App() {
           JSON.stringify({
             completedStagesCount,
             bloomIntensityPct: nextPct,
+            bloomPresetId: sanctuaryBloomPresetId,
+          })
+        );
+      } catch {
+        // Ignore storage errors
+      }
+    }
+  };
+
+  const handleSelectBloomPreset = (
+    presetId: SanctuaryBloomPresetId,
+    e?: React.MouseEvent<HTMLButtonElement>
+  ) => {
+    e?.currentTarget.blur();
+    const presetConfig = getSanctuaryBloomPresetConfig(presetId);
+    const nextPct = clampSanctuaryBloomIntensityPct(
+      presetConfig.defaultIntensityPct,
+      DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT
+    );
+    setSanctuaryBloomPresetId(presetConfig.id);
+    setSanctuaryBloomIntensityPct(nextPct);
+    setIsSanctuaryBloomActive(true);
+    if (completedStagesCount < SANCTUARY_STAGES.length) {
+      setCompletedStagesCount(SANCTUARY_STAGES.length);
+      setHighestReachedStage(SANCTUARY_STAGES.length - 1);
+    }
+    soundEngine.playLightNote(
+      presetConfig.id === 'morning_glow'
+        ? 587.33
+        : presetConfig.id === 'midnight_forest'
+        ? 440.0
+        : 659.25,
+      0.16
+    );
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(SANCTUARY_BLOOM_PRESET_STORAGE_KEY, presetConfig.id);
+        window.localStorage.setItem(SANCTUARY_BLOOM_INTENSITY_STORAGE_KEY, String(nextPct));
+        window.localStorage.setItem(
+          SANCTUARY_BLOOM_STORAGE_KEY,
+          JSON.stringify({
+            completedStagesCount: SANCTUARY_STAGES.length,
+            bloomIntensityPct: nextPct,
+            bloomPresetId: presetConfig.id,
           })
         );
       } catch {
@@ -959,6 +1031,7 @@ export default function App() {
         completedStagesCount={completedStagesCount}
         isSanctuaryBloomActive={isSanctuaryBloomActive}
         sanctuaryBloomIntensityPct={sanctuaryBloomIntensityPct}
+        sanctuaryBloomPresetId={sanctuaryBloomPresetId}
         hrvHistory={hrvHistory}
         runningFiveSessionHrvAvgOverride={runningFiveSessionHrvAvgOverride}
       />
@@ -1292,7 +1365,7 @@ export default function App() {
         <div className="fixed inset-0 z-10 pointer-events-none flex flex-col justify-between p-3 md:px-4 md:py-4">
           <div className="space-y-3">
             {/* Top Row: Top-Left Vitality/Nectar/Trees Cluster + Top-Right Utility & N-Back Totem */}
-            <div className="flex flex-wrap xl:flex-nowrap items-start justify-between gap-2">
+            <div className="flex flex-wrap 2xl:flex-nowrap items-start justify-between gap-2">
               {/* Top-Left Perimeter Cluster: Calm Vitality Pips, BDNF Nectar & Grafted Trees */}
               <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-2xl bg-[#091510]/88 border border-[#233D32] shadow-xl pointer-events-auto shrink-0">
               {/* Calm Vitality Pips (3 readable states: Full, Damaged, Hollow) */}
@@ -1486,7 +1559,7 @@ export default function App() {
             </div>
 
             {/* Top-Right Cluster: Live N-Back Working Memory Strip + Compact Utility Buttons */}
-            <div className="flex items-center gap-1.5 pointer-events-auto shrink-0">
+            <div className="flex flex-wrap items-center justify-end gap-1.5 pointer-events-auto shrink-0">
               {/* Live N-Back Totem Sequence Indicator + 5-Session HRV Adaptive Difficulty Scaling (Hidden in Zen Mode) */}
               {zenHud.showNBackStream && (
                 <div
@@ -1618,14 +1691,21 @@ export default function App() {
                   <span>{isZenMode ? 'Zen: ON' : 'Zen [Z]'}</span>
                 </button>
 
-                {/* Sanctuary Bloom Toggle + Bioluminescence Intensity Slider Control */}
+                {/* Sanctuary Bloom Toggle + Bloom Preset Menu + Bioluminescence Intensity Slider Control */}
                 <div
                   data-testid="hud-sanctuary-bloom-section"
+                  data-active-bloom-preset={sanctuaryBloomPresetId}
+                  data-bloom-primary-hex={activeBloomPreset.primaryHex}
                   className={`flex items-center gap-1.5 px-2 h-8 rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
                     isSanctuaryBloomActive
-                      ? 'bg-[#201A3A] border-[#B794F4] shadow-md'
+                      ? 'bg-[#171B2A] shadow-md'
                       : 'bg-[#132A21] border-[#2C4C3E]'
                   }`}
+                  style={
+                    isSanctuaryBloomActive
+                      ? { borderColor: activeBloomPreset.primaryHex }
+                      : undefined
+                  }
                 >
                   <button
                     type="button"
@@ -1636,22 +1716,75 @@ export default function App() {
                     onClick={handleToggleSanctuaryBloom}
                     className={`flex items-center gap-1 text-[10px] font-mono font-semibold transition-colors cursor-pointer ${
                       isSanctuaryBloomActive
-                        ? 'text-[#B794F4]'
+                        ? 'text-[#F4EFE6]'
                         : 'text-[#A3B8B0] hover:text-[#F4EFE6]'
                     }`}
+                    style={
+                      isSanctuaryBloomActive
+                        ? { color: activeBloomPreset.primaryHex }
+                        : undefined
+                    }
                     title="Sanctuary Bloom [B] — 4-Stage Full-Canvas Bioluminescence Saturation & Slow Orbital Camera Rotation"
                   >
                     <span
-                      className={`w-1.5 h-1.5 rounded-full ${
-                        isSanctuaryBloomActive ? 'bg-[#B794F4]' : 'bg-[#526B61]'
-                      }`}
+                      className="w-1.5 h-1.5 rounded-full shrink-0"
+                      style={{
+                        backgroundColor: isSanctuaryBloomActive
+                          ? activeBloomPreset.primaryHex
+                          : '#526B61',
+                      }}
                     />
                     <span>{isSanctuaryBloomActive ? 'Bloom: ON' : 'Bloom [B]'}</span>
                   </button>
 
+                  {/* Bloom Preset Menu: Morning Glow, Midnight Forest, Neural Zenith */}
+                  <div
+                    role="group"
+                    aria-label="Sanctuary Bloom Presets"
+                    data-testid="hud-sanctuary-bloom-preset-menu"
+                    className="flex items-center gap-1 pl-1.5 border-l border-[#2C4C3E]"
+                  >
+                    {SANCTUARY_BLOOM_PRESET_LIST.map((preset) => {
+                      const isSelected = sanctuaryBloomPresetId === preset.id;
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          tabIndex={-1}
+                          data-testid={`bloom-preset-${preset.id}`}
+                          data-preset-id={preset.id}
+                          data-default-intensity={preset.defaultIntensityPct}
+                          data-primary-hex={preset.primaryHex}
+                          aria-pressed={isSelected}
+                          onClick={(e) => handleSelectBloomPreset(preset.id, e)}
+                          title={`${preset.label} (${preset.defaultIntensityPct}% Intensity) — ${preset.subtitle}`}
+                          className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-mono font-semibold border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                            isSelected
+                              ? 'bg-[#0E1E18] text-[#F4EFE6] shadow-xs'
+                              : 'bg-[#0B1712]/70 text-[#A3B8B0] border-transparent hover:text-[#F4EFE6] hover:bg-[#152B22]'
+                          }`}
+                          style={
+                            isSelected
+                              ? {
+                                  borderColor: preset.primaryHex,
+                                  color: preset.primaryHex,
+                                }
+                              : undefined
+                          }
+                        >
+                          <span
+                            className="w-1.5 h-1.5 rounded-full shrink-0"
+                            style={{ backgroundColor: preset.primaryHex }}
+                          />
+                          <span>{preset.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
                   <div
                     className="flex items-center gap-1 pl-1.5 border-l border-[#2C4C3E]"
-                    title={`Sanctuary Bloom Bioluminescence Intensity: ${sanctuaryBloomIntensityPct}% (Persisted in localStorage)`}
+                    title={`Sanctuary Bloom Bioluminescence Intensity: ${sanctuaryBloomIntensityPct}% (${activeBloomPreset.label} · Persisted in localStorage)`}
                   >
                     <label
                       htmlFor="sanctuary-bloom-intensity-slider"
@@ -1664,16 +1797,18 @@ export default function App() {
                       type="range"
                       min={0}
                       max={100}
-                      step={5}
+                      step={1}
                       value={sanctuaryBloomIntensityPct}
                       onChange={handleChangeBloomIntensity}
                       data-testid="sanctuary-bloom-intensity-slider"
                       aria-label="Sanctuary Bloom Bioluminescence Intensity"
-                      className="w-12 h-1.5 accent-[#B794F4] bg-[#0B1914] rounded-lg cursor-pointer"
+                      className="w-12 h-1.5 bg-[#0B1914] rounded-lg cursor-pointer"
+                      style={{ accentColor: activeBloomPreset.primaryHex }}
                     />
                     <span
                       data-testid="sanctuary-bloom-intensity-value"
-                      className="text-[10px] font-mono font-semibold text-[#4FD1C5] tabular-nums w-7 text-right"
+                      className="text-[10px] font-mono font-semibold tabular-nums w-7 text-right"
+                      style={{ color: activeBloomPreset.primaryHex }}
                     >
                       {sanctuaryBloomIntensityPct}%
                     </span>

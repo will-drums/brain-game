@@ -28,6 +28,7 @@ import {
   type CognitiveMilestoneId,
   type AdaptiveFlowTier,
   type SanctuaryAtmosphereId,
+  type SanctuaryBloomPresetId,
 } from '../game/rules';
 import { soundEngine } from '../game/audio';
 
@@ -67,6 +68,7 @@ export interface HudSnapshot {
   sanctuaryBloomRotationDeg?: number;
   sanctuaryBloomSaturation?: number;
   sanctuaryBloomIntensityPct?: number;
+  sanctuaryBloomPresetId?: SanctuaryBloomPresetId;
   runningFiveSessionHrvAvg?: number;
   adaptiveScalingTierLabel?: string;
   hrvUfovAdjustmentMs?: number;
@@ -96,6 +98,7 @@ interface SanctuaryCanvasProps {
   completedStagesCount?: number;
   isSanctuaryBloomActive?: boolean;
   sanctuaryBloomIntensityPct?: number;
+  sanctuaryBloomPresetId?: SanctuaryBloomPresetId;
   hrvHistory?: HrvSessionRecord[];
   runningFiveSessionHrvAvgOverride?: number | null;
 }
@@ -198,6 +201,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
   completedStagesCount = 0,
   isSanctuaryBloomActive = false,
   sanctuaryBloomIntensityPct = 100,
+  sanctuaryBloomPresetId = 'neural_zenith',
   hrvHistory,
   runningFiveSessionHrvAvgOverride = null,
 }) => {
@@ -222,6 +226,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
     completedStagesCount,
     isSanctuaryBloomActive,
     sanctuaryBloomIntensityPct,
+    sanctuaryBloomPresetId,
     hrvHistory,
     runningFiveSessionHrvAvgOverride,
   });
@@ -244,6 +249,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       completedStagesCount,
       isSanctuaryBloomActive,
       sanctuaryBloomIntensityPct,
+      sanctuaryBloomPresetId,
       hrvHistory,
       runningFiveSessionHrvAvgOverride,
     };
@@ -264,6 +270,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
     completedStagesCount,
     isSanctuaryBloomActive,
     sanctuaryBloomIntensityPct,
+    sanctuaryBloomPresetId,
     hrvHistory,
     runningFiveSessionHrvAvgOverride,
   ]);
@@ -1799,12 +1806,15 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         totalStages: SANCTUARY_STAGES.length,
         isBloomManuallyActive: stateRef.current.isSanctuaryBloomActive,
         intensityPct: stateRef.current.sanctuaryBloomIntensityPct ?? 100,
+        presetId: stateRef.current.sanctuaryBloomPresetId,
         elapsedSec: stageElapsedSec,
       });
       currentCameraRotationRad = bloomEffect.cameraRotationRad;
       canvas.dataset.sanctuaryBloom = bloomEffect.isTriggered ? 'active' : 'inactive';
       canvas.dataset.cameraRotationDeg = String(bloomEffect.cameraRotationDeg);
       canvas.dataset.bloomIntensityPct = String(bloomEffect.userIntensityPct);
+      canvas.dataset.bloomPresetId = bloomEffect.presetId;
+      canvas.dataset.bloomPrimaryHex = bloomEffect.colorPalette.primaryHex;
       canvas.dataset.effectiveNbackLevel = String(renderAdaptiveScaling.effectiveNBackLevel);
       canvas.dataset.effectiveUfovWindowMs = String(renderAdaptiveScaling.effectiveUfovWindowMs);
       canvas.dataset.runningFiveHrvAvg = String(renderAdaptiveScaling.runningFiveSessionHrvAvg);
@@ -1943,6 +1953,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         nBackAttempts,
         isSanctuaryBloomActive: bloomEffect.isTriggered,
         bloomIntensityPct: bloomEffect.userIntensityPct,
+        presetId: bloomEffect.presetId,
       });
 
       for (const tree of trees) {
@@ -1958,6 +1969,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
           nBackAttempts,
           isSanctuaryBloomActive: bloomEffect.isTriggered,
           bloomIntensityPct: bloomEffect.userIntensityPct,
+          presetId: bloomEffect.presetId,
         });
 
         if (flowerState.isFlowering) {
@@ -1993,7 +2005,9 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
 
             // Inner Luminous Synaptic Tendril Core
             ctx.globalAlpha = flowerState.tendrilLuminanceAlpha;
-            ctx.strokeStyle = aesthetic.myceliumBridgeHex;
+            ctx.strokeStyle = bloomEffect.isTriggered
+              ? bloomEffect.colorPalette.secondaryHex
+              : aesthetic.myceliumBridgeHex;
             ctx.lineWidth = 2.1;
             ctx.beginPath();
             ctx.moveTo(sx, sy);
@@ -2086,7 +2100,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
           ctx.fillStyle = '#1E2824';
           ctx.strokeStyle =
             bloomEffect.isTriggered
-              ? '#4FD1C5'
+              ? bloomEffect.colorPalette.primaryHex
               : canAfford && distToPlayer < 165
               ? '#B794F4'
               : '#4A5568';
@@ -2480,24 +2494,12 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         const cy = viewHeight / 2;
         const maxDim = Math.max(viewWidth, viewHeight) * 0.85;
 
-        // Layer 1: Full-Viewport Chromatic Bioluminescence Saturation Wash
+        // Layer 1: Full-Viewport Chromatic Bioluminescence Saturation Wash (Preset-Driven Palette)
         const bloomGrad = ctx.createRadialGradient(cx, cy, 24, cx, cy, maxDim);
-        bloomGrad.addColorStop(
-          0,
-          `rgba(104, 211, 145, ${(bloomEffect.bloomIntensityAlpha * 0.72).toFixed(3)})`
-        );
-        bloomGrad.addColorStop(
-          0.38,
-          `rgba(79, 209, 197, ${(bloomEffect.bloomIntensityAlpha * 0.54).toFixed(3)})`
-        );
-        bloomGrad.addColorStop(
-          0.72,
-          `rgba(183, 148, 244, ${(bloomEffect.bloomIntensityAlpha * 0.38).toFixed(3)})`
-        );
-        bloomGrad.addColorStop(
-          1,
-          `rgba(242, 184, 75, ${(bloomEffect.bloomIntensityAlpha * 0.22).toFixed(3)})`
-        );
+        bloomGrad.addColorStop(0, bloomEffect.colorPalette.radialStop0Rgba);
+        bloomGrad.addColorStop(0.38, bloomEffect.colorPalette.radialStop1Rgba);
+        bloomGrad.addColorStop(0.72, bloomEffect.colorPalette.radialStop2Rgba);
+        bloomGrad.addColorStop(1, bloomEffect.colorPalette.radialStop3Rgba);
         ctx.fillStyle = bloomGrad;
         ctx.fillRect(0, 0, viewWidth, viewHeight);
 
@@ -2511,8 +2513,8 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
             ctx.save();
             ctx.rotate(rayAngle);
             const rayGrad = ctx.createLinearGradient(0, 0, maxDim, 0);
-            rayGrad.addColorStop(0, `rgba(79, 209, 197, ${bloomEffect.coronaRayAlpha.toFixed(3)})`);
-            rayGrad.addColorStop(0.5, `rgba(104, 211, 145, ${(bloomEffect.coronaRayAlpha * 0.41).toFixed(3)})`);
+            rayGrad.addColorStop(0, bloomEffect.colorPalette.coronaInnerRgba);
+            rayGrad.addColorStop(0.5, bloomEffect.colorPalette.coronaMidRgba);
             rayGrad.addColorStop(1, 'rgba(9, 21, 16, 0)');
             ctx.fillStyle = rayGrad;
             ctx.beginPath();
@@ -2720,6 +2722,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
           sanctuaryBloomRotationDeg: bloomEffect.cameraRotationDeg,
           sanctuaryBloomSaturation: bloomEffect.bioluminescenceSaturation,
           sanctuaryBloomIntensityPct: bloomEffect.userIntensityPct,
+          sanctuaryBloomPresetId: bloomEffect.presetId,
           runningFiveSessionHrvAvg: renderAdaptiveScaling.runningFiveSessionHrvAvg,
           adaptiveScalingTierLabel: renderAdaptiveScaling.tierLabel,
           hrvUfovAdjustmentMs: renderAdaptiveScaling.hrvUfovAdjustmentMs,

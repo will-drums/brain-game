@@ -1609,7 +1609,102 @@ export function stepCognitivePulseWave(
  */
 export const SANCTUARY_BLOOM_STORAGE_KEY = 'sylvan_synapse_completed_stages_v1';
 export const SANCTUARY_BLOOM_INTENSITY_STORAGE_KEY = 'sylvan_synapse_bloom_intensity_v1';
+export const SANCTUARY_BLOOM_PRESET_STORAGE_KEY = 'sylvan_synapse_bloom_preset_v1';
 export const DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT = 100;
+
+export type SanctuaryBloomPresetId = 'morning_glow' | 'midnight_forest' | 'neural_zenith';
+export const DEFAULT_SANCTUARY_BLOOM_PRESET_ID: SanctuaryBloomPresetId = 'neural_zenith';
+
+export interface SanctuaryBloomPresetConfig {
+  id: SanctuaryBloomPresetId;
+  label: string;
+  shortLabel: string;
+  subtitle: string;
+  defaultIntensityPct: number;
+  primaryHex: string;
+  secondaryHex: string;
+  accentHex: string;
+  stop0Rgb: [number, number, number];
+  stop1Rgb: [number, number, number];
+  stop2Rgb: [number, number, number];
+  stop3Rgb: [number, number, number];
+  coronaInnerRgb: [number, number, number];
+  coronaMidRgb: [number, number, number];
+  tendrilPaletteHex: string[];
+}
+
+export const SANCTUARY_BLOOM_PRESETS: Record<SanctuaryBloomPresetId, SanctuaryBloomPresetConfig> = {
+  morning_glow: {
+    id: 'morning_glow',
+    label: 'Morning Glow',
+    shortLabel: 'Morning Glow',
+    subtitle: 'Warm solar yellows & golden amber dawn bioluminescence',
+    defaultIntensityPct: 78,
+    primaryHex: '#F6E05E',
+    secondaryHex: '#F2B84B',
+    accentHex: '#FBD38D',
+    stop0Rgb: [246, 224, 94],
+    stop1Rgb: [242, 184, 75],
+    stop2Rgb: [251, 211, 141],
+    stop3Rgb: [237, 137, 54],
+    coronaInnerRgb: [246, 224, 94],
+    coronaMidRgb: [242, 184, 75],
+    tendrilPaletteHex: ['#F6E05E', '#F2B84B', '#FBD38D', '#ECC94B', '#FAF089', '#F6AD55'],
+  },
+  midnight_forest: {
+    id: 'midnight_forest',
+    label: 'Midnight Forest',
+    shortLabel: 'Midnight Forest',
+    subtitle: 'Deep violet, indigo & nocturnal sapphire bioluminescence',
+    defaultIntensityPct: 64,
+    primaryHex: '#9F7AEA',
+    secondaryHex: '#63B3ED',
+    accentHex: '#B794F4',
+    stop0Rgb: [159, 122, 234],
+    stop1Rgb: [99, 179, 237],
+    stop2Rgb: [102, 126, 234],
+    stop3Rgb: [183, 148, 244],
+    coronaInnerRgb: [159, 122, 234],
+    coronaMidRgb: [99, 179, 237],
+    tendrilPaletteHex: ['#9F7AEA', '#63B3ED', '#B794F4', '#7F9CF5', '#90CDF4', '#D6BCFA'],
+  },
+  neural_zenith: {
+    id: 'neural_zenith',
+    label: 'Neural Zenith',
+    shortLabel: 'Neural Zenith',
+    subtitle: 'Vibrant synaptic cyan & emerald canopy bioluminescence',
+    defaultIntensityPct: 94,
+    primaryHex: '#4FD1C5',
+    secondaryHex: '#68D391',
+    accentHex: '#81E6D9',
+    stop0Rgb: [79, 209, 197],
+    stop1Rgb: [104, 211, 145],
+    stop2Rgb: [129, 230, 217],
+    stop3Rgb: [56, 178, 172],
+    coronaInnerRgb: [79, 209, 197],
+    coronaMidRgb: [104, 211, 145],
+    tendrilPaletteHex: ['#4FD1C5', '#68D391', '#81E6D9', '#38B2AC', '#9AE6B4', '#76E4F7'],
+  },
+};
+
+export const SANCTUARY_BLOOM_PRESET_LIST: SanctuaryBloomPresetConfig[] = [
+  SANCTUARY_BLOOM_PRESETS.morning_glow,
+  SANCTUARY_BLOOM_PRESETS.midnight_forest,
+  SANCTUARY_BLOOM_PRESETS.neural_zenith,
+];
+
+export function getSanctuaryBloomPresetConfig(
+  rawPresetId?: unknown
+): SanctuaryBloomPresetConfig {
+  if (
+    rawPresetId === 'morning_glow' ||
+    rawPresetId === 'midnight_forest' ||
+    rawPresetId === 'neural_zenith'
+  ) {
+    return SANCTUARY_BLOOM_PRESETS[rawPresetId];
+  }
+  return SANCTUARY_BLOOM_PRESETS[DEFAULT_SANCTUARY_BLOOM_PRESET_ID];
+}
 
 export function clampSanctuaryBloomIntensityPct(
   rawValue: unknown,
@@ -1622,10 +1717,25 @@ export function clampSanctuaryBloomIntensityPct(
   return Math.max(0, Math.min(100, Math.round(num)));
 }
 
+export interface SanctuaryBloomColorPalette {
+  primaryHex: string;
+  secondaryHex: string;
+  accentHex: string;
+  radialStop0Rgba: string;
+  radialStop1Rgba: string;
+  radialStop2Rgba: string;
+  radialStop3Rgba: string;
+  coronaInnerRgba: string;
+  coronaMidRgba: string;
+  tendrilPaletteHex: string[];
+}
+
 export interface SanctuaryBloomState {
   isTriggered: boolean;
   completedStagesCount: number;
   totalStages: number;
+  presetId: SanctuaryBloomPresetId;
+  presetLabel: string;
   userIntensityPct: number; // 0 .. 100
   cameraRotationRad: number;
   cameraRotationDeg: number;
@@ -1633,7 +1743,13 @@ export interface SanctuaryBloomState {
   bloomIntensityAlpha: number; // 0 .. 0.65
   coronaRayAlpha: number; // 0 .. 0.22
   chromaticAuroraShift: number; // 0 .. 1.0
+  colorPalette: SanctuaryBloomColorPalette;
   statusBadgeText: string;
+}
+
+function formatRgbAlpha(rgb: [number, number, number], alpha: number): string {
+  const clampedAlpha = Math.max(0, Math.min(1, Number.isFinite(alpha) ? alpha : 0));
+  return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${clampedAlpha.toFixed(3)})`;
 }
 
 export function computeSanctuaryBloomEffect(params: {
@@ -1641,6 +1757,7 @@ export function computeSanctuaryBloomEffect(params: {
   totalStages?: number;
   isBloomManuallyActive?: boolean;
   intensityPct?: number;
+  presetId?: SanctuaryBloomPresetId;
   elapsedSec: number;
 }): SanctuaryBloomState {
   const totalStages = Math.max(1, params.totalStages ?? SANCTUARY_STAGES.length);
@@ -1648,9 +1765,10 @@ export function computeSanctuaryBloomEffect(params: {
     0,
     Math.min(totalStages, Math.round(params.completedStagesCount || 0))
   );
+  const preset = getSanctuaryBloomPresetConfig(params.presetId);
   const userIntensityPct = clampSanctuaryBloomIntensityPct(
     params.intensityPct,
-    DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT
+    preset.defaultIntensityPct
   );
   const intensityScale = userIntensityPct / 100;
   const isTriggered =
@@ -1661,6 +1779,8 @@ export function computeSanctuaryBloomEffect(params: {
       isTriggered: false,
       completedStagesCount,
       totalStages,
+      presetId: preset.id,
+      presetLabel: preset.label,
       userIntensityPct,
       cameraRotationRad: 0,
       cameraRotationDeg: 0,
@@ -1668,6 +1788,18 @@ export function computeSanctuaryBloomEffect(params: {
       bloomIntensityAlpha: 0,
       coronaRayAlpha: 0,
       chromaticAuroraShift: 0,
+      colorPalette: {
+        primaryHex: preset.primaryHex,
+        secondaryHex: preset.secondaryHex,
+        accentHex: preset.accentHex,
+        radialStop0Rgba: formatRgbAlpha(preset.stop0Rgb, 0),
+        radialStop1Rgba: formatRgbAlpha(preset.stop1Rgb, 0),
+        radialStop2Rgba: formatRgbAlpha(preset.stop2Rgb, 0),
+        radialStop3Rgba: formatRgbAlpha(preset.stop3Rgb, 0),
+        coronaInnerRgba: formatRgbAlpha(preset.coronaInnerRgb, 0),
+        coronaMidRgba: formatRgbAlpha(preset.coronaMidRgb, 0),
+        tendrilPaletteHex: preset.tendrilPaletteHex,
+      },
       statusBadgeText: `Sanctuary Stages Completed: ${completedStagesCount}/${totalStages}`,
     };
   }
@@ -1683,10 +1815,25 @@ export function computeSanctuaryBloomEffect(params: {
   const chromaticAuroraShift =
     Math.round((0.5 + 0.5 * Math.sin(safeElapsed * 0.65)) * 1000) / 1000;
 
+  const colorPalette: SanctuaryBloomColorPalette = {
+    primaryHex: preset.primaryHex,
+    secondaryHex: preset.secondaryHex,
+    accentHex: preset.accentHex,
+    radialStop0Rgba: formatRgbAlpha(preset.stop0Rgb, bloomIntensityAlpha * 0.72),
+    radialStop1Rgba: formatRgbAlpha(preset.stop1Rgb, bloomIntensityAlpha * 0.54),
+    radialStop2Rgba: formatRgbAlpha(preset.stop2Rgb, bloomIntensityAlpha * 0.38),
+    radialStop3Rgba: formatRgbAlpha(preset.stop3Rgb, bloomIntensityAlpha * 0.22),
+    coronaInnerRgba: formatRgbAlpha(preset.coronaInnerRgb, coronaRayAlpha),
+    coronaMidRgba: formatRgbAlpha(preset.coronaMidRgb, coronaRayAlpha * 0.41),
+    tendrilPaletteHex: preset.tendrilPaletteHex,
+  };
+
   return {
     isTriggered: true,
     completedStagesCount: Math.max(completedStagesCount, totalStages),
     totalStages,
+    presetId: preset.id,
+    presetLabel: preset.label,
     userIntensityPct,
     cameraRotationRad,
     cameraRotationDeg,
@@ -1694,7 +1841,8 @@ export function computeSanctuaryBloomEffect(params: {
     bloomIntensityAlpha,
     coronaRayAlpha,
     chromaticAuroraShift,
-    statusBadgeText: `SANCTUARY BLOOM ACTIVE · ${userIntensityPct}% BIOLUM · ${totalStages}/${totalStages} STAGES`,
+    colorPalette,
+    statusBadgeText: `SANCTUARY BLOOM ACTIVE · ${preset.label.toUpperCase()} · ${userIntensityPct}% BIOLUM · ${totalStages}/${totalStages} STAGES`,
   };
 }
 
@@ -2101,6 +2249,7 @@ export function computeTreeFloweringState(params: {
   localNBackSuccessRateOverride?: number | null;
   isSanctuaryBloomActive?: boolean;
   bloomIntensityPct?: number;
+  presetId?: SanctuaryBloomPresetId;
 }): TreeFloweringState {
   const treeOrderIndex = Math.max(0, Math.floor(Number(params.treeOrderIndex) || 0));
   // Stagger each tree's flowering cascade by 0.26s per graft index so trees bloom in a rhythmic wave
@@ -2182,6 +2331,10 @@ export function computeTreeFloweringState(params: {
     (10 + localNBackSuccessRate * 10 + bloomBonus * 4) * (0.6 + 0.4 * bloomScale)
   );
 
+  const activeTipPalette = params.presetId
+    ? getSanctuaryBloomPresetConfig(params.presetId).tendrilPaletteHex
+    : FLOWERING_TIP_PALETTE;
+
   const tendrils: TreeFloweringTendrilSpec[] = [];
   for (let i = 0; i < tendrilCount; i++) {
     // Stagger each individual tendril slightly around the crown
@@ -2195,7 +2348,7 @@ export function computeTreeFloweringState(params: {
     const blossomScale =
       Math.round(tendrilStagger * (0.75 + localNBackSuccessRate * 0.45) * 100) / 100;
     const tipColorHex =
-      FLOWERING_TIP_PALETTE[(i + treeOrderIndex) % FLOWERING_TIP_PALETTE.length];
+      activeTipPalette[(i + treeOrderIndex) % activeTipPalette.length];
 
     tendrils.push({
       index: i,

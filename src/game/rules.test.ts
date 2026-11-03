@@ -53,8 +53,70 @@ import {
   CLINICAL_CODEX_EXIT_DURATION_MS,
   CLINICAL_CODEX_EASING_CURVE,
   computeCodexModalAnimationState,
+  SANCTUARY_BLOOM_PRESETS,
+  SANCTUARY_BLOOM_PRESET_LIST,
+  getSanctuaryBloomPresetConfig,
   type ChimeSymbol,
 } from './rules';
+
+test('SANCTUARY_BLOOM_PRESETS defines Morning Glow, Midnight Forest, and Neural Zenith with distinct intensity defaults and bioluminescent palettes', () => {
+  assert.equal(SANCTUARY_BLOOM_PRESET_LIST.length, 3);
+
+  const morning = getSanctuaryBloomPresetConfig('morning_glow');
+  assert.equal(morning.id, 'morning_glow');
+  assert.equal(morning.label, 'Morning Glow');
+  assert.equal(morning.defaultIntensityPct, 78);
+  assert.equal(morning.primaryHex, '#F6E05E');
+
+  const midnight = getSanctuaryBloomPresetConfig('midnight_forest');
+  assert.equal(midnight.id, 'midnight_forest');
+  assert.equal(midnight.label, 'Midnight Forest');
+  assert.equal(midnight.defaultIntensityPct, 64);
+  assert.equal(midnight.primaryHex, '#9F7AEA');
+
+  const zenith = getSanctuaryBloomPresetConfig('neural_zenith');
+  assert.equal(zenith.id, 'neural_zenith');
+  assert.equal(zenith.label, 'Neural Zenith');
+  assert.equal(zenith.defaultIntensityPct, 94);
+  assert.equal(zenith.primaryHex, '#4FD1C5');
+
+  // Fallback for unknown preset ID defaults to Neural Zenith
+  const fallback = getSanctuaryBloomPresetConfig('invalid_preset');
+  assert.equal(fallback.id, 'neural_zenith');
+
+  // computeSanctuaryBloomEffect applies preset default intensity and color palette when triggered
+  const morningEffect = computeSanctuaryBloomEffect({
+    completedStagesCount: 4,
+    presetId: 'morning_glow',
+    elapsedSec: 2.0,
+  });
+  assert.equal(morningEffect.isTriggered, true);
+  assert.equal(morningEffect.presetId, 'morning_glow');
+  assert.equal(morningEffect.presetLabel, 'Morning Glow');
+  assert.equal(morningEffect.userIntensityPct, 78);
+  assert.equal(morningEffect.colorPalette.primaryHex, '#F6E05E');
+  assert.ok(morningEffect.colorPalette.radialStop0Rgba.startsWith('rgba(246, 224, 94,'));
+
+  const midnightEffect = computeSanctuaryBloomEffect({
+    completedStagesCount: 4,
+    presetId: 'midnight_forest',
+    elapsedSec: 2.0,
+  });
+  assert.equal(midnightEffect.presetId, 'midnight_forest');
+  assert.equal(midnightEffect.userIntensityPct, 64);
+  assert.equal(midnightEffect.colorPalette.primaryHex, '#9F7AEA');
+  assert.ok(midnightEffect.colorPalette.radialStop0Rgba.startsWith('rgba(159, 122, 234,'));
+
+  const zenithEffect = computeSanctuaryBloomEffect({
+    completedStagesCount: 4,
+    presetId: 'neural_zenith',
+    elapsedSec: 2.0,
+  });
+  assert.equal(zenithEffect.presetId, 'neural_zenith');
+  assert.equal(zenithEffect.userIntensityPct, 94);
+  assert.equal(zenithEffect.colorPalette.primaryHex, '#4FD1C5');
+  assert.ok(zenithEffect.colorPalette.radialStop0Rgba.startsWith('rgba(79, 209, 197,'));
+});
 
 test('computeCodexModalAnimationState manages smooth fade-in and upward slide-up transitions within <=200ms budget and respects prefers-reduced-motion', () => {
   const closed = computeCodexModalAnimationState('closed');
