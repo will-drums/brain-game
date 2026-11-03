@@ -1,0 +1,6 @@
+{
+  "name": "Sylvan Synapse — Cozy Clinical Cognitive Sanctuary",
+  "description": "A cozy botanical sanctuary game grounded in clinical neuroscience (ACTIVE Trial, Dual N-Back, ART, and HRV Biofeedback) to rejuvenate the brain and build cognitive reserve.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,728 @@
+/**
+ * Pure game rules, cognitive neuroscience protocols, math helpers, and clinical research data
+ * for Sylvan Synapse — Cozy Clinical Cognitive Sanctuary.
+ */
+
+export type GameState = 'title' | 'playing' | 'paused' | 'gameover';
+export type GameOutcome = 'victory' | 'defeat' | null;
+
+export type ProtocolId = 'ufov_forage' | 'nback_chimes' | 'coherence_breath' | 'dendrite_graft';
+
+export interface ClinicalCitation {
+  id: ProtocolId;
+  shortName: string;
+  keyBinding: string;
+  actionName: string;
+  roleClue: string;
+  brainRegion: string;
+  mechanism: string;
+  studyTitle: string;
+  authors: string;
+  journalYear: string;
+  sampleNote: string;
+  clinicalFinding: string;
+  howInGameWorks: string;
+  accentHex: string;
+}
+
+export const CLINICAL_PROTOCOLS: Record<ProtocolId, ClinicalCitation> = {
+  ufov_forage: {
+    id: 'ufov_forage',
+    shortName: 'UFOV Dew Pulse',
+    keyBinding: '1',
+    actionName: 'UFOV Forage',
+    roleClue: 'Divided Visual Attention · Space / Click',
+    brainRegion: 'Dorsal Attention Network & Visual Cortex (V1–V4)',
+    mechanism: 'Useful Field of View (UFOV) Speed-of-Processing & Divided Peripheral Attention',
+    studyTitle: 'Ten-Year Effects of the ACTIVE Cognitive Training Trial on Everyday Cognitive Function and Dementia Incidence',
+    authors: 'Ball, K., Edwards, J. D., Willis, S. L., Rebok, G. W., et al.',
+    journalYear: 'JAMA (2002) & Alzheimer’s & Dementia: Translational Research & Clinical Interventions (2017)',
+    sampleNote: 'Randomized controlled trial of N = 2,802 healthy older adults followed over 10 years',
+    clinicalFinding:
+      'Computerized Useful Field of View (UFOV) speed-of-processing training (identifying a central target while simultaneously localizing a brief peripheral target) reduced the risk of dementia diagnosis by 29% over 10 years and improved instrumental activities of daily living.',
+    howInGameWorks:
+      'When you pulse your lantern near a Sun-Dew Shrine or Dew-Bloom, briefly lock onto the central floral glyph while spotting the peripheral firefly direction to harvest double BDNF Nectar and clear surrounding Cortisol Spores.',
+    accentHex: '#F2B84B',
+  },
+  nback_chimes: {
+    id: 'nback_chimes',
+    shortName: 'N-Back Echo Chime',
+    keyBinding: '2',
+    actionName: 'Echo Chime',
+    roleClue: 'Working Memory Match · E / Two-Finger Tap',
+    brainRegion: 'Dorsolateral Prefrontal Cortex (dlPFC) & Parietal Cortex',
+    mechanism: 'Continuous Working Memory Updating & Executive Inhibition (N-Back)',
+    studyTitle: 'Improving Fluid Intelligence with Training on Working Memory: A Meta-Analysis & Prefrontal Dopamine Plasticity',
+    authors: 'Jaeggi, S. M., Buschkuehl, M., Jonides, J., & Perrig, W. J.; Au et al.',
+    journalYear: 'Proceedings of the National Academy of Sciences (PNAS, 2008); Psychonomic Bulletin & Review (2015)',
+    sampleNote: 'Controlled cognitive intervention studies & meta-analysis of 20+ N-Back trials',
+    clinicalFinding:
+      'Adaptive N-Back training strengthens frontoparietal neural network efficiency and striatal/prefrontal dopamine D1 receptor density, yielding measurable improvements in working memory capacity, attentional control, and fluid reasoning.',
+    howInGameWorks:
+      'Ancient Wind-Chime Totems emit a continuous sequence of botanical symbols and harmonic tones. Ring the Echo Chime (E or Two-Finger Trackpad Tap / Control-Click) when the current symbol matches the one from N steps ago (1-Back or 2-Back) to unleash a golden harmonic wave that restores neural trees.',
+    accentHex: '#4FD1C5',
+  },
+  coherence_breath: {
+    id: 'coherence_breath',
+    shortName: 'Resonance Breath',
+    keyBinding: '3',
+    actionName: 'Vagal Breath',
+    roleClue: '0.1 Hz HRV Shield · Hold ⇧ Shift / ⌥ Option',
+    brainRegion: 'Vagus Nerve, Nucleus Tractus Solitarii & Prefrontal-Amygdala Circuit',
+    mechanism: 'Heart Rate Variability (HRV) Resonance Frequency Breathing (6 Breaths/Min) & Attention Restoration',
+    studyTitle: 'Heart Rate Variability Biofeedback: How and Why Does It Work? & The Cognitive Benefits of Interacting with Nature',
+    authors: 'Lehrer, P. M., & Gevirtz, R.; Berman, M. G., Jonides, J., & Kaplan, S.',
+    journalYear: 'Frontiers in Psychology (2014); Psychological Science (2008)',
+    sampleNote: 'Clinical psychophysiology trials on baroreflex gain & nature-based soft fascination',
+    clinicalFinding:
+      'Paced breathing at ~0.1 Hz (5s inhale, 5s exhale) maximizes baroreflex resonance and vagal afferent signaling to the prefrontal cortex, down-regulating amygdala hyper-reactivity, lowering cortisol, and accelerating recovery from directed-attention fatigue.',
+    howInGameWorks:
+      'Hold ⇧ Shift or ⌥ Option (or synchronize with the rhythmic breathing guide around your Sprite) to enter Vagal Coherence. While coherent, your calm aura gently dissolves approaching Stress Wisps, heals Calm Vitality, and expands peripheral perception.',
+    accentHex: '#68D391',
+  },
+  dendrite_graft: {
+    id: 'dendrite_graft',
+    shortName: 'BDNF Dendrite Graft',
+    keyBinding: '4',
+    actionName: 'Synapse Graft',
+    roleClue: 'Spatial Hippocampal Link · Q / ⏎ Return',
+    brainRegion: 'Hippocampal Dentate Gyrus & Entorhinal Grid Cells',
+    mechanism: 'Enriched Spatial Exploration, Adult Neurogenesis & BDNF-Mediated Synaptogenesis',
+    studyTitle: 'Exercise and Enriched Spatial Exploration Increase Hippocampal Volume and Serum BDNF in Humans',
+    authors: 'Erickson, K. I., Voss, M. W., Prakash, R. S., et al.; Clemenson, G. D., & Stark, C. E.',
+    journalYear: 'Proceedings of the National Academy of Sciences (PNAS, 2011); Journal of Neuroscience (2015)',
+    sampleNote: 'Randomized 1-year human neuroimaging trial (N = 120) & spatial enrichment studies',
+    clinicalFinding:
+      'Navigating rich spatial environments and learning novel spatial landmarks stimulates Brain-Derived Neurotrophic Factor (BDNF) expression and promotes neurogenesis in the anterior hippocampus, reversing age-related volume loss by 1–2 years.',
+    howInGameWorks:
+      'Collect Nectar from blooming nodes and press Q or ⏎ Return (or Space near a Dormant Neural Tree) to graft a living bioluminescent mycelial bridge between sanctuary trees, permanently lighting the grove and increasing your Brain Rejuvenation Index.',
+    accentHex: '#B794F4',
+  },
+};
+
+export const MAC_CONTROL_HINT_LINE =
+  'WASD / Arrows / Two-Finger Glide Move · Space / Click UFOV Forage · E / Ctrl-Click Echo Chime · Q / ⏎ Return Graft Tree · ⇧ Shift / ⌥ Option 0.1Hz Breath · ⎋ Esc Pause';
+
+export interface StageConfig {
+  stageIndex: number;
+  name: string;
+  subtitle: string;
+  targetTreesGrafted: number;
+  nBackLevel: 1 | 2;
+  ufovFlashDurationSec: number;
+  maxConcurrentHazards: number;
+  hazardSpawnIntervalSec: number;
+  nectarCostPerTree: number;
+}
+
+export const SANCTUARY_STAGES: StageConfig[] = [
+  {
+    stageIndex: 0,
+    name: 'Stage I · The Mossy Dentate Grove',
+    subtitle: '1-Back Harmonic Chimes · Gentle UFOV Dew · Soft Vagal Coherence',
+    targetTreesGrafted: 4,
+    nBackLevel: 1,
+    ufovFlashDurationSec: 1.8,
+    maxConcurrentHazards: 4,
+    hazardSpawnIntervalSec: 5.5,
+    nectarCostPerTree: 25,
+  },
+  {
+    stageIndex: 1,
+    name: 'Stage II · The Prefrontal Canopy',
+    subtitle: '2-Back Working Memory · Rapid UFOV Peripheral Flash · Richer Mycelial Web',
+    targetTreesGrafted: 5,
+    nBackLevel: 2,
+    ufovFlashDurationSec: 1.35,
+    maxConcurrentHazards: 6,
+    hazardSpawnIntervalSec: 4.2,
+    nectarCostPerTree: 30,
+  },
+  {
+    stageIndex: 2,
+    name: 'Stage III · The Luminous Crown Sanctuary',
+    subtitle: '2-Back Mastery · High-Speed UFOV · Full Neural Network Rejuvenation',
+    targetTreesGrafted: 6,
+    nBackLevel: 2,
+    ufovFlashDurationSec: 1.0,
+    maxConcurrentHazards: 8,
+    hazardSpawnIntervalSec: 3.4,
+    nectarCostPerTree: 35,
+  },
+];
+
+export type ChimeSymbol = 'SUN' | 'LEAF' | 'DROP' | 'STAR';
+export const CHIME_SYMBOLS: ChimeSymbol[] = ['SUN', 'LEAF', 'DROP', 'STAR'];
+
+export type HazardArchetype = 'ruminator_drifter' | 'distractor_dart' | 'fog_emitter';
+
+/**
+ * Clamp frame delta time to prevent physics tunneling on tab switch or CPU spike.
+ */
+export function clampDeltaTime(rawDt: number): number {
+  if (!Number.isFinite(rawDt) || rawDt < 0) return 0;
+  return Math.min(rawDt, 0.05);
+}
+
+/**
+ * Compute N-Back match truth for a sequence of symbols.
+ * Returns true if the latest symbol at `sequence[sequence.length - 1]`
+ * matches `sequence[sequence.length - 1 - n]`.
+ */
+export function isNBackMatch(sequence: readonly ChimeSymbol[], n: number): boolean {
+  if (n <= 0 || sequence.length <= n) return false;
+  const current = sequence[sequence.length - 1];
+  const target = sequence[sequence.length - 1 - n];
+  return current === target;
+}
+
+/**
+ * Generate the next chime symbol with controlled probability (~40% chance of an N-back match)
+ * so players get frequent, rewarding working-memory opportunities without waiting too long.
+ */
+export function generateNextChimeSymbol(
+  sequence: readonly ChimeSymbol[],
+  n: number,
+  randomVal: number
+): ChimeSymbol {
+  if (sequence.length >= n && randomVal < 0.42) {
+    return sequence[sequence.length - n];
+  }
+  const idx = Math.floor(Math.abs(randomVal * 9973)) % CHIME_SYMBOLS.length;
+  return CHIME_SYMBOLS[idx];
+}
+
+/**
+ * Compute 0.1 Hz Resonance Breathing phase (10-second full cycle: 5s inhale, 5s exhale).
+ * Returns phase in [0, 1], breathRadiusFactor in [0, 1] (0 = fully exhaled, 1 = peak inhale),
+ * and current label ('INHALE 5s' | 'EXHALE 5s').
+ */
+export function computeResonanceBreathState(elapsedTimeSec: number): {
+  cycleProgress: number;
+  expansion: number;
+  phaseLabel: 'INHALE' | 'EXHALE';
+  coherenceBonusMultiplier: number;
+} {
+  const cycleSec = 10.0; // 6 breaths per minute = 0.1 Hz clinical resonance frequency
+  const t = ((elapsedTimeSec % cycleSec) + cycleSec) % cycleSec;
+  const cycleProgress = t / cycleSec;
+  // Smooth sinusoid from 0 to 1 (peaks at t = 5s)
+  const expansion = 0.5 - 0.5 * Math.cos((t / cycleSec) * Math.PI * 2);
+  const phaseLabel = t < 5.0 ? 'INHALE' : 'EXHALE';
+  // Sweet spot near smooth cadence transition gives boosted coherence
+  const coherenceBonusMultiplier = 1.0 + 0.5 * Math.sin((t / cycleSec) * Math.PI);
+  return {
+    cycleProgress,
+    expansion,
+    phaseLabel,
+    coherenceBonusMultiplier,
+  };
+}
+
+/**
+ * Calculate Brain Rejuvenation Index (BRI) score and cognitive domain breakdown.
+ */
+export interface CognitiveMetricsInput {
+  treesGrafted: number;
+  targetTrees: number;
+  ufovHits: number;
+  ufovAttempts: number;
+  nBackHits: number;
+  nBackAttempts: number;
+  coherenceSeconds: number;
+  calmVitality: number;
+  maxVitality: number;
+}
+
+export interface CognitiveSummary {
+  rejuvenationScore: number;
+  processingSpeedPct: number;
+  workingMemoryPct: number;
+  vagalCoherencePct: number;
+  spatialPlasticityPct: number;
+  isStageCleared: boolean;
+}
+
+export function evaluateCognitiveSummary(input: CognitiveMetricsInput): CognitiveSummary {
+  const spatialPlasticityPct =
+    input.targetTrees > 0
+      ? Math.min(100, Math.round((input.treesGrafted / input.targetTrees) * 100))
+      : 100;
+
+  const processingSpeedPct =
+    input.ufovAttempts > 0
+      ? Math.min(100, Math.round((input.ufovHits / input.ufovAttempts) * 100))
+      : 85;
+
+  const workingMemoryPct =
+    input.nBackAttempts > 0
+      ? Math.min(100, Math.round((input.nBackHits / input.nBackAttempts) * 100))
+      : 85;
+
+  const vagalCoherencePct = Math.min(
+    100,
+    Math.round(Math.min(1, input.coherenceSeconds / 15) * 60 + (input.calmVitality / Math.max(1, input.maxVitality)) * 40)
+  );
+
+  const rejuvenationScore = Math.round(
+    input.treesGrafted * 250 +
+      input.ufovHits * 120 +
+      input.nBackHits * 180 +
+      Math.round(input.coherenceSeconds * 15) +
+      input.calmVitality * 40
+  );
+
+  const isStageCleared = input.treesGrafted >= input.targetTrees && input.calmVitality > 0;
+
+  return {
+    rejuvenationScore,
+    processingSpeedPct,
+    workingMemoryPct,
+    vagalCoherencePct,
+    spatialPlasticityPct,
+    isStageCleared,
+  };
+}
+
+/**
+ * Compute difficulty parameters smoothly based on elapsed stage time and progress.
+ */
+export function computeDifficultyRamp(
+  stage: StageConfig,
+  elapsedSec: number,
+  treesGrafted: number
+): {
+  activeMaxHazards: number;
+  spawnIntervalSec: number;
+  hazardSpeedMultiplier: number;
+  archetypeWeights: Record<HazardArchetype, number>;
+} {
+  // Keep opening 12 seconds extra gentle and approachable
+  if (elapsedSec < 12) {
+    return {
+      activeMaxHazards: Math.min(2, stage.maxConcurrentHazards),
+      spawnIntervalSec: stage.hazardSpawnIntervalSec * 1.35,
+      hazardSpeedMultiplier: 0.78,
+      archetypeWeights: {
+        ruminator_drifter: 0.7,
+        distractor_dart: 0.2,
+        fog_emitter: 0.1,
+      },
+    };
+  }
+
+  const timeFactor = Math.min(1, (elapsedSec - 12) / 90);
+  const progressFactor = stage.targetTreesGrafted > 0 ? treesGrafted / stage.targetTreesGrafted : 0;
+  const combinedFactor = Math.min(1, timeFactor * 0.6 + progressFactor * 0.4);
+
+  const activeMaxHazards = Math.round(
+    2 + combinedFactor * (stage.maxConcurrentHazards - 2)
+  );
+  const spawnIntervalSec = Math.max(
+    2.2,
+    stage.hazardSpawnIntervalSec * (1 - combinedFactor * 0.32)
+  );
+  const hazardSpeedMultiplier = 0.85 + combinedFactor * 0.35;
+
+  return {
+    activeMaxHazards,
+    spawnIntervalSec,
+    hazardSpeedMultiplier,
+    archetypeWeights: {
+      ruminator_drifter: Math.max(0.35, 0.65 - combinedFactor * 0.25),
+      distractor_dart: 0.2 + combinedFactor * 0.18,
+      fog_emitter: 0.15 + combinedFactor * 0.12,
+    },
+  };
+}
+
+/**
+ * Daily Practice Streak Tracking & Consecutive Day Evaluation
+ */
+export interface DailyStreakState {
+  currentStreak: number;
+  longestStreak: number;
+  lastPracticedDate: string | null; // YYYY-MM-DD in local time
+  totalDaysPracticed: number;
+}
+
+export const STREAK_STORAGE_KEY = 'sylvan_synapse_daily_streak_v1';
+
+/**
+ * Format a Date object into local YYYY-MM-DD string.
+ */
+export function formatLocalDateIso(date: Date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Calculate integer calendar day difference (targetDateIso - baseDateIso) using UTC midnight parsing.
+ */
+export function getCalendarDayDiff(baseDateIso: string, targetDateIso: string): number {
+  const [y1, m1, d1] = baseDateIso.split('-').map(Number);
+  const [y2, m2, d2] = targetDateIso.split('-').map(Number);
+  if (!y1 || !m1 || !d1 || !y2 || !m2 || !d2) return Number.NaN;
+  const utc1 = Date.UTC(y1, m1 - 1, d1);
+  const utc2 = Date.UTC(y2, m2 - 1, d2);
+  return Math.round((utc2 - utc1) / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * Evaluate the stored streak against today's date (without recording a new practice session yet).
+ * If the user missed 1 or more full days (dayDiff > 1), currentStreak resets to 0 until they practice today.
+ */
+export function evaluateStreakOnLoad(
+  saved: DailyStreakState | null | undefined,
+  todayIso: string
+): DailyStreakState {
+  if (!saved || !saved.lastPracticedDate) {
+    return {
+      currentStreak: 0,
+      longestStreak: saved?.longestStreak ?? 0,
+      lastPracticedDate: null,
+      totalDaysPracticed: saved?.totalDaysPracticed ?? 0,
+    };
+  }
+
+  const diff = getCalendarDayDiff(saved.lastPracticedDate, todayIso);
+  if (diff === 0 || diff === 1) {
+    return {
+      currentStreak: Math.max(1, saved.currentStreak),
+      longestStreak: Math.max(saved.longestStreak, saved.currentStreak),
+      lastPracticedDate: saved.lastPracticedDate,
+      totalDaysPracticed: Math.max(1, saved.totalDaysPracticed),
+    };
+  }
+
+  // More than 1 calendar day elapsed (streak broken) or invalid date
+  return {
+    currentStreak: 0,
+    longestStreak: Math.max(0, saved.longestStreak),
+    lastPracticedDate: saved.lastPracticedDate,
+    totalDaysPracticed: Math.max(0, saved.totalDaysPracticed),
+  };
+}
+
+/**
+ * Record a daily practice session on `todayIso` (YYYY-MM-DD).
+ * - Same day (diff === 0): idempotent, preserves currentStreak.
+ * - Consecutive next day (diff === 1): increments currentStreak and totalDaysPracticed by 1.
+ * - First session or after a gap (diff > 1): sets currentStreak to 1 and increments totalDaysPracticed by 1.
+ */
+export function recordDailyPracticeSession(
+  saved: DailyStreakState | null | undefined,
+  todayIso: string
+): DailyStreakState {
+  if (!saved || !saved.lastPracticedDate) {
+    return {
+      currentStreak: 1,
+      longestStreak: Math.max(1, saved?.longestStreak ?? 0),
+      lastPracticedDate: todayIso,
+      totalDaysPracticed: (saved?.totalDaysPracticed ?? 0) + 1,
+    };
+  }
+
+  const diff = getCalendarDayDiff(saved.lastPracticedDate, todayIso);
+
+  if (diff === 0) {
+    const activeStreak = Math.max(1, saved.currentStreak);
+    return {
+      currentStreak: activeStreak,
+      longestStreak: Math.max(saved.longestStreak, activeStreak),
+      lastPracticedDate: todayIso,
+      totalDaysPracticed: Math.max(1, saved.totalDaysPracticed),
+    };
+  }
+
+  if (diff === 1) {
+    const nextStreak = Math.max(1, saved.currentStreak) + 1;
+    return {
+      currentStreak: nextStreak,
+      longestStreak: Math.max(saved.longestStreak, nextStreak),
+      lastPracticedDate: todayIso,
+      totalDaysPracticed: Math.max(1, saved.totalDaysPracticed) + 1,
+    };
+  }
+
+  // Gap > 1 day or clock moved backwards: start fresh 1-day streak
+  return {
+    currentStreak: 1,
+    longestStreak: Math.max(saved.longestStreak, 1),
+    lastPracticedDate: todayIso,
+    totalDaysPracticed: Math.max(0, saved.totalDaysPracticed) + 1,
+  };
+}
+
+/**
+ * HRV Coherence Session History (Last 10 Practice Sessions) & Physiological Relaxation Trend
+ */
+export interface HrvSessionRecord {
+  sessionIndex: number; // 1..10
+  sessionLabel: string; // e.g., "S1".."S10"
+  coherenceScore: number; // 0..100 (%)
+  coherenceSeconds: number;
+  recordedAtIso: string; // YYYY-MM-DD
+  stageName: string;
+}
+
+export const HRV_HISTORY_STORAGE_KEY = 'sylvan_synapse_hrv_history_v1';
+
+export const DEFAULT_HRV_HISTORY_SEED: HrvSessionRecord[] = [
+  { sessionIndex: 1, sessionLabel: 'S1', coherenceScore: 62, coherenceSeconds: 8.2, recordedAtIso: '2026-10-24', stageName: 'Stage I · The Mossy Dentate Grove' },
+  { sessionIndex: 2, sessionLabel: 'S2', coherenceScore: 66, coherenceSeconds: 9.1, recordedAtIso: '2026-10-25', stageName: 'Stage I · The Mossy Dentate Grove' },
+  { sessionIndex: 3, sessionLabel: 'S3', coherenceScore: 64, coherenceSeconds: 8.7, recordedAtIso: '2026-10-26', stageName: 'Stage I · The Mossy Dentate Grove' },
+  { sessionIndex: 4, sessionLabel: 'S4', coherenceScore: 71, coherenceSeconds: 10.5, recordedAtIso: '2026-10-27', stageName: 'Stage I · The Mossy Dentate Grove' },
+  { sessionIndex: 5, sessionLabel: 'S5', coherenceScore: 75, coherenceSeconds: 11.4, recordedAtIso: '2026-10-28', stageName: 'Stage I · The Mossy Dentate Grove' },
+  { sessionIndex: 6, sessionLabel: 'S6', coherenceScore: 73, coherenceSeconds: 11.0, recordedAtIso: '2026-10-29', stageName: 'Stage II · The Prefrontal Canopy' },
+  { sessionIndex: 7, sessionLabel: 'S7', coherenceScore: 79, coherenceSeconds: 12.8, recordedAtIso: '2026-10-30', stageName: 'Stage II · The Prefrontal Canopy' },
+  { sessionIndex: 8, sessionLabel: 'S8', coherenceScore: 84, coherenceSeconds: 14.1, recordedAtIso: '2026-10-31', stageName: 'Stage II · The Prefrontal Canopy' },
+  { sessionIndex: 9, sessionLabel: 'S9', coherenceScore: 88, coherenceSeconds: 15.2, recordedAtIso: '2026-11-01', stageName: 'Stage II · The Prefrontal Canopy' },
+  { sessionIndex: 10, sessionLabel: 'S10', coherenceScore: 92, coherenceSeconds: 16.5, recordedAtIso: '2026-11-02', stageName: 'Stage III · The Luminous Crown Sanctuary' },
+];
+
+/**
+ * Append a new HRV coherence practice session to the history, keeping at most the last 10 sessions
+ * and re-indexing them 1..N ("S1".."S10").
+ */
+export function appendHrvSessionRecord(
+  existing: readonly HrvSessionRecord[],
+  newEntry: {
+    coherenceScore: number;
+    coherenceSeconds: number;
+    recordedAtIso: string;
+    stageName: string;
+  }
+): HrvSessionRecord[] {
+  const clampedScore = Math.max(0, Math.min(100, Math.round(newEntry.coherenceScore)));
+  const combined = [
+    ...existing,
+    {
+      sessionIndex: existing.length + 1,
+      sessionLabel: `S${existing.length + 1}`,
+      coherenceScore: clampedScore,
+      coherenceSeconds: Number(Math.max(0, newEntry.coherenceSeconds).toFixed(1)),
+      recordedAtIso: newEntry.recordedAtIso,
+      stageName: newEntry.stageName,
+    },
+  ].slice(-10);
+
+  return combined.map((item, idx) => ({
+    ...item,
+    sessionIndex: idx + 1,
+    sessionLabel: `S${idx + 1}`,
+  }));
+}
+
+/**
+ * Compute physiological relaxation trend summary from up to 10 HRV coherence sessions.
+ */
+export function computeHrvTrendSummary(history: readonly HrvSessionRecord[]): {
+  averageCoherence: number;
+  peakCoherence: number;
+  latestCoherence: number;
+  trendDelta: number; // Latest minus First session score
+  relaxationStatus: 'Optimal Vagal Resonance' | 'Building Vagal Tone' | 'Baseline Calibration';
+} {
+  if (!history || history.length === 0) {
+    return {
+      averageCoherence: 0,
+      peakCoherence: 0,
+      latestCoherence: 0,
+      trendDelta: 0,
+      relaxationStatus: 'Baseline Calibration',
+    };
+  }
+
+  const scores = history.map((h) => h.coherenceScore);
+  const sum = scores.reduce((acc, val) => acc + val, 0);
+  const averageCoherence = Math.round(sum / scores.length);
+  const peakCoherence = Math.max(...scores);
+  const latestCoherence = scores[scores.length - 1];
+  const firstCoherence = scores[0];
+  const trendDelta = latestCoherence - firstCoherence;
+
+  const relaxationStatus =
+    averageCoherence >= 75
+      ? 'Optimal Vagal Resonance'
+      : averageCoherence >= 60
+      ? 'Building Vagal Tone'
+      : 'Baseline Calibration';
+
+  return {
+    averageCoherence,
+    peakCoherence,
+    latestCoherence,
+    trendDelta,
+    relaxationStatus,
+  };
+}
+
+/**
+ * Cognitive Milestone Badge System & Sanctuary Aesthetic Upgrades
+ * Grants visual flora palette & firefly density upgrades based on total 'Neural Trees Grafted'
+ * and historical 'Rejuvenation Score' peaks.
+ */
+export type CognitiveMilestoneId =
+  | 'sapling_awakening'
+  | 'cyan_lotus_bloom'
+  | 'amethyst_mycelium'
+  | 'solar_crown_resonance';
+
+export interface SanctuaryAestheticUpgrade {
+  id: CognitiveMilestoneId;
+  themeName: string;
+  canopyPrimaryHex: string;
+  canopyHighlightHex: string;
+  canopyGlowRgba: string;
+  myceliumBridgeHex: string;
+  bloomPetalHex: string;
+  fireflyCount: number;
+  fireflyColorHex: string;
+}
+
+export interface CognitiveMilestoneBadge {
+  id: CognitiveMilestoneId;
+  title: string;
+  subtitle: string;
+  requiredTotalTreesGrafted: number;
+  requiredPeakRejuvenationScore: number;
+  aestheticDescription: string;
+  upgrade: SanctuaryAestheticUpgrade;
+}
+
+export const COGNITIVE_MILESTONE_STORAGE_KEY = 'sylvan_synapse_cognitive_milestones_v1';
+
+export interface LifetimeCognitiveProgress {
+  totalTreesGrafted: number;
+  peakRejuvenationScore: number;
+  selectedMilestoneId: CognitiveMilestoneId;
+}
+
+export const COGNITIVE_MILESTONE_BADGES: CognitiveMilestoneBadge[] = [
+  {
+    id: 'sapling_awakening',
+    title: 'I. Mossy Dentate Sapling',
+    subtitle: 'Baseline Sanctuary Flora · 18 Ambient Fireflies',
+    requiredTotalTreesGrafted: 0,
+    requiredPeakRejuvenationScore: 0,
+    aestheticDescription: 'Emerald forest canopy with warm golden fireflies and soft jade mycelial bridges.',
+    upgrade: {
+      id: 'sapling_awakening',
+      themeName: 'Emerald Dentate Flora',
+      canopyPrimaryHex: '#276749',
+      canopyHighlightHex: '#9AE6B4',
+      canopyGlowRgba: 'rgba(104, 211, 145, 0.42)',
+      myceliumBridgeHex: '#68D391',
+      bloomPetalHex: '#F6E05E',
+      fireflyCount: 18,
+      fireflyColorHex: '#F6E05E',
+    },
+  },
+  {
+    id: 'cyan_lotus_bloom',
+    title: 'II. Azure Prefrontal Lotus',
+    subtitle: '4+ Total Trees Grafted OR 1,400+ Peak Score · 36 Bioluminescent Fireflies',
+    requiredTotalTreesGrafted: 4,
+    requiredPeakRejuvenationScore: 1400,
+    aestheticDescription: 'Unlocks bioluminescent cyan-teal lotus flora, aqua synaptic bridges, and 2x firefly density.',
+    upgrade: {
+      id: 'cyan_lotus_bloom',
+      themeName: 'Azure Prefrontal Flora',
+      canopyPrimaryHex: '#1D5B63',
+      canopyHighlightHex: '#81E6D9',
+      canopyGlowRgba: 'rgba(79, 209, 197, 0.48)',
+      myceliumBridgeHex: '#4FD1C5',
+      bloomPetalHex: '#76E4F7',
+      fireflyCount: 36,
+      fireflyColorHex: '#81E6D9',
+    },
+  },
+  {
+    id: 'amethyst_mycelium',
+    title: 'III. Amethyst Hippocampal Canopy',
+    subtitle: '10+ Total Trees Grafted OR 2,000+ Peak Score · 56 Starlight Fireflies',
+    requiredTotalTreesGrafted: 10,
+    requiredPeakRejuvenationScore: 2000,
+    aestheticDescription: 'Unlocks royal lavender-rose BDNF blossoms, violet neural bridges, and dense starlight firefly swarms.',
+    upgrade: {
+      id: 'amethyst_mycelium',
+      themeName: 'Amethyst BDNF Flora',
+      canopyPrimaryHex: '#44337A',
+      canopyHighlightHex: '#D6BCFA',
+      canopyGlowRgba: 'rgba(183, 148, 244, 0.48)',
+      myceliumBridgeHex: '#B794F4',
+      bloomPetalHex: '#FBB6CE',
+      fireflyCount: 56,
+      fireflyColorHex: '#E9D8FD',
+    },
+  },
+  {
+    id: 'solar_crown_resonance',
+    title: 'IV. Solar Crown Neuro-Sanctuary',
+    subtitle: '18+ Total Trees Grafted OR 2,600+ Peak Score · 80 Golden Aurora Fireflies',
+    requiredTotalTreesGrafted: 18,
+    requiredPeakRejuvenationScore: 2600,
+    aestheticDescription: 'Unlocks radiant amber-gold crown foliage, harmonic aurora bridges, and maximum 80-firefly sanctuary illumination.',
+    upgrade: {
+      id: 'solar_crown_resonance',
+      themeName: 'Solar Crown Aurora Flora',
+      canopyPrimaryHex: '#744210',
+      canopyHighlightHex: '#FBD38D',
+      canopyGlowRgba: 'rgba(242, 184, 75, 0.52)',
+      myceliumBridgeHex: '#F2B84B',
+      bloomPetalHex: '#FAF089',
+      fireflyCount: 80,
+      fireflyColorHex: '#FEFCBF',
+    },
+  },
+];
+
+/**
+ * Determine which Cognitive Milestone badges are unlocked given lifetime total trees grafted
+ * and historical peak rejuvenation score.
+ */
+export function evaluateCognitiveMilestones(progress: {
+  totalTreesGrafted: number;
+  peakRejuvenationScore: number;
+}): {
+  unlockedBadges: CognitiveMilestoneBadge[];
+  highestUnlockedBadge: CognitiveMilestoneBadge;
+  nextLockedBadge: CognitiveMilestoneBadge | null;
+} {
+  const unlockedBadges = COGNITIVE_MILESTONE_BADGES.filter(
+    (b) =>
+      progress.totalTreesGrafted >= b.requiredTotalTreesGrafted &&
+      progress.peakRejuvenationScore >= b.requiredPeakRejuvenationScore
+  );
+
+  // Also unlock if either threshold is met for Tier II+ so players feel rewarded by either deep single-run mastery or cumulative tree grafting
+  const flexibleUnlocked = COGNITIVE_MILESTONE_BADGES.filter(
+    (b) =>
+      b.id === 'sapling_awakening' ||
+      progress.totalTreesGrafted >= b.requiredTotalTreesGrafted ||
+      progress.peakRejuvenationScore >= b.requiredPeakRejuvenationScore
+  );
+
+  const finalUnlocked = flexibleUnlocked.length > 0 ? flexibleUnlocked : unlockedBadges;
+  const highestUnlockedBadge = finalUnlocked[finalUnlocked.length - 1] || COGNITIVE_MILESTONE_BADGES[0];
+  const nextLockedBadge =
+    COGNITIVE_MILESTONE_BADGES.find((b) => !finalUnlocked.some((u) => u.id === b.id)) || null;
+
+  return {
+    unlockedBadges: finalUnlocked,
+    highestUnlockedBadge,
+    nextLockedBadge,
+  };
+}
+
+export function getSanctuaryAestheticConfig(
+  milestoneId?: CognitiveMilestoneId
+): SanctuaryAestheticUpgrade {
+  const found = COGNITIVE_MILESTONE_BADGES.find((b) => b.id === milestoneId);
+  return (found || COGNITIVE_MILESTONE_BADGES[0]).upgrade;
+}
+
+
