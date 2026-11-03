@@ -56,8 +56,68 @@ import {
   SANCTUARY_BLOOM_PRESETS,
   SANCTUARY_BLOOM_PRESET_LIST,
   getSanctuaryBloomPresetConfig,
+  DEFAULT_COGNITIVE_RHYTHM_SYNC_CONFIG,
+  sanitizeCognitiveRhythmSyncConfig,
+  computeCognitiveRhythmSyncState,
   type ChimeSymbol,
 } from './rules';
+
+test('computeCognitiveRhythmSyncState calibrates N-Back chime interval to resting heart rate or breathing cadence and generates background waveform points', () => {
+  // 1. Disabled state uses default 3.80s chime interval
+  const disabledState = computeCognitiveRhythmSyncState({
+    config: { enabled: false, syncSource: 'heart_rate', restingHeartRateBpm: 60, breathingCadenceBpm: 6.0 },
+    elapsedSec: 1.9,
+  });
+  assert.equal(disabledState.enabled, false);
+  assert.equal(disabledState.effectiveChimeIntervalSec, 3.8);
+  assert.equal(disabledState.waveformPoints.length, 48);
+
+  // 2. Heart Rate Sync at 60 BPM -> 4 beats per chime = 4.00s interval (1.000 Hz cardiac frequency)
+  const hr60 = computeCognitiveRhythmSyncState({
+    config: { enabled: true, syncSource: 'heart_rate', restingHeartRateBpm: 60, breathingCadenceBpm: 6.0 },
+    elapsedSec: 1.0,
+  });
+  assert.equal(hr60.enabled, true);
+  assert.equal(hr60.syncSource, 'heart_rate');
+  assert.equal(hr60.restingHeartRateBpm, 60);
+  assert.equal(hr60.effectiveChimeIntervalSec, 4.0);
+  assert.equal(hr60.physiologicalFrequencyHz, 1.0);
+  assert.equal(hr60.chimeFrequencyHz, 0.25);
+  assert.equal(hr60.cyclePhase01, 0.25);
+  assert.ok(hr60.modeBadgeLabel.includes('HR SYNC · 60 BPM (4.00s)'));
+
+  // 3. Heart Rate Sync at 80 BPM -> 4 beats per chime = 3.00s interval
+  const hr80 = computeCognitiveRhythmSyncState({
+    config: { enabled: true, syncSource: 'heart_rate', restingHeartRateBpm: 80, breathingCadenceBpm: 6.0 },
+    elapsedSec: 1.5,
+  });
+  assert.equal(hr80.effectiveChimeIntervalSec, 3.0);
+  assert.equal(hr80.cyclePhase01, 0.5);
+
+  // 4. Breathing Cadence Sync at 6.0 breaths/min (0.1 Hz HRV resonance) -> 5.00s half-cycle chime interval
+  const breath6 = computeCognitiveRhythmSyncState({
+    config: { enabled: true, syncSource: 'breathing_cadence', restingHeartRateBpm: 64, breathingCadenceBpm: 6.0 },
+    elapsedSec: 2.5,
+  });
+  assert.equal(breath6.enabled, true);
+  assert.equal(breath6.syncSource, 'breathing_cadence');
+  assert.equal(breath6.breathingCadenceBpm, 6.0);
+  assert.equal(breath6.effectiveChimeIntervalSec, 5.0);
+  assert.equal(breath6.physiologicalFrequencyHz, 0.1);
+  assert.equal(breath6.cyclePhase01, 0.5);
+  assert.ok(breath6.modeBadgeLabel.includes('BREATH SYNC · 6.0/m (5.00s)'));
+
+  // 5. Sanitizer clamps out-of-range BPM values safely
+  const clamped = sanitizeCognitiveRhythmSyncConfig({
+    enabled: true,
+    syncSource: 'heart_rate',
+    restingHeartRateBpm: 140,
+    breathingCadenceBpm: 2.0,
+  });
+  assert.equal(clamped.restingHeartRateBpm, 100);
+  assert.equal(clamped.breathingCadenceBpm, 4.5);
+  assert.equal(DEFAULT_COGNITIVE_RHYTHM_SYNC_CONFIG.restingHeartRateBpm, 64);
+});
 
 test('SANCTUARY_BLOOM_PRESETS defines Morning Glow, Midnight Forest, and Neural Zenith with distinct intensity defaults and bioluminescent palettes', () => {
   assert.equal(SANCTUARY_BLOOM_PRESET_LIST.length, 3);

@@ -30,12 +30,20 @@ import {
   SANCTUARY_BLOOM_PRESET_LIST,
   getSanctuaryBloomPresetConfig,
   clampSanctuaryBloomIntensityPct,
+  COGNITIVE_RHYTHM_SYNC_STORAGE_KEY,
+  DEFAULT_COGNITIVE_RHYTHM_SYNC_CONFIG,
+  COGNITIVE_RHYTHM_HEART_RATE_PRESETS,
+  COGNITIVE_RHYTHM_BREATH_CADENCE_PRESETS,
+  sanitizeCognitiveRhythmSyncConfig,
+  computeCognitiveRhythmSyncState,
   computeHudFlowPulseState,
   computeAdaptiveDifficultyScaling,
   computeRunningFiveSessionHrvAverage,
   syncDailyHabitTrackerWithStreak,
   toggleDailyHabitExercise,
   type SanctuaryBloomPresetId,
+  type CognitiveRhythmSyncConfig,
+  type CognitiveRhythmSyncSource,
   type DailyHabitExerciseId,
   type DailyHabitTrackerState,
   type NeuralLogEntry,
@@ -212,6 +220,35 @@ export default function App() {
     }
     return DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT;
   });
+  const [rhythmSyncConfig, setRhythmSyncConfig] = useState<CognitiveRhythmSyncConfig>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const forceEnable = params.get('rhythm') === '1';
+      try {
+        const raw = window.localStorage.getItem(COGNITIVE_RHYTHM_SYNC_STORAGE_KEY);
+        if (raw) {
+          const parsed = sanitizeCognitiveRhythmSyncConfig(JSON.parse(raw));
+          return forceEnable ? { ...parsed, enabled: true } : parsed;
+        }
+        const initial: CognitiveRhythmSyncConfig = {
+          ...DEFAULT_COGNITIVE_RHYTHM_SYNC_CONFIG,
+          enabled: forceEnable,
+        };
+        window.localStorage.setItem(COGNITIVE_RHYTHM_SYNC_STORAGE_KEY, JSON.stringify(initial));
+        return initial;
+      } catch {
+        // Ignore storage errors
+      }
+    }
+    return DEFAULT_COGNITIVE_RHYTHM_SYNC_CONFIG;
+  });
+  const [isRhythmCalibratorOpen, setIsRhythmCalibratorOpen] = useState<boolean>(false);
+  const activeRhythmSync = computeCognitiveRhythmSyncState({
+    config: rhythmSyncConfig,
+    elapsedSec: 1.2,
+    sampleCount: 36,
+  });
+
   const [activeProtocol, setActiveProtocol] = useState<ProtocolId>('ufov_forage');
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isBinauralEnabled, setIsBinauralEnabled] = useState<boolean>(true);
@@ -958,6 +995,71 @@ export default function App() {
     }
   };
 
+  const persistRhythmSyncConfig = useCallback((nextConfig: CognitiveRhythmSyncConfig) => {
+    const sanitized = sanitizeCognitiveRhythmSyncConfig(nextConfig);
+    setRhythmSyncConfig(sanitized);
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(COGNITIVE_RHYTHM_SYNC_STORAGE_KEY, JSON.stringify(sanitized));
+      } catch {
+        // Ignore storage errors
+      }
+    }
+  }, []);
+
+  const handleToggleRhythmSync = (e?: React.MouseEvent<HTMLButtonElement>) => {
+    e?.currentTarget.blur();
+    if (!rhythmSyncConfig.enabled) {
+      persistRhythmSyncConfig({ ...rhythmSyncConfig, enabled: true });
+      setIsRhythmCalibratorOpen(true);
+      soundEngine.playLightNote(523.25, 0.16);
+    } else if (!isRhythmCalibratorOpen) {
+      setIsRhythmCalibratorOpen(true);
+    } else {
+      setIsRhythmCalibratorOpen(false);
+    }
+  };
+
+  const handleToggleRhythmSyncActiveState = (e?: React.MouseEvent<HTMLButtonElement>) => {
+    e?.currentTarget.blur();
+    const nextEnabled = !rhythmSyncConfig.enabled;
+    persistRhythmSyncConfig({ ...rhythmSyncConfig, enabled: nextEnabled });
+    if (nextEnabled) {
+      soundEngine.playLightNote(523.25, 0.16);
+    }
+  };
+
+  const handleSelectRhythmSource = (
+    source: CognitiveRhythmSyncSource,
+    e?: React.MouseEvent<HTMLButtonElement>
+  ) => {
+    e?.currentTarget.blur();
+    persistRhythmSyncConfig({
+      ...rhythmSyncConfig,
+      enabled: true,
+      syncSource: source,
+    });
+    soundEngine.playLightNote(source === 'heart_rate' ? 587.33 : 659.25, 0.14);
+  };
+
+  const handleChangeRestingHeartRateBpm = (nextBpm: number) => {
+    persistRhythmSyncConfig({
+      ...rhythmSyncConfig,
+      enabled: true,
+      syncSource: 'heart_rate',
+      restingHeartRateBpm: nextBpm,
+    });
+  };
+
+  const handleChangeBreathingCadenceBpm = (nextCadenceBpm: number) => {
+    persistRhythmSyncConfig({
+      ...rhythmSyncConfig,
+      enabled: true,
+      syncSource: 'breathing_cadence',
+      breathingCadenceBpm: nextCadenceBpm,
+    });
+  };
+
   // Bind [Z] keyboard shortcut during active play to toggle Zen Mode, and [B] for Sanctuary Bloom
   useEffect(() => {
     if (gameState !== 'playing' || isCodexOpen) return;
@@ -1032,6 +1134,7 @@ export default function App() {
         isSanctuaryBloomActive={isSanctuaryBloomActive}
         sanctuaryBloomIntensityPct={sanctuaryBloomIntensityPct}
         sanctuaryBloomPresetId={sanctuaryBloomPresetId}
+        rhythmSyncConfig={rhythmSyncConfig}
         hrvHistory={hrvHistory}
         runningFiveSessionHrvAvgOverride={runningFiveSessionHrvAvgOverride}
       />
@@ -1568,6 +1671,8 @@ export default function App() {
                   data-effective-ufov-window-ms={hud.adaptiveUfovWindowMs}
                   data-running-five-hrv-avg={hud.runningFiveSessionHrvAvg ?? activeAdaptiveScaling.runningFiveSessionHrvAvg}
                   data-adaptive-tier-id={activeAdaptiveScaling.tierId}
+                  data-rhythm-sync-enabled={rhythmSyncConfig.enabled ? 'true' : 'false'}
+                  data-rhythm-chime-interval-sec={activeRhythmSync.effectiveChimeIntervalSec}
                   className="hidden md:flex items-center gap-2 px-2.5 py-1.5 rounded-2xl bg-[#091510]/88 border border-[#233D32] shadow-xl whitespace-nowrap"
                 >
                   <div>
@@ -1586,6 +1691,41 @@ export default function App() {
                       >
                         5-Sess HRV {hud.runningFiveSessionHrvAvg ?? activeAdaptiveScaling.runningFiveSessionHrvAvg}% · {hud.adaptiveUfovWindowMs}ms
                         {runningFiveSessionHrvAvgOverride !== null ? ' [SIM]' : ''}
+                      </button>
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        data-testid="toggle-rhythm-sync-btn"
+                        aria-pressed={rhythmSyncConfig.enabled}
+                        onClick={handleToggleRhythmSync}
+                        title={activeRhythmSync.clinicalSummary}
+                        className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-semibold border transition-colors cursor-pointer flex items-center gap-1 ${
+                          rhythmSyncConfig.enabled
+                            ? 'bg-[#122D26] border-[#4FD1C5] text-[#4FD1C5]'
+                            : 'bg-[#142D23] hover:bg-[#1D4032] border-[#2C4C3E] text-[#A3B8B0] hover:text-[#F4EFE6]'
+                        }`}
+                        style={
+                          rhythmSyncConfig.enabled
+                            ? {
+                                borderColor: activeRhythmSync.primaryColorHex,
+                                color: activeRhythmSync.primaryColorHex,
+                              }
+                            : undefined
+                        }
+                      >
+                        <span
+                          className="w-1.5 h-1.5 rounded-full shrink-0"
+                          style={{
+                            backgroundColor: rhythmSyncConfig.enabled
+                              ? activeRhythmSync.primaryColorHex
+                              : '#526B61',
+                          }}
+                        />
+                        <span data-testid="hud-rhythm-sync-badge-text">
+                          {rhythmSyncConfig.enabled
+                            ? activeRhythmSync.modeBadgeLabel
+                            : `Rhythm Sync · ${activeRhythmSync.effectiveChimeIntervalSec.toFixed(2)}s`}
+                        </span>
                       </button>
                     </div>
                     <div className="flex items-center gap-1 mt-1">
@@ -1898,6 +2038,232 @@ export default function App() {
               </div>
             </div>
           </div>
+
+            {/* COGNITIVE RHYTHM SYNC CALIBRATION PANEL (Resting Heart Rate BPM / Breathing Cadence Entrainment) */}
+            {isRhythmCalibratorOpen && !isZenMode && (
+              <div className="flex justify-end pointer-events-none">
+                <div
+                  data-testid="hud-rhythm-sync-panel"
+                  data-rhythm-enabled={rhythmSyncConfig.enabled ? 'true' : 'false'}
+                  data-rhythm-source={rhythmSyncConfig.syncSource}
+                  data-chime-interval-sec={activeRhythmSync.effectiveChimeIntervalSec}
+                  className="w-full max-w-xl rounded-2xl bg-[#091510]/94 border border-[#2C4C3E] p-3 shadow-2xl pointer-events-auto space-y-2"
+                  style={{
+                    borderColor: rhythmSyncConfig.enabled
+                      ? activeRhythmSync.primaryColorHex
+                      : '#2C4C3E',
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-2 whitespace-nowrap">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className="w-2 h-2 rounded-full shrink-0"
+                        style={{
+                          backgroundColor: rhythmSyncConfig.enabled
+                            ? activeRhythmSync.primaryColorHex
+                            : '#526B61',
+                        }}
+                      />
+                      <span className="text-[10.5px] font-mono font-bold uppercase tracking-wider text-[#F4EFE6]">
+                        Rhythm Sync Calibration
+                      </span>
+                      <span
+                        data-testid="rhythm-sync-chime-interval-value"
+                        className="px-1.5 py-0.5 rounded bg-[#132A21] border border-[#2C4C3E] text-[9.5px] font-mono font-semibold tabular-nums"
+                        style={{ color: activeRhythmSync.primaryColorHex }}
+                      >
+                        Chime Every {activeRhythmSync.effectiveChimeIntervalSec.toFixed(2)}s ({activeRhythmSync.chimeFrequencyHz.toFixed(2)} Hz)
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        data-testid="rhythm-sync-enable-toggle"
+                        aria-pressed={rhythmSyncConfig.enabled}
+                        onClick={handleToggleRhythmSyncActiveState}
+                        className={`px-2 py-0.5 rounded text-[9.5px] font-mono font-semibold border transition-colors cursor-pointer ${
+                          rhythmSyncConfig.enabled
+                            ? 'bg-[#17362B] text-[#68D391] border-[#68D391]'
+                            : 'bg-[#132A21] text-[#A3B8B0] border-[#2C4C3E] hover:text-[#F4EFE6]'
+                        }`}
+                      >
+                        {rhythmSyncConfig.enabled ? 'Sync: ACTIVE' : 'Sync: OFF'}
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="close-rhythm-sync-panel-btn"
+                        aria-label="Close Cognitive Rhythm Sync Panel"
+                        onClick={() => setIsRhythmCalibratorOpen(false)}
+                        className="px-2 py-0.5 rounded text-[9.5px] font-mono text-[#A3B8B0] hover:text-[#F4EFE6] bg-[#132A21] border border-[#2C4C3E] cursor-pointer"
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Calibration Source Tabs: Resting Heart Rate vs Breathing Cadence */}
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      data-testid="rhythm-source-heart_rate"
+                      aria-pressed={rhythmSyncConfig.syncSource === 'heart_rate'}
+                      onClick={(e) => handleSelectRhythmSource('heart_rate', e)}
+                      className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[10px] font-mono font-semibold border transition-colors cursor-pointer ${
+                        rhythmSyncConfig.syncSource === 'heart_rate'
+                          ? 'bg-[#122D26] text-[#4FD1C5] border-[#4FD1C5]'
+                          : 'bg-[#11231C] text-[#A3B8B0] border-[#233D32] hover:text-[#F4EFE6]'
+                      }`}
+                    >
+                      <span>♥ Resting Heart Rate (BPM)</span>
+                      <span className="tabular-nums font-bold">{rhythmSyncConfig.restingHeartRateBpm} BPM</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      data-testid="rhythm-source-breathing_cadence"
+                      aria-pressed={rhythmSyncConfig.syncSource === 'breathing_cadence'}
+                      onClick={(e) => handleSelectRhythmSource('breathing_cadence', e)}
+                      className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[10px] font-mono font-semibold border transition-colors cursor-pointer ${
+                        rhythmSyncConfig.syncSource === 'breathing_cadence'
+                          ? 'bg-[#143022] text-[#68D391] border-[#68D391]'
+                          : 'bg-[#11231C] text-[#A3B8B0] border-[#233D32] hover:text-[#F4EFE6]'
+                      }`}
+                    >
+                      <span>≈ Breathing Cadence (RSA)</span>
+                      <span className="tabular-nums font-bold">{rhythmSyncConfig.breathingCadenceBpm.toFixed(1)}/min</span>
+                    </button>
+                  </div>
+
+                  {/* Calibration Slider + Presets for Active Source */}
+                  {rhythmSyncConfig.syncSource === 'heart_rate' ? (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <label
+                          htmlFor="rhythm-sync-hr-slider"
+                          className="text-[10px] font-mono text-[#A3B8B0] shrink-0"
+                        >
+                          Resting HR:
+                        </label>
+                        <input
+                          id="rhythm-sync-hr-slider"
+                          type="range"
+                          min={45}
+                          max={100}
+                          step={1}
+                          value={rhythmSyncConfig.restingHeartRateBpm}
+                          onChange={(e) => handleChangeRestingHeartRateBpm(Number(e.target.value))}
+                          data-testid="rhythm-sync-bpm-slider"
+                          aria-label="Calibrate Resting Heart Rate BPM"
+                          className="flex-1 h-1.5 bg-[#0D1E17] rounded-lg accent-[#4FD1C5] cursor-pointer"
+                        />
+                        <span
+                          data-testid="rhythm-sync-active-bpm-readout"
+                          className="text-[11px] font-mono font-bold text-[#4FD1C5] tabular-nums w-14 text-right"
+                        >
+                          {rhythmSyncConfig.restingHeartRateBpm} BPM
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {COGNITIVE_RHYTHM_HEART_RATE_PRESETS.map((bpm) => {
+                          const isSelected = rhythmSyncConfig.restingHeartRateBpm === bpm;
+                          return (
+                            <button
+                              key={bpm}
+                              type="button"
+                              data-testid={`rhythm-hr-preset-${bpm}`}
+                              onClick={() => handleChangeRestingHeartRateBpm(bpm)}
+                              className={`flex-1 py-0.5 rounded text-[9.5px] font-mono font-semibold border transition-colors whitespace-nowrap cursor-pointer ${
+                                isSelected
+                                  ? 'bg-[#16382E] text-[#4FD1C5] border-[#4FD1C5]'
+                                  : 'bg-[#0E1E18] text-[#A3B8B0] border-[#233D32] hover:text-[#F4EFE6]'
+                              }`}
+                            >
+                              {bpm} BPM
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <label
+                          htmlFor="rhythm-sync-breath-slider"
+                          className="text-[10px] font-mono text-[#A3B8B0] shrink-0"
+                        >
+                          Breathing:
+                        </label>
+                        <input
+                          id="rhythm-sync-breath-slider"
+                          type="range"
+                          min={4.5}
+                          max={12.0}
+                          step={0.5}
+                          value={rhythmSyncConfig.breathingCadenceBpm}
+                          onChange={(e) => handleChangeBreathingCadenceBpm(Number(e.target.value))}
+                          data-testid="rhythm-sync-bpm-slider"
+                          aria-label="Calibrate Breathing Cadence Breaths Per Minute"
+                          className="flex-1 h-1.5 bg-[#0D1E17] rounded-lg accent-[#68D391] cursor-pointer"
+                        />
+                        <span
+                          data-testid="rhythm-sync-active-bpm-readout"
+                          className="text-[11px] font-mono font-bold text-[#68D391] tabular-nums w-14 text-right"
+                        >
+                          {rhythmSyncConfig.breathingCadenceBpm.toFixed(1)}/m
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {COGNITIVE_RHYTHM_BREATH_CADENCE_PRESETS.map((cadence) => {
+                          const isSelected = Math.abs(rhythmSyncConfig.breathingCadenceBpm - cadence) < 0.05;
+                          return (
+                            <button
+                              key={cadence}
+                              type="button"
+                              data-testid={`rhythm-breath-preset-${cadence}`}
+                              onClick={() => handleChangeBreathingCadenceBpm(cadence)}
+                              className={`flex-1 py-0.5 rounded text-[9.5px] font-mono font-semibold border transition-colors whitespace-nowrap cursor-pointer ${
+                                isSelected
+                                  ? 'bg-[#163827] text-[#68D391] border-[#68D391]'
+                                  : 'bg-[#0E1E18] text-[#A3B8B0] border-[#233D32] hover:text-[#F4EFE6]'
+                              }`}
+                            >
+                              {cadence.toFixed(1)}/m
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Live Mini-Waveform Preview & Clinical Entrainment Note */}
+                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-[#1E352B]">
+                    <span className="text-[9.5px] font-mono text-[#A3B8B0] whitespace-nowrap">
+                      {rhythmSyncConfig.syncSource === 'heart_rate'
+                        ? `Baroreflex Entrainment: 1 chime / 4 beats (${rhythmSyncConfig.restingHeartRateBpm} BPM · ${activeRhythmSync.physiologicalFrequencyHz.toFixed(2)} Hz)`
+                        : `Vagal RSA Entrainment: 1 chime / half-breath (${rhythmSyncConfig.breathingCadenceBpm.toFixed(1)}/min · ${activeRhythmSync.physiologicalFrequencyHz.toFixed(2)} Hz)`}
+                    </span>
+                    <svg
+                      viewBox="0 0 120 24"
+                      data-testid="rhythm-sync-mini-waveform"
+                      className="w-28 h-5 shrink-0 overflow-visible"
+                    >
+                      <polyline
+                        fill="none"
+                        stroke={activeRhythmSync.primaryColorHex}
+                        strokeWidth="1.8"
+                        points={activeRhythmSync.waveformPoints
+                          .map(
+                            (pt) =>
+                              `${(pt.normalizedX * 120).toFixed(1)},${(12 - pt.displacementY * 9).toFixed(1)}`
+                          )
+                          .join(' ')}
+                      />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* INTERACTIVE HOW-TO-PLAY DEMO WALKTHROUGH OVERLAY (when isDemoMode === true) */}
             {isDemoMode && (

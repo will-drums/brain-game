@@ -15,6 +15,7 @@ import {
   createInitialChimeHistoryForNBack,
   computeLocalNBackSuccessRate,
   computeTreeFloweringState,
+  computeCognitiveRhythmSyncState,
   SANCTUARY_STAGES,
   CHIME_SYMBOLS,
   type HrvSessionRecord,
@@ -29,6 +30,7 @@ import {
   type AdaptiveFlowTier,
   type SanctuaryAtmosphereId,
   type SanctuaryBloomPresetId,
+  type CognitiveRhythmSyncConfig,
 } from '../game/rules';
 import { soundEngine } from '../game/audio';
 
@@ -75,6 +77,9 @@ export interface HudSnapshot {
   localNBackSuccessPct?: number;
   treeTendrilCount?: number;
   floweringTreesCount?: number;
+  rhythmSyncEnabled?: boolean;
+  rhythmChimeIntervalSec?: number;
+  rhythmModeBadgeLabel?: string;
 }
 
 interface SanctuaryCanvasProps {
@@ -99,6 +104,7 @@ interface SanctuaryCanvasProps {
   isSanctuaryBloomActive?: boolean;
   sanctuaryBloomIntensityPct?: number;
   sanctuaryBloomPresetId?: SanctuaryBloomPresetId;
+  rhythmSyncConfig?: CognitiveRhythmSyncConfig;
   hrvHistory?: HrvSessionRecord[];
   runningFiveSessionHrvAvgOverride?: number | null;
 }
@@ -202,6 +208,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
   isSanctuaryBloomActive = false,
   sanctuaryBloomIntensityPct = 100,
   sanctuaryBloomPresetId = 'neural_zenith',
+  rhythmSyncConfig,
   hrvHistory,
   runningFiveSessionHrvAvgOverride = null,
 }) => {
@@ -227,6 +234,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
     isSanctuaryBloomActive,
     sanctuaryBloomIntensityPct,
     sanctuaryBloomPresetId,
+    rhythmSyncConfig,
     hrvHistory,
     runningFiveSessionHrvAvgOverride,
   });
@@ -250,6 +258,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       isSanctuaryBloomActive,
       sanctuaryBloomIntensityPct,
       sanctuaryBloomPresetId,
+      rhythmSyncConfig,
       hrvHistory,
       runningFiveSessionHrvAvgOverride,
     };
@@ -271,6 +280,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
     isSanctuaryBloomActive,
     sanctuaryBloomIntensityPct,
     sanctuaryBloomPresetId,
+    rhythmSyncConfig,
     hrvHistory,
     runningFiveSessionHrvAvgOverride,
   ]);
@@ -1582,8 +1592,14 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
             chimeHistory = createInitialChimeHistoryForNBack(liveAdaptiveScaling.effectiveNBackLevel);
             chimeMatchClaimedThisBeat = false;
           }
+          const simRhythmSync = computeCognitiveRhythmSyncState({
+            config: stateRef.current.rhythmSyncConfig,
+            elapsedSec: stageElapsedSec,
+            defaultChimeIntervalSec: CHIME_INTERVAL_SEC,
+            sampleCount: 16,
+          });
           chimeCycleTimer += simDt;
-          if (chimeCycleTimer >= CHIME_INTERVAL_SEC) {
+          if (chimeCycleTimer >= simRhythmSync.effectiveChimeIntervalSec) {
             chimeCycleTimer = 0;
             chimeMatchClaimedThisBeat = false;
             const nextSym = generateNextChimeSymbol(
@@ -1815,9 +1831,20 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       canvas.dataset.bloomIntensityPct = String(bloomEffect.userIntensityPct);
       canvas.dataset.bloomPresetId = bloomEffect.presetId;
       canvas.dataset.bloomPrimaryHex = bloomEffect.colorPalette.primaryHex;
+      const rhythmSyncState = computeCognitiveRhythmSyncState({
+        config: stateRef.current.rhythmSyncConfig,
+        elapsedSec: stageElapsedSec,
+        defaultChimeIntervalSec: CHIME_INTERVAL_SEC,
+        sampleCount: 56,
+      });
       canvas.dataset.effectiveNbackLevel = String(renderAdaptiveScaling.effectiveNBackLevel);
       canvas.dataset.effectiveUfovWindowMs = String(renderAdaptiveScaling.effectiveUfovWindowMs);
       canvas.dataset.runningFiveHrvAvg = String(renderAdaptiveScaling.runningFiveSessionHrvAvg);
+      canvas.dataset.rhythmSyncEnabled = rhythmSyncState.enabled ? 'true' : 'false';
+      canvas.dataset.rhythmSyncSource = rhythmSyncState.syncSource;
+      canvas.dataset.rhythmChimeIntervalSec = String(rhythmSyncState.effectiveChimeIntervalSec);
+      canvas.dataset.rhythmHeartRateBpm = String(rhythmSyncState.restingHeartRateBpm);
+      canvas.dataset.rhythmBreathingBpm = String(rhythmSyncState.breathingCadenceBpm);
 
       ctx.save();
       ctx.scale(currentDpr, currentDpr);
@@ -1844,6 +1871,117 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       ctx.beginPath();
       ctx.arc(0, -40, 820, 0, Math.PI * 2);
       ctx.fill();
+
+      // 1B. Background 'Cognitive Rhythm Sync' Bioluminescent Waveform Visualizer
+      if (rhythmSyncState.enabled && rhythmSyncState.waveformPoints.length > 1) {
+        ctx.save();
+        const waveLeftX = -620;
+        const waveRightX = 620;
+        const waveWidth = waveRightX - waveLeftX;
+        const waveCenterY = -40;
+        const primaryAmpPx = 86;
+        const harmonicAmpPx = 56;
+
+        // Subtle horizontal neuro-oscilloscope reference rails
+        ctx.strokeStyle = 'rgba(163, 184, 176, 0.12)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([6, 8]);
+        for (const offsetY of [-60, 0, 60]) {
+          ctx.beginPath();
+          ctx.moveTo(waveLeftX, waveCenterY + offsetY);
+          ctx.lineTo(waveRightX, waveCenterY + offsetY);
+          ctx.stroke();
+        }
+        ctx.setLineDash([]);
+
+        // Soft glowing fill under primary physiological waveform
+        const waveFillGrad = ctx.createLinearGradient(
+          0,
+          waveCenterY - primaryAmpPx,
+          0,
+          waveCenterY + primaryAmpPx
+        );
+        waveFillGrad.addColorStop(0, rhythmSyncState.glowRgba);
+        waveFillGrad.addColorStop(0.5, 'rgba(15, 38, 29, 0.06)');
+        waveFillGrad.addColorStop(1, rhythmSyncState.glowRgba);
+
+        ctx.fillStyle = waveFillGrad;
+        ctx.beginPath();
+        ctx.moveTo(waveLeftX, waveCenterY);
+        for (const pt of rhythmSyncState.waveformPoints) {
+          const wx = waveLeftX + pt.normalizedX * waveWidth;
+          const wy = waveCenterY - pt.displacementY * primaryAmpPx;
+          ctx.lineTo(wx, wy);
+        }
+        ctx.lineTo(waveRightX, waveCenterY);
+        ctx.closePath();
+        ctx.fill();
+
+        // Secondary Vagal Harmonic Trace (dashed)
+        ctx.strokeStyle = rhythmSyncState.secondaryColorHex;
+        ctx.globalAlpha = 0.42;
+        ctx.lineWidth = 2.0;
+        ctx.setLineDash([8, 6]);
+        ctx.beginPath();
+        rhythmSyncState.waveformPoints.forEach((pt, idx) => {
+          const wx = waveLeftX + pt.normalizedX * waveWidth;
+          const wy = waveCenterY - pt.harmonicY * harmonicAmpPx;
+          if (idx === 0) ctx.moveTo(wx, wy);
+          else ctx.lineTo(wx, wy);
+        });
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Primary Physiological Entrainment Trace (Heart Rate Baroreflex or Breathing RSA)
+        ctx.globalAlpha = 0.78;
+        ctx.strokeStyle = rhythmSyncState.primaryColorHex;
+        ctx.lineWidth = 3.2;
+        ctx.beginPath();
+        rhythmSyncState.waveformPoints.forEach((pt, idx) => {
+          const wx = waveLeftX + pt.normalizedX * waveWidth;
+          const wy = waveCenterY - pt.displacementY * primaryAmpPx;
+          if (idx === 0) ctx.moveTo(wx, wy);
+          else ctx.lineTo(wx, wy);
+        });
+        ctx.stroke();
+
+        // Luminous Synaptic Nodes at regular intervals along the primary wave
+        ctx.fillStyle = '#FFFDF9';
+        for (let i = 0; i < rhythmSyncState.waveformPoints.length; i += 7) {
+          const pt = rhythmSyncState.waveformPoints[i];
+          const wx = waveLeftX + pt.normalizedX * waveWidth;
+          const wy = waveCenterY - pt.displacementY * primaryAmpPx;
+          ctx.beginPath();
+          ctx.arc(wx, wy, 3.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Sweeping N-Back Chime Beat Phase Cursor across the Waveform Horizon
+        const chimeBeatProgress = Math.max(
+          0,
+          Math.min(1, chimeCycleTimer / Math.max(0.5, rhythmSyncState.effectiveChimeIntervalSec))
+        );
+        const cursorX = waveLeftX + chimeBeatProgress * waveWidth;
+        ctx.globalAlpha = 0.58;
+        ctx.strokeStyle = rhythmSyncState.secondaryColorHex;
+        ctx.lineWidth = 1.75;
+        ctx.beginPath();
+        ctx.moveTo(cursorX, waveCenterY - primaryAmpPx - 14);
+        ctx.lineTo(cursorX, waveCenterY + primaryAmpPx + 14);
+        ctx.stroke();
+
+        // Diegetic Background Telemetry Label
+        ctx.globalAlpha = 0.75;
+        ctx.font = '600 10px "JetBrains Mono", monospace';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = rhythmSyncState.primaryColorHex;
+        ctx.fillText(
+          `◈ COGNITIVE RHYTHM SYNC · ${rhythmSyncState.modeBadgeLabel} · ${rhythmSyncState.physiologicalFrequencyHz.toFixed(2)} Hz`,
+          waveLeftX + 8,
+          waveCenterY - primaryAmpPx - 18
+        );
+        ctx.restore();
+      }
 
       // Subtle Botanical Stone Paths connecting Central Heart-Tree to Dormant Trees
       for (const tree of trees) {
@@ -2729,6 +2867,9 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
           localNBackSuccessPct: Math.round(liveLocalNBackSuccessRate * 100),
           treeTendrilCount: representativeFlowerState.tendrilCount,
           floweringTreesCount: activeFloweringTreesCount,
+          rhythmSyncEnabled: rhythmSyncState.enabled,
+          rhythmChimeIntervalSec: rhythmSyncState.effectiveChimeIntervalSec,
+          rhythmModeBadgeLabel: rhythmSyncState.modeBadgeLabel,
         });
       }
     };

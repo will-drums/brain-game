@@ -2896,3 +2896,205 @@ export function computeCodexModalAnimationState(
     easingCurve: CLINICAL_CODEX_EASING_CURVE,
   };
 }
+
+/**
+ * 'Cognitive Rhythm Sync' Mode & Background Waveform Visualizer Engine
+ * Allows users to calibrate their N-Back chime frequency to match either:
+ *  - Personal Resting Heart Rate (45..100 BPM -> 1 chime every 4 cardiac beats)
+ *  - Desired Resonance Breathing Cadence (4.5..12.0 Breaths/Min -> 1 chime per inhale/exhale half-cycle)
+ * Generates a real-time dual-trace physiological waveform for the background canvas visualizer.
+ */
+export const COGNITIVE_RHYTHM_SYNC_STORAGE_KEY = 'sylvan_synapse_rhythm_sync_v1';
+export const DEFAULT_CHIME_INTERVAL_SEC = 3.8;
+
+export type CognitiveRhythmSyncSource = 'heart_rate' | 'breathing_cadence';
+
+export interface CognitiveRhythmSyncConfig {
+  enabled: boolean;
+  syncSource: CognitiveRhythmSyncSource;
+  restingHeartRateBpm: number; // 45 .. 100 BPM
+  breathingCadenceBpm: number; // 4.5 .. 12.0 breaths/min
+}
+
+export const DEFAULT_COGNITIVE_RHYTHM_SYNC_CONFIG: CognitiveRhythmSyncConfig = {
+  enabled: false,
+  syncSource: 'heart_rate',
+  restingHeartRateBpm: 64, // 64 BPM -> 4 cardiac beats = 3.75s N-Back chime interval
+  breathingCadenceBpm: 6.0, // 6.0 breaths/min (0.1 Hz HRV resonance) -> 5.00s half-breath chime interval
+};
+
+export const COGNITIVE_RHYTHM_HEART_RATE_PRESETS = [52, 60, 64, 72, 80] as const;
+export const COGNITIVE_RHYTHM_BREATH_CADENCE_PRESETS = [5.0, 5.5, 6.0, 7.5, 10.0] as const;
+
+export function sanitizeCognitiveRhythmSyncConfig(
+  raw: unknown,
+  fallback: CognitiveRhythmSyncConfig = DEFAULT_COGNITIVE_RHYTHM_SYNC_CONFIG
+): CognitiveRhythmSyncConfig {
+  if (!raw || typeof raw !== 'object') {
+    return { ...fallback };
+  }
+  const obj = raw as Partial<CognitiveRhythmSyncConfig>;
+  const enabled = typeof obj.enabled === 'boolean' ? obj.enabled : fallback.enabled;
+  const syncSource: CognitiveRhythmSyncSource =
+    obj.syncSource === 'breathing_cadence' || obj.syncSource === 'heart_rate'
+      ? obj.syncSource
+      : fallback.syncSource;
+
+  const rawHr = typeof obj.restingHeartRateBpm === 'number' ? obj.restingHeartRateBpm : Number(obj.restingHeartRateBpm);
+  const restingHeartRateBpm = Number.isFinite(rawHr)
+    ? Math.max(45, Math.min(100, Math.round(rawHr)))
+    : fallback.restingHeartRateBpm;
+
+  const rawBreath =
+    typeof obj.breathingCadenceBpm === 'number' ? obj.breathingCadenceBpm : Number(obj.breathingCadenceBpm);
+  const breathingCadenceBpm = Number.isFinite(rawBreath)
+    ? Math.max(4.5, Math.min(12.0, Math.round(rawBreath * 2) / 2))
+    : fallback.breathingCadenceBpm;
+
+  return {
+    enabled,
+    syncSource,
+    restingHeartRateBpm,
+    breathingCadenceBpm,
+  };
+}
+
+export interface RhythmWaveformSamplePoint {
+  normalizedX: number; // 0.0 .. 1.0 across the background horizon
+  displacementY: number; // -1.0 .. 1.0 primary physiological wave
+  harmonicY: number; // -1.0 .. 1.0 secondary vagal harmonic wave
+}
+
+export interface CognitiveRhythmSyncState {
+  enabled: boolean;
+  syncSource: CognitiveRhythmSyncSource;
+  restingHeartRateBpm: number;
+  breathingCadenceBpm: number;
+  effectiveChimeIntervalSec: number;
+  chimeFrequencyHz: number;
+  physiologicalFrequencyHz: number;
+  cyclePhase01: number;
+  primaryColorHex: string;
+  secondaryColorHex: string;
+  glowRgba: string;
+  modeBadgeLabel: string;
+  clinicalSummary: string;
+  waveformPoints: RhythmWaveformSamplePoint[];
+}
+
+export function computeCognitiveRhythmSyncState(params: {
+  config?: Partial<CognitiveRhythmSyncConfig> | null;
+  elapsedSec: number;
+  defaultChimeIntervalSec?: number;
+  sampleCount?: number;
+}): CognitiveRhythmSyncState {
+  const config = sanitizeCognitiveRhythmSyncConfig(params.config);
+  const baseInterval = Math.max(
+    1.5,
+    Number.isFinite(params.defaultChimeIntervalSec)
+      ? Number(params.defaultChimeIntervalSec)
+      : DEFAULT_CHIME_INTERVAL_SEC
+  );
+  const safeElapsed = Math.max(0, Number.isFinite(params.elapsedSec) ? params.elapsedSec : 0);
+  const sampleCount = Math.max(12, Math.min(96, Math.round(params.sampleCount ?? 48)));
+
+  let effectiveChimeIntervalSec = baseInterval;
+  let physiologicalFrequencyHz = Math.round((1 / baseInterval) * 1000) / 1000;
+  let primaryColorHex = '#4FD1C5';
+  let secondaryColorHex = '#F2B84B';
+  let glowRgba = 'rgba(79, 209, 197, 0.28)';
+  let modeBadgeLabel = `STD CHIME · ${baseInterval.toFixed(2)}s`;
+  let clinicalSummary =
+    'Standard N-Back working memory chime cadence (3.80s interval). Enable Rhythm Sync to entrain chimes to your resting heart rate or breathing cadence.';
+
+  if (config.enabled) {
+    if (config.syncSource === 'heart_rate') {
+      // 1 N-Back chime every 4 cardiac beats (4-beat baroreflex working-memory phrase)
+      const beatPeriodSec = 60 / config.restingHeartRateBpm;
+      effectiveChimeIntervalSec =
+        Math.round(Math.max(2.0, Math.min(5.5, beatPeriodSec * 4)) * 100) / 100;
+      physiologicalFrequencyHz =
+        Math.round((config.restingHeartRateBpm / 60) * 1000) / 1000;
+      primaryColorHex = '#4FD1C5';
+      secondaryColorHex = '#F2B84B';
+      glowRgba = 'rgba(79, 209, 197, 0.34)';
+      modeBadgeLabel = `HR SYNC · ${config.restingHeartRateBpm} BPM (${effectiveChimeIntervalSec.toFixed(2)}s)`;
+      clinicalSummary = `Cardiac Baroreflex Entrainment: 1 N-Back chime every 4 heartbeats at ${config.restingHeartRateBpm} BPM (${effectiveChimeIntervalSec.toFixed(2)}s interval · ${physiologicalFrequencyHz.toFixed(2)} Hz).`;
+    } else {
+      // 1 N-Back chime per half-breath phase transition (Inhale peak & Exhale trough)
+      const halfBreathSec = 30 / config.breathingCadenceBpm;
+      effectiveChimeIntervalSec =
+        Math.round(Math.max(2.2, Math.min(6.8, halfBreathSec)) * 100) / 100;
+      physiologicalFrequencyHz =
+        Math.round((config.breathingCadenceBpm / 60) * 1000) / 1000;
+      primaryColorHex = '#68D391';
+      secondaryColorHex = '#81E6D9';
+      glowRgba = 'rgba(104, 211, 145, 0.34)';
+      modeBadgeLabel = `BREATH SYNC · ${config.breathingCadenceBpm.toFixed(1)}/m (${effectiveChimeIntervalSec.toFixed(2)}s)`;
+      clinicalSummary = `Respiratory Vagal Entrainment: 1 N-Back chime per inhale/exhale inflection at ${config.breathingCadenceBpm.toFixed(1)} breaths/min (${effectiveChimeIntervalSec.toFixed(2)}s interval · ${physiologicalFrequencyHz.toFixed(3)} Hz).`;
+    }
+  }
+
+  const chimeFrequencyHz = Math.round((1 / effectiveChimeIntervalSec) * 1000) / 1000;
+  const cyclePhase01 =
+    Math.round(((safeElapsed % effectiveChimeIntervalSec) / effectiveChimeIntervalSec) * 1000) /
+    1000;
+
+  const waveformPoints: RhythmWaveformSamplePoint[] = [];
+  for (let i = 0; i < sampleCount; i++) {
+    const normalizedX = Math.round((i / (sampleCount - 1)) * 1000) / 1000;
+    if (config.syncSource === 'heart_rate') {
+      // Arterial pulse wave + systolic peak + dicrotic notch modulated by restingHeartRateBpm
+      const waveCyclesAcrossScreen = 4.0;
+      const phase =
+        normalizedX * Math.PI * 2 * waveCyclesAcrossScreen -
+        safeElapsed * physiologicalFrequencyHz * Math.PI * 2;
+      const carrier = Math.sin(phase) * 0.52;
+      const systolicPulse = Math.pow(Math.max(0, Math.sin(phase)), 3) * 0.42;
+      const dicroticNotch = Math.sin(phase * 2 - 0.85) * 0.16;
+      const displacementY =
+        Math.round(Math.max(-1, Math.min(1, carrier + systolicPulse + dicroticNotch)) * 1000) /
+        1000;
+      const harmonicY =
+        Math.round(
+          Math.max(-1, Math.min(1, Math.cos(phase * 0.5 + 0.4) * 0.48 + Math.sin(phase) * 0.22)) *
+            1000
+        ) / 1000;
+      waveformPoints.push({ normalizedX, displacementY, harmonicY });
+    } else {
+      // Smooth Respiratory Sinus Arrhythmia (RSA) tidal wave + vagal harmonic overtone
+      const breathCyclesAcrossScreen = 2.5;
+      const phase =
+        normalizedX * Math.PI * 2 * breathCyclesAcrossScreen -
+        safeElapsed * (1 / effectiveChimeIntervalSec) * Math.PI;
+      const displacementY =
+        Math.round(
+          Math.max(-1, Math.min(1, Math.sin(phase) * 0.74 + Math.sin(phase * 2) * 0.18)) * 1000
+        ) / 1000;
+      const harmonicY =
+        Math.round(
+          Math.max(-1, Math.min(1, Math.cos(phase - 0.6) * 0.52 + Math.sin(phase * 3) * 0.12)) *
+            1000
+        ) / 1000;
+      waveformPoints.push({ normalizedX, displacementY, harmonicY });
+    }
+  }
+
+  return {
+    enabled: config.enabled,
+    syncSource: config.syncSource,
+    restingHeartRateBpm: config.restingHeartRateBpm,
+    breathingCadenceBpm: config.breathingCadenceBpm,
+    effectiveChimeIntervalSec,
+    chimeFrequencyHz,
+    physiologicalFrequencyHz,
+    cyclePhase01,
+    primaryColorHex,
+    secondaryColorHex,
+    glowRgba,
+    modeBadgeLabel,
+    clinicalSummary,
+    waveformPoints,
+  };
+}
+
