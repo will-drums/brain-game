@@ -7,6 +7,7 @@ import {
   evaluateCognitiveSummary,
   computeDifficultyRamp,
   getSanctuaryAestheticConfig,
+  computeAdaptiveFlowState,
   SANCTUARY_STAGES,
   CHIME_SYMBOLS,
   type ChimeSymbol,
@@ -16,6 +17,7 @@ import {
   type HazardArchetype,
   type CognitiveSummary,
   type CognitiveMilestoneId,
+  type AdaptiveFlowTier,
 } from '../game/rules';
 import { soundEngine } from '../game/audio';
 
@@ -45,6 +47,10 @@ export interface HudSnapshot {
   rejuvenationScore: number;
   statusBannerText: string;
   demoStepIndex: number;
+  flowMultiplier: number;
+  flowStreak: number;
+  adaptiveUfovWindowMs: number;
+  flowTier: AdaptiveFlowTier;
 }
 
 interface SanctuaryCanvasProps {
@@ -367,9 +373,46 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
     let ufovAttempts = 0;
     let nBackHits = 0;
     let nBackAttempts = 0;
+    let consecutiveCognitiveHits = 0;
     let coherenceSeconds = 0;
     let statusBannerText = 'Explore the Mossy Glade · Harvest Golden Dew (Space) · Match Echo Chimes (E) · Graft Neural Trees (Q)';
     let statusBannerTimer = 6.0;
+
+    // Zero-GC Floating World-Space Telemetry Callouts
+    const MAX_CALLOUTS = 14;
+    const callouts: Array<{
+      active: boolean;
+      x: number;
+      y: number;
+      vy: number;
+      life: number;
+      maxLife: number;
+      text: string;
+      colorHex: string;
+    }> = Array.from({ length: MAX_CALLOUTS }, () => ({
+      active: false,
+      x: 0,
+      y: 0,
+      vy: -38,
+      life: 0,
+      maxLife: 1.25,
+      text: '',
+      colorHex: '#F2B84B',
+    }));
+    let calloutCursor = 0;
+
+    const spawnFloatingCallout = (x: number, y: number, text: string, colorHex: string) => {
+      const c = callouts[calloutCursor];
+      calloutCursor = (calloutCursor + 1) % MAX_CALLOUTS;
+      c.active = true;
+      c.x = x;
+      c.y = y - 24;
+      c.vy = -38;
+      c.life = 0;
+      c.maxLife = 1.3;
+      c.text = text;
+      c.colorHex = colorHex;
+    };
 
     // N-Back Totem Sequence State
     let chimeHistory: ChimeSymbol[] = ['SUN', 'LEAF', 'SUN'];
@@ -448,7 +491,9 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       ufovAttempts = 0;
       nBackHits = 0;
       nBackAttempts = 0;
+      consecutiveCognitiveHits = 0;
       coherenceSeconds = 0;
+      for (const c of callouts) c.active = false;
       demoStepIndex = 0;
       demoStepElapsed = 0;
       demoSubActionTriggered = false;
@@ -644,31 +689,42 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       spawnParticles(player.x, player.y, 10, 0, 50, 150, 2.5, 5, 0.5);
 
       // 1. Check nearby Dew-Blooms / UFOV Shrines
+      const stage = SANCTUARY_STAGES[stateRef.current.stageIndex] || SANCTUARY_STAGES[0];
+      const flowState = computeAdaptiveFlowState({
+        consecutiveCognitiveHits,
+        coherenceSeconds,
+        baseUfovFlashSec: stage.ufovFlashDurationSec,
+      });
+
       for (const bloom of blooms) {
         if (bloom.respawnTimer > 0) continue;
         const dist = Math.hypot(bloom.x - player.x, bloom.y - player.y);
         if (dist <= 135) {
           bloom.respawnTimer = 8.5;
-          player.nectar += bloom.nectarAmount;
+          const gained = Math.round(bloom.nectarAmount * flowState.flowMultiplier);
+          player.nectar += gained;
           spawnParticles(bloom.x, bloom.y, 16, 0, 60, 190, 3, 6, 0.7);
+          spawnFloatingCallout(bloom.x, bloom.y, `+${gained} BDNF NECTAR`, '#F2B84B');
 
           if (bloom.isUfovShrine && !ufovChallenge.active) {
-            // Trigger ACTIVE-trial Useful Field of View (UFOV) peripheral flash!
-            const stage = SANCTUARY_STAGES[stateRef.current.stageIndex] || SANCTUARY_STAGES[0];
+            // Trigger ACTIVE-trial Useful Field of View (UFOV) peripheral flash with Adaptive Staircase window!
+            const sec = Math.floor(Math.random() * 8);
             ufovChallenge = {
               active: true,
               centerSymbol: CHIME_SYMBOLS[Math.floor(Math.random() * CHIME_SYMBOLS.length)],
-              peripheralSector: Math.floor(Math.random() * 8),
-              flashTimer: stage.ufovFlashDurationSec,
+              peripheralSector: sec,
+              flashTimer: flowState.adaptiveUfovWindowMs / 1000,
               awaitingSelection: true,
               shrineX: bloom.x,
               shrineY: bloom.y,
             };
+            const secAngle = (sec * Math.PI) / 4 - Math.PI / 2;
+            soundEngine.playLightNote(698.46, 0.25, Math.cos(secAngle) * 0.75);
             soundEngine.playHarmonicChord('ufov');
-            statusBannerText = 'UFOV Divided Attention! Spot the peripheral firefly direction & click its compass sector (+25 Nectar)';
+            statusBannerText = `UFOV Divided Attention (${flowState.adaptiveUfovWindowMs}ms Window)! Spot peripheral firefly & click compass sector`;
             statusBannerTimer = 4.5;
           } else {
-            statusBannerText = `+${bloom.nectarAmount} BDNF Nectar harvested!`;
+            statusBannerText = `+${gained} BDNF Nectar harvested (${flowState.flowMultiplier}x Flow)!`;
             statusBannerTimer = 2.5;
           }
         }
@@ -693,6 +749,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
             haz.koTimer = 0.35; // Smooth dissolve transition
             player.nectar += 8;
             spawnParticles(haz.x, haz.y, 18, 1, 70, 220, 3, 6.5, 0.75);
+            spawnFloatingCallout(haz.x, haz.y, 'CORTISOL DISPELLED +8', '#4FD1C5');
           } else {
             spawnParticles(haz.x, haz.y, 8, 5, 40, 120, 2, 4.5, 0.45);
           }
@@ -718,13 +775,26 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       if (matched && !chimeMatchClaimedThisBeat) {
         chimeMatchClaimedThisBeat = true;
         nBackHits += 1;
-        player.nectar += 22;
+        consecutiveCognitiveHits += 1;
+        const flowState = computeAdaptiveFlowState({
+          consecutiveCognitiveHits,
+          coherenceSeconds,
+          baseUfovFlashSec: stage.ufovFlashDurationSec,
+        });
+        const reward = Math.round(22 * flowState.flowMultiplier);
+        player.nectar += reward;
         player.calmVitality = Math.min(player.maxVitality, player.calmVitality + 1);
         hitstopTimer = 0.05;
         camera.trauma = Math.min(1, camera.trauma + 0.25);
         soundEngine.playHarmonicChord('nback');
         spawnParticles(player.x, player.y, 24, 1, 80, 240, 3, 7, 0.85);
-        statusBannerText = `Working Memory ${stage.nBackLevel}-Back Resonance! +22 BDNF Nectar & +1 Calm Vitality`;
+        spawnFloatingCallout(
+          player.x,
+          player.y,
+          `★ ${stage.nBackLevel}-BACK RESONANCE +${reward} (${flowState.flowMultiplier}x)`,
+          '#4FD1C5'
+        );
+        statusBannerText = `Working Memory ${stage.nBackLevel}-Back Resonance (${flowState.flowMultiplier}x Flow)! +${reward} BDNF Nectar & +1 Calm Vitality`;
         statusBannerTimer = 3.8;
 
         // Clear all hazards within 260px
@@ -737,6 +807,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         }
       } else {
         // Gentle feedback if rung when not matching
+        consecutiveCognitiveHits = Math.max(0, consecutiveCognitiveHits - 1);
         soundEngine.playLightNote(392.0, 0.16);
         spawnParticles(player.x, player.y, 6, 1, 30, 90, 2, 4, 0.4);
         const targetSym = chimeHistory[chimeHistory.length - 1 - stage.nBackLevel] || 'SUN';
@@ -781,12 +852,19 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       nearestTree.grafted = true;
       nearestTree.graftAnim = 0.01;
       treesGrafted += 1;
+      consecutiveCognitiveHits += 1;
       hitstopTimer = 0.065;
       camera.trauma = Math.min(1, camera.trauma + 0.4);
       player.scaleX = 0.82;
       player.scaleY = 1.24;
       soundEngine.playHarmonicChord('graft');
       spawnParticles(nearestTree.x, nearestTree.y, 28, 3, 90, 260, 3.5, 7.5, 0.95);
+      spawnFloatingCallout(
+        nearestTree.x,
+        nearestTree.y,
+        `✦ BDNF SYNAPSE GRAFTED (${treesGrafted}/${stage.targetTreesGrafted})`,
+        '#B794F4'
+      );
       statusBannerText = `Hippocampal Dendrite Grafted (${treesGrafted}/${stage.targetTreesGrafted})! Neural Pathway Illuminated`;
       statusBannerTimer = 4.0;
 
@@ -824,6 +902,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
 
     const resolveUfovSectorSelection = (chosenSector: number) => {
       if (!ufovChallenge.active || !ufovChallenge.awaitingSelection) return;
+      const stage = SANCTUARY_STAGES[stateRef.current.stageIndex] || SANCTUARY_STAGES[0];
       ufovAttempts += 1;
       const diff = Math.abs(chosenSector - ufovChallenge.peripheralSector);
       const isCorrect = diff === 0 || diff === 1 || diff === 7; // Exact or adjacent sector tolerance for cozy playability
@@ -833,13 +912,27 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
 
       if (isCorrect) {
         ufovHits += 1;
-        player.nectar += 25;
+        consecutiveCognitiveHits += 1;
+        const flowState = computeAdaptiveFlowState({
+          consecutiveCognitiveHits,
+          coherenceSeconds,
+          baseUfovFlashSec: stage.ufovFlashDurationSec,
+        });
+        const reward = Math.round(25 * flowState.flowMultiplier);
+        player.nectar += reward;
         hitstopTimer = 0.05;
         soundEngine.playHarmonicChord('ufov');
         spawnParticles(player.x, player.y, 22, 0, 80, 220, 3, 6.5, 0.8);
-        statusBannerText = 'UFOV Peripheral Target Locked! +25 Bonus BDNF Nectar (+29% Cognitive Reserve Boost)';
+        spawnFloatingCallout(
+          player.x,
+          player.y,
+          `✦ UFOV TARGET LOCK +${reward} (${flowState.flowMultiplier}x FLOW)`,
+          '#F2B84B'
+        );
+        statusBannerText = `UFOV Peripheral Target Locked (${flowState.flowMultiplier}x Flow)! +${reward} Bonus BDNF Nectar`;
         statusBannerTimer = 4.0;
       } else {
+        consecutiveCognitiveHits = Math.max(0, consecutiveCognitiveHits - 1);
         soundEngine.playLightNote(349.23, 0.2);
         statusBannerText = 'Peripheral Firefly missed — keep your gaze centered when pulsing shrines!';
         statusBannerTimer = 3.0;
@@ -1848,7 +1941,99 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         ctx.restore();
       }
 
+      // 7B. Update & Render Floating World-Space Telemetry Callouts
+      for (const c of callouts) {
+        if (!c.active) continue;
+        c.life += dt;
+        if (c.life >= c.maxLife) {
+          c.active = false;
+          continue;
+        }
+        c.y += c.vy * dt;
+        c.vy *= 0.96;
+        const alpha = 1 - Math.pow(c.life / c.maxLife, 1.6);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.font = '700 12px "JetBrains Mono", monospace';
+        ctx.textAlign = 'center';
+        ctx.strokeStyle = '#091510';
+        ctx.lineWidth = 3.5;
+        ctx.strokeText(c.text, c.x, c.y);
+        ctx.fillStyle = c.colorHex;
+        ctx.fillText(c.text, c.x, c.y);
+        ctx.restore();
+      }
+
       ctx.restore();
+
+      // 7C. Render Diegetic Sanctuary Radar Minimap (Bottom-Right Corner during Active Play)
+      if (currentGameState === 'playing' && viewWidth >= 760) {
+        const mapW = 136;
+        const mapH = 92;
+        const mapX = viewWidth - mapW - 22;
+        const mapY = viewHeight - mapH - 22;
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(9, 21, 16, 0.88)';
+        ctx.strokeStyle = '#233D32';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.roundRect(mapX, mapY, mapW, mapH, 10);
+        ctx.fill();
+        ctx.stroke();
+
+        // Minimap Header Label
+        ctx.fillStyle = '#A3B8B0';
+        ctx.font = '600 9px "JetBrains Mono", monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('SANCTUARY RADAR', mapX + 8, mapY + 13);
+
+        const toMinimapX = (wx: number) => mapX + mapW / 2 + (wx / WORLD_W) * (mapW - 18);
+        const toMinimapY = (wy: number) => mapY + mapH / 2 + 4 + (wy / WORLD_H) * (mapH - 24);
+
+        // Central Heart-Tree Dot
+        ctx.fillStyle = '#4FD1C5';
+        ctx.beginPath();
+        ctx.arc(toMinimapX(0), toMinimapY(-40), 3.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Neural Trees (Grafted vs Dormant)
+        for (const tree of trees) {
+          ctx.fillStyle = tree.grafted ? aesthetic.myceliumBridgeHex : '#64748B';
+          ctx.beginPath();
+          ctx.arc(toMinimapX(tree.x), toMinimapY(tree.y), tree.grafted ? 3.5 : 2.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Active UFOV Shrines
+        for (const bloom of blooms) {
+          if (bloom.respawnTimer > 0 || !bloom.isUfovShrine) continue;
+          ctx.fillStyle = '#F2B84B';
+          ctx.beginPath();
+          ctx.arc(toMinimapX(bloom.x), toMinimapY(bloom.y), 2.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Stress Hazards
+        for (const haz of hazards) {
+          if (haz.koTimer > 0) continue;
+          ctx.fillStyle = '#F56565';
+          ctx.beginPath();
+          ctx.arc(toMinimapX(haz.x), toMinimapY(haz.y), 2.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Player Sprite Marker
+        ctx.fillStyle = '#FFFDF9';
+        ctx.strokeStyle = '#F2B84B';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(toMinimapX(player.x), toMinimapY(player.y), 3.8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.restore();
+      }
 
       // 8. Peripheral Low-Vitality Vignette (when Calm Vitality <= 2)
       if (currentGameState === 'playing' && player.calmVitality <= 2) {
@@ -1880,6 +2065,11 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
           coherenceSeconds,
           calmVitality: player.calmVitality,
           maxVitality: player.maxVitality,
+        });
+        const flowState = computeAdaptiveFlowState({
+          consecutiveCognitiveHits,
+          coherenceSeconds,
+          baseUfovFlashSec: stage.ufovFlashDurationSec,
         });
 
         stateRef.current.onHudUpdate({
@@ -1916,6 +2106,10 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
           rejuvenationScore: summary.rejuvenationScore,
           statusBannerText: statusBannerTimer > 0 ? statusBannerText : '',
           demoStepIndex,
+          flowMultiplier: flowState.flowMultiplier,
+          flowStreak: flowState.flowStreak,
+          adaptiveUfovWindowMs: flowState.adaptiveUfovWindowMs,
+          flowTier: flowState.flowTier,
         });
       }
     };

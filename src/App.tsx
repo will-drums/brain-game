@@ -84,6 +84,7 @@ export default function App() {
   const [highestReachedStage, setHighestReachedStage] = useState<number>(0);
   const [activeProtocol, setActiveProtocol] = useState<ProtocolId>('ufov_forage');
   const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [isBinauralEnabled, setIsBinauralEnabled] = useState<boolean>(true);
   const [isCodexOpen, setIsCodexOpen] = useState<boolean>(false);
   const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
   const [demoStepSignal, setDemoStepSignal] = useState<{ step: number; seq: number } | null>(null);
@@ -314,6 +315,10 @@ export default function App() {
     statusBannerText:
       'Explore the Mossy Glade · Harvest Golden Dew [Space] · Match Echo Chimes [E] · Graft Neural Trees [Q]',
     demoStepIndex: 0,
+    flowMultiplier: 1.0,
+    flowStreak: 0,
+    adaptiveUfovWindowMs: 2200,
+    flowTier: 'Baseline Calibration',
   });
 
   // Mirror game state to document.body.dataset.state
@@ -425,6 +430,12 @@ export default function App() {
     e.currentTarget.blur();
     const muted = soundEngine.toggleMute();
     setIsMuted(muted);
+  };
+
+  const handleToggleBinaural = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.currentTarget.blur();
+    const enabled = soundEngine.toggleBinauralEntrainment();
+    setIsBinauralEnabled(enabled);
   };
 
   const handleToggleFullscreen = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -833,6 +844,28 @@ export default function App() {
                   {Math.round(hud.rejuvenationScore)}
                 </div>
               </div>
+
+              {/* Adaptive Psychometric Synaptic Flow Multiplier */}
+              <div
+                data-testid="hud-synaptic-flow"
+                className="pl-4 border-l border-[#233D32] hidden lg:block"
+                title={`Adaptive UFOV Staircase Window: ${hud.adaptiveUfovWindowMs}ms · Consecutive Accuracy Streak: ${hud.flowStreak}`}
+              >
+                <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0] flex items-center gap-1.5">
+                  <span>SYNAPTIC FLOW</span>
+                  <span className="px-1.5 py-0.2 rounded bg-[#142D23] text-[#68D391] text-[9px] border border-[#2C4C3E] tabular-nums">
+                    {hud.adaptiveUfovWindowMs}ms
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-2xl font-mono font-bold text-[#68D391] tabular-nums hud-text-stroke">
+                    {hud.flowMultiplier.toFixed(2)}x
+                  </span>
+                  <span className="text-[10px] font-mono text-[#A3B8B0] truncate max-w-[115px]">
+                    {hud.flowTier}
+                  </span>
+                </div>
+              </div>
             </div>
 
             {/* Top-Right Cluster: Live N-Back Working Memory Strip + Compact Utility Buttons */}
@@ -891,6 +924,22 @@ export default function App() {
                     <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
                     <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
                   </svg>
+                </button>
+
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  data-testid="toggle-binaural-btn"
+                  aria-label="Toggle 10 Hz Alpha Binaural Entrainment"
+                  onClick={handleToggleBinaural}
+                  className={`px-2.5 h-9 flex items-center gap-1 rounded-lg text-[10px] font-mono font-semibold border transition-colors cursor-pointer ${
+                    isBinauralEnabled && !isMuted
+                      ? 'bg-[#17362B] text-[#4FD1C5] border-[#4FD1C5]/60'
+                      : 'bg-[#132A21] text-[#6E857C] border-[#2C4C3E]'
+                  }`}
+                  title="10 Hz Alpha Wave Binaural Acoustic Entrainment (200 Hz L / 210 Hz R)"
+                >
+                  <span>10Hz α</span>
                 </button>
 
                 <button
@@ -1337,6 +1386,9 @@ export default function App() {
         onClose={() => setIsCodexOpen(false)}
         selectedProtocol={activeProtocol}
         hrvHistory={hrvHistory}
+        totalTreesGrafted={lifetimeProgress.totalTreesGrafted}
+        peakRejuvenationScore={lifetimeProgress.peakRejuvenationScore}
+        currentStreakDays={dailyStreak.currentStreak}
         onRecordSimulatedSession={() => {
           commitDailyPractice();
           const lastScore = hrvHistory[hrvHistory.length - 1]?.coherenceScore ?? 85;

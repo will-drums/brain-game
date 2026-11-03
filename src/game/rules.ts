@@ -725,4 +725,145 @@ export function getSanctuaryAestheticConfig(
   return (found || COGNITIVE_MILESTONE_BADGES[0]).upgrade;
 }
 
+/**
+ * 2026 Enterprise Digital Therapeutics (DTx) Adaptive Psychometric Staircase & Flow Engine
+ * Dynamically calibrates UFOV stimulus window (ms), Nectar Flow Multiplier (1.0x..2.5x),
+ * and Autonomic-Prefrontal Flow Tier based on consecutive cognitive streak and vagal coherence.
+ */
+export type AdaptiveFlowTier =
+  | 'Baseline Calibration'
+  | 'Parasympathetic Lock'
+  | 'Prefrontal Resonance'
+  | 'Peak Neuroplastic Flow';
+
+export interface AdaptiveFlowState {
+  flowStreak: number;
+  flowMultiplier: number; // 1.0 .. 2.5
+  adaptiveUfovWindowMs: number; // 900ms .. 2400ms
+  flowTier: AdaptiveFlowTier;
+}
+
+export function computeAdaptiveFlowState(params: {
+  consecutiveCognitiveHits: number;
+  coherenceSeconds: number;
+  baseUfovFlashSec: number;
+}): AdaptiveFlowState {
+  const streak = Math.max(0, Math.floor(params.consecutiveCognitiveHits));
+  const cohBonus = params.coherenceSeconds >= 10 ? 0.25 : params.coherenceSeconds >= 4 ? 0.1 : 0;
+  const rawMultiplier = 1.0 + Math.min(1.25, streak * 0.25) + cohBonus;
+  const flowMultiplier = Math.round(Math.min(2.5, rawMultiplier) * 100) / 100;
+
+  // Psychometric staircase: as player chains UFOV & N-Back hits, flash window tightens toward clinical high-speed threshold (min 900ms)
+  const baseMs = Math.round(Math.max(1.0, params.baseUfovFlashSec) * 1000);
+  const reductionMs = Math.min(900, streak * 140);
+  const adaptiveUfovWindowMs = Math.max(900, baseMs - reductionMs);
+
+  let flowTier: AdaptiveFlowTier = 'Baseline Calibration';
+  if (flowMultiplier >= 2.0) {
+    flowTier = 'Peak Neuroplastic Flow';
+  } else if (flowMultiplier >= 1.5) {
+    flowTier = 'Prefrontal Resonance';
+  } else if (flowMultiplier >= 1.2) {
+    flowTier = 'Parasympathetic Lock';
+  }
+
+  return {
+    flowStreak: streak,
+    flowMultiplier,
+    adaptiveUfovWindowMs,
+    flowTier,
+  };
+}
+
+/**
+ * 4-Domain Longitudinal Cognitive Reserve Profile for Clinical Codex Telemetry
+ */
+export interface CognitiveDomainMetric {
+  id: 'ufov_speed' | 'nback_memory' | 'vagal_hrv' | 'hippocampal_bdnf';
+  label: string;
+  clinicalTargetLabel: string;
+  scorePct: number; // 0..100
+  accentHex: string;
+  citationShort: string;
+}
+
+export interface CognitiveDomainProfile {
+  domains: CognitiveDomainMetric[];
+  compositeReserveIndex: number; // 0..100
+  estimatedPlasticityGainPct: number; // +5% .. +38%
+}
+
+export function computeCognitiveDomainProfile(params: {
+  totalTreesGrafted: number;
+  peakRejuvenationScore: number;
+  averageHrvCoherence: number;
+  currentStreakDays: number;
+}): CognitiveDomainProfile {
+  const ufovScore = Math.min(
+    99,
+    Math.max(64, Math.round(58 + (params.peakRejuvenationScore / 2800) * 41))
+  );
+  const nBackScore = Math.min(
+    99,
+    Math.max(62, Math.round(55 + (params.peakRejuvenationScore / 2600) * 38 + params.currentStreakDays * 1.5))
+  );
+  const vagalScore = Math.min(
+    99,
+    Math.max(55, Math.round(params.averageHrvCoherence || 78))
+  );
+  const bdnfScore = Math.min(
+    100,
+    Math.max(60, Math.round(56 + Math.min(20, params.totalTreesGrafted) * 2.2))
+  );
+
+  const compositeReserveIndex = Math.round(
+    (ufovScore + nBackScore + vagalScore + bdnfScore) / 4
+  );
+
+  const estimatedPlasticityGainPct = Math.min(
+    38,
+    Math.max(8, Math.round((compositeReserveIndex - 50) * 0.68))
+  );
+
+  return {
+    domains: [
+      {
+        id: 'ufov_speed',
+        label: 'Divided Visual Attention (UFOV)',
+        clinicalTargetLabel: 'Superior Parietal & Visual Cortex',
+        scorePct: ufovScore,
+        accentHex: '#F2B84B',
+        citationShort: 'ACTIVE Trial · Ball et al. (JAMA)',
+      },
+      {
+        id: 'nback_memory',
+        label: 'Prefrontal Working Memory (N-Back)',
+        clinicalTargetLabel: 'Dorsolateral Prefrontal Cortex',
+        scorePct: nBackScore,
+        accentHex: '#4FD1C5',
+        citationShort: 'Jaeggi et al. (PNAS)',
+      },
+      {
+        id: 'vagal_hrv',
+        label: '0.1 Hz Vagal Autonomic Coherence',
+        clinicalTargetLabel: 'Vagus Nerve & Prefrontal-Amygdala Loop',
+        scorePct: vagalScore,
+        accentHex: '#68D391',
+        citationShort: 'Lehrer & Gevirtz (Front. Psychol.)',
+      },
+      {
+        id: 'hippocampal_bdnf',
+        label: 'Hippocampal BDNF Synaptogenesis',
+        clinicalTargetLabel: 'Dentate Gyrus & Spatial Memory Network',
+        scorePct: bdnfScore,
+        accentHex: '#B794F4',
+        citationShort: 'Erickson et al. (PNAS)',
+      },
+    ],
+    compositeReserveIndex,
+    estimatedPlasticityGainPct,
+  };
+}
+
+
 

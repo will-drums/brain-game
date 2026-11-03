@@ -3,6 +3,7 @@ import * as d3 from 'd3';
 import {
   CLINICAL_PROTOCOLS,
   computeHrvTrendSummary,
+  computeCognitiveDomainProfile,
   type HrvSessionRecord,
   type ProtocolId,
 } from '../game/rules';
@@ -13,6 +14,9 @@ interface ClinicalCodexModalProps {
   selectedProtocol?: ProtocolId;
   hrvHistory: HrvSessionRecord[];
   onRecordSimulatedSession?: () => void;
+  totalTreesGrafted?: number;
+  peakRejuvenationScore?: number;
+  currentStreakDays?: number;
 }
 
 export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
@@ -20,12 +24,22 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
   onClose,
   hrvHistory,
   onRecordSimulatedSession,
+  totalTreesGrafted = 4,
+  peakRejuvenationScore = 1420,
+  currentStreakDays = 1,
 }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [hoveredSession, setHoveredSession] = useState<HrvSessionRecord | null>(null);
+  const [exportStatus, setExportStatus] = useState<string>('');
 
   const sessions = hrvHistory.slice(-10);
   const trendSummary = computeHrvTrendSummary(sessions);
+  const domainProfile = computeCognitiveDomainProfile({
+    totalTreesGrafted,
+    peakRejuvenationScore,
+    averageHrvCoherence: trendSummary.averageCoherence,
+    currentStreakDays,
+  });
 
   useEffect(() => {
     if (!isOpen || !svgRef.current || sessions.length === 0) return;
@@ -222,6 +236,41 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
   const protocols = Object.values(CLINICAL_PROTOCOLS);
   const activeInspect = hoveredSession || sessions[sessions.length - 1] || null;
 
+  const handleExportDtxTelemetry = () => {
+    const payload = {
+      application: 'Sylvan Synapse — Clinical Neuroplasticity Sanctuary (Mac Edition)',
+      exportedAtIso: new Date().toISOString(),
+      summaryMetrics: {
+        compositeReserveIndex: domainProfile.compositeReserveIndex,
+        estimatedPlasticityGainPct: domainProfile.estimatedPlasticityGainPct,
+        totalTreesGrafted,
+        peakRejuvenationScore,
+        currentStreakDays,
+        latestHrvCoherencePct: trendSummary.latestCoherence,
+        tenSessionMeanHrvCoherencePct: trendSummary.averageCoherence,
+        autonomicStatus: trendSummary.relaxationStatus,
+      },
+      cognitiveDomains: domainProfile.domains,
+      hrvSessionHistory: sessions,
+    };
+
+    try {
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sylvan-synapse-dtx-telemetry-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setExportStatus('Telemetry JSON Exported');
+      setTimeout(() => setExportStatus(''), 3000);
+    } catch {
+      setExportStatus('Ready');
+    }
+  };
+
   return (
     <div
       role="dialog"
@@ -230,27 +279,102 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
       className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8 bg-[#07120E]/90 pointer-events-auto"
     >
       <div className="w-full max-w-4xl max-h-[88vh] overflow-y-auto rounded-2xl bg-[#10231C] border border-[#2C4C3E] shadow-2xl p-6 md:p-8 text-[#F4EFE6]">
-        <div className="flex items-start justify-between gap-4 pb-6 border-b border-[#233D32]">
+        <div className="flex flex-wrap items-start justify-between gap-4 pb-6 border-b border-[#233D32]">
           <div>
             <p className="text-xs font-mono tracking-wider uppercase text-[#68D391]">
-              Peer-Reviewed Neuroscience &amp; Biofeedback Telemetry
+              Enterprise Digital Therapeutics (DTx) · Biofeedback &amp; Neuroplasticity Telemetry
             </p>
             <h2
               id="clinical-codex-title"
               className="mt-1 text-2xl md:text-3xl font-display font-semibold text-[#F4EFE6]"
             >
-              Clinical Research Codex &amp; HRV Coherence Trends
+              Clinical Research Codex &amp; Longitudinal Telemetry
             </h2>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close Clinical Evidence Codex"
-            className="px-4 py-2 rounded-lg bg-[#1A352B] hover:bg-[#24473A] text-sm font-medium text-[#F4EFE6] border border-[#2C4C3E] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-          >
-            Close Codex [Esc]
-          </button>
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              data-testid="export-dtx-telemetry-btn"
+              onClick={handleExportDtxTelemetry}
+              className="px-3.5 py-2 rounded-lg bg-[#152E24] hover:bg-[#1E3F32] text-xs font-mono font-semibold text-[#4FD1C5] border border-[#2C4C3E] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              {exportStatus || '⇩ Export DTx Telemetry [JSON]'}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close Clinical Evidence Codex"
+              className="px-4 py-2 rounded-lg bg-[#1A352B] hover:bg-[#24473A] text-sm font-medium text-[#F4EFE6] border border-[#2C4C3E] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              Close Codex [Esc]
+            </button>
+          </div>
         </div>
+
+        {/* 4-Domain Cognitive Reserve & Neuroplasticity Profile */}
+        <section
+          aria-label="4-Domain Cognitive Reserve Profile"
+          data-testid="cognitive-domain-profile"
+          className="mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#233D32] space-y-4"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <span className="text-xs font-mono uppercase tracking-wider text-[#B794F4]">
+                Multi-Domain Neuroplasticity Assessment
+              </span>
+              <h3 className="text-lg font-display font-semibold text-[#F4EFE6]">
+                4-Domain Cognitive Reserve &amp; Synaptic Plasticity Matrix
+              </h3>
+            </div>
+            <div className="flex items-center gap-4 font-mono">
+              <div className="text-right">
+                <div className="text-[10px] text-[#A3B8B0] uppercase">COMPOSITE RESERVE INDEX</div>
+                <div className="text-xl font-bold text-[#F2B84B] tabular-nums">
+                  {domainProfile.compositeReserveIndex} / 100
+                </div>
+              </div>
+              <div className="text-right pl-4 border-l border-[#1E3A2F]">
+                <div className="text-[10px] text-[#A3B8B0] uppercase">EST. PLASTICITY GAIN</div>
+                <div className="text-xl font-bold text-[#68D391] tabular-nums">
+                  +{domainProfile.estimatedPlasticityGainPct}%
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            {domainProfile.domains.map((dom) => (
+              <div
+                key={dom.id}
+                className="p-3.5 rounded-lg bg-[#10231C] border border-[#1E3A2F] space-y-2"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-xs font-semibold text-[#F4EFE6]">{dom.label}</div>
+                    <div className="text-[10px] font-mono text-[#A3B8B0]">
+                      {dom.clinicalTargetLabel} · {dom.citationShort}
+                    </div>
+                  </div>
+                  <span
+                    className="text-base font-mono font-bold tabular-nums"
+                    style={{ color: dom.accentHex }}
+                  >
+                    {dom.scorePct}%
+                  </span>
+                </div>
+                <div className="w-full h-2 rounded-full bg-[#091510] overflow-hidden border border-[#1E3A2F]">
+                  <div
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${dom.scorePct}%`,
+                      backgroundColor: dom.accentHex,
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
 
         {/* D3.js Physiological Relaxation & HRV Coherence Line Chart (Last 10 Practice Sessions) */}
         <section
@@ -392,7 +516,7 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
 
         <div className="mt-6 pt-4 border-t border-[#233D32] flex items-center justify-between gap-4">
           <p className="text-xs text-[#A3B8B0]">
-            Designed for low-cortisol cognitive restoration: zero punitive timers, soft fascination acoustics, and evidence-backed neuroplasticity routines.
+            Designed for low-cortisol cognitive restoration: zero punitive timers, 10 Hz Alpha binaural entrainment, and evidence-backed neuroplasticity routines.
           </p>
           <button
             type="button"

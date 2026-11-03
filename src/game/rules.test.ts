@@ -19,8 +19,40 @@ import {
   COGNITIVE_MILESTONE_BADGES,
   evaluateCognitiveMilestones,
   getSanctuaryAestheticConfig,
+  computeAdaptiveFlowState,
+  computeCognitiveDomainProfile,
   type ChimeSymbol,
 } from './rules';
+
+test('Enterprise DTx adaptive psychometric staircase and 4-domain cognitive profile compute accurate multipliers and domain scores', () => {
+  const baselineFlow = computeAdaptiveFlowState({
+    consecutiveCognitiveHits: 0,
+    coherenceSeconds: 0,
+    baseUfovFlashSec: 2.2,
+  });
+  assert.equal(baselineFlow.flowMultiplier, 1.0);
+  assert.equal(baselineFlow.adaptiveUfovWindowMs, 2200);
+  assert.equal(baselineFlow.flowTier, 'Baseline Calibration');
+
+  const peakFlow = computeAdaptiveFlowState({
+    consecutiveCognitiveHits: 5,
+    coherenceSeconds: 12,
+    baseUfovFlashSec: 2.2,
+  });
+  assert.equal(peakFlow.flowMultiplier, 2.5);
+  assert.equal(peakFlow.adaptiveUfovWindowMs, 1500);
+  assert.equal(peakFlow.flowTier, 'Peak Neuroplastic Flow');
+
+  const domainProfile = computeCognitiveDomainProfile({
+    totalTreesGrafted: 8,
+    peakRejuvenationScore: 1850,
+    averageHrvCoherence: 84,
+    currentStreakDays: 3,
+  });
+  assert.equal(domainProfile.domains.length, 4);
+  assert.ok(domainProfile.compositeReserveIndex >= 75 && domainProfile.compositeReserveIndex <= 95);
+  assert.ok(domainProfile.estimatedPlasticityGainPct >= 15);
+});
 
 test('Cognitive Milestone badge system unlocks aesthetic flora colors and higher firefly density as trees grafted and peak score grow', () => {
   assert.equal(COGNITIVE_MILESTONE_BADGES.length, 4);

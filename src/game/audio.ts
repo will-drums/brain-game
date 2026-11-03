@@ -10,7 +10,9 @@ class SoundEngine {
   private ctx: AudioContext | null = null;
   private isMuted: boolean = false;
   private ambientGain: GainNode | null = null;
+  private binauralGain: GainNode | null = null;
   private isAmbientRunning: boolean = false;
+  private isBinauralEnabled: boolean = true;
 
   private getContext(): AudioContext | null {
     if (this.isMuted) return null;
@@ -32,6 +34,13 @@ class SoundEngine {
     if (this.ambientGain && this.ctx) {
       this.ambientGain.gain.setTargetAtTime(muted ? 0 : 0.035, this.ctx.currentTime, 0.15);
     }
+    if (this.binauralGain && this.ctx) {
+      this.binauralGain.gain.setTargetAtTime(
+        muted || !this.isBinauralEnabled ? 0 : 0.016,
+        this.ctx.currentTime,
+        0.15
+      );
+    }
   }
 
   public getMuted(): boolean {
@@ -46,13 +55,32 @@ class SoundEngine {
     return this.isMuted;
   }
 
+  public getBinauralEnabled(): boolean {
+    return this.isBinauralEnabled;
+  }
+
+  public toggleBinauralEntrainment(): boolean {
+    this.isBinauralEnabled = !this.isBinauralEnabled;
+    if (this.binauralGain && this.ctx) {
+      this.binauralGain.gain.setTargetAtTime(
+        !this.isMuted && this.isBinauralEnabled ? 0.016 : 0,
+        this.ctx.currentTime,
+        0.2
+      );
+    }
+    if (!this.isMuted && this.isBinauralEnabled) {
+      this.playLightNote(432, 0.18);
+    }
+    return this.isBinauralEnabled;
+  }
+
   public startAmbientSanctuary() {
     if (this.isMuted || this.isAmbientRunning) return;
     const ctx = this.getContext();
     if (!ctx) return;
 
     try {
-      // Create soft warm pad drone (C major 9th pentatonic warmth: 130.81Hz + 196.00Hz)
+      // 1. Soft warm pad drone (C major 9th pentatonic warmth: 130.81Hz + 196.00Hz)
       const osc1 = ctx.createOscillator();
       const osc2 = ctx.createOscillator();
       const filter = ctx.createBiquadFilter();
@@ -76,7 +104,37 @@ class SoundEngine {
       osc1.start();
       osc2.start();
 
+      // 2. 10 Hz Alpha Binaural Entrainment Pair (200 Hz Left Ear / 210 Hz Right Ear)
+      const leftOsc = ctx.createOscillator();
+      const rightOsc = ctx.createOscillator();
+      const bGain = ctx.createGain();
+      leftOsc.type = 'sine';
+      leftOsc.frequency.value = 200.0;
+      rightOsc.type = 'sine';
+      rightOsc.frequency.value = 210.0; // 10 Hz Alpha difference frequency
+
+      bGain.gain.value = !this.isMuted && this.isBinauralEnabled ? 0.016 : 0;
+
+      if (typeof ctx.createStereoPanner === 'function') {
+        const leftPan = ctx.createStereoPanner();
+        const rightPan = ctx.createStereoPanner();
+        leftPan.pan.value = -0.8;
+        rightPan.pan.value = 0.8;
+        leftOsc.connect(leftPan);
+        rightOsc.connect(rightPan);
+        leftPan.connect(bGain);
+        rightPan.connect(bGain);
+      } else {
+        leftOsc.connect(bGain);
+        rightOsc.connect(bGain);
+      }
+
+      bGain.connect(ctx.destination);
+      leftOsc.start();
+      rightOsc.start();
+
       this.ambientGain = gain;
+      this.binauralGain = bGain;
       this.isAmbientRunning = true;
     } catch {
       // Ignore audio errors in headless environments
@@ -87,18 +145,24 @@ class SoundEngine {
     if (this.ambientGain && this.ctx) {
       this.ambientGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.1);
     }
+    if (this.binauralGain && this.ctx) {
+      this.binauralGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.1);
+    }
   }
 
   public resumeAmbient() {
     if (!this.isMuted && this.ambientGain && this.ctx) {
       this.ambientGain.gain.setTargetAtTime(0.035, this.ctx.currentTime, 0.2);
     }
+    if (!this.isMuted && this.isBinauralEnabled && this.binauralGain && this.ctx) {
+      this.binauralGain.gain.setTargetAtTime(0.016, this.ctx.currentTime, 0.2);
+    }
   }
 
   /**
-   * Light pitch-varied (±8%) procedural synth note for movement / dew pickup / pulse.
+   * Light pitch-varied (±8%) procedural synth note with optional stereo panning (-1..1).
    */
-  public playLightNote(baseFreq = 523.25, duration = 0.18) {
+  public playLightNote(baseFreq = 523.25, duration = 0.18, pan = 0) {
     const ctx = this.getContext();
     if (!ctx) return;
     try {
@@ -116,7 +180,14 @@ class SoundEngine {
       gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
 
       osc.connect(gain);
-      gain.connect(ctx.destination);
+      if (typeof ctx.createStereoPanner === 'function' && pan !== 0) {
+        const panner = ctx.createStereoPanner();
+        panner.pan.value = Math.max(-1, Math.min(1, pan));
+        gain.connect(panner);
+        panner.connect(ctx.destination);
+      } else {
+        gain.connect(ctx.destination);
+      }
 
       osc.start(now);
       osc.stop(now + duration + 0.02);
