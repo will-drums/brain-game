@@ -16,6 +16,7 @@ import {
   appendHrvSessionRecord,
   SANCTUARY_ATMOSPHERES,
   getSanctuaryAtmosphereConfig,
+  NEURO_NUTRITION_STORAGE_KEY,
   type SanctuaryAtmosphereId,
   type DailyStreakState,
   type HrvSessionRecord,
@@ -119,6 +120,43 @@ export default function App() {
         // Ignore storage errors
       }
     }
+  }, []);
+
+  const [completedHabitIds, setCompletedHabitIds] = useState<string[]>(() => {
+    const defaultHabits = ['polyphenol_bdnf_diet', 'glymphatic_slow_wave_sleep'];
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = window.localStorage.getItem(NEURO_NUTRITION_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            return parsed.filter((x): x is string => typeof x === 'string');
+          }
+        }
+        window.localStorage.setItem(NEURO_NUTRITION_STORAGE_KEY, JSON.stringify(defaultHabits));
+      } catch {
+        // Ignore storage errors
+      }
+    }
+    return defaultHabits;
+  });
+
+  const handleToggleNeuroHabit = useCallback((habitId: string) => {
+    setCompletedHabitIds((prev) => {
+      const exists = prev.includes(habitId);
+      const updated = exists ? prev.filter((id) => id !== habitId) : [...prev, habitId];
+      if (!exists) {
+        soundEngine.playLightNote(587.33, 0.16);
+      }
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(NEURO_NUTRITION_STORAGE_KEY, JSON.stringify(updated));
+        } catch {
+          // Ignore storage errors
+        }
+      }
+      return updated;
+    });
   }, []);
 
   // Lifetime Cognitive Milestone Progression persisted in localStorage
@@ -515,6 +553,7 @@ export default function App() {
         onTreeGrafted={handleTreeGraftedIncrement}
         isDemoMode={isDemoMode}
         demoStepSignal={demoStepSignal}
+        atmosphereId={atmosphereId}
       />
 
       {/* 2. TITLE SCREEN OVERLAY (30%-40% negative space left column over live world camera pan) */}
@@ -1531,6 +1570,8 @@ export default function App() {
         totalTreesGrafted={lifetimeProgress.totalTreesGrafted}
         peakRejuvenationScore={lifetimeProgress.peakRejuvenationScore}
         currentStreakDays={dailyStreak.currentStreak}
+        completedHabitIds={completedHabitIds}
+        onToggleHabitId={handleToggleNeuroHabit}
         onRecordSimulatedSession={() => {
           commitDailyPractice();
           const lastScore = hrvHistory[hrvHistory.length - 1]?.coherenceScore ?? 85;

@@ -4,6 +4,10 @@ import {
   CLINICAL_PROTOCOLS,
   computeHrvTrendSummary,
   computeCognitiveDomainProfile,
+  NEURO_NUTRITION_SLEEP_TIPS,
+  filterNeuroNutritionTips,
+  computeNeuroSynergyBonus,
+  type NeuroLifestyleCategory,
   type HrvSessionRecord,
   type ProtocolId,
 } from '../game/rules';
@@ -17,6 +21,8 @@ interface ClinicalCodexModalProps {
   totalTreesGrafted?: number;
   peakRejuvenationScore?: number;
   currentStreakDays?: number;
+  completedHabitIds?: string[];
+  onToggleHabitId?: (habitId: string) => void;
 }
 
 export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
@@ -27,10 +33,13 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
   totalTreesGrafted = 4,
   peakRejuvenationScore = 1420,
   currentStreakDays = 1,
+  completedHabitIds = ['polyphenol_bdnf_diet', 'glymphatic_slow_wave_sleep'],
+  onToggleHabitId,
 }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [hoveredSession, setHoveredSession] = useState<HrvSessionRecord | null>(null);
   const [exportStatus, setExportStatus] = useState<string>('');
+  const [lifestyleCategory, setLifestyleCategory] = useState<NeuroLifestyleCategory>('all');
 
   const sessions = hrvHistory.slice(-10);
   const trendSummary = computeHrvTrendSummary(sessions);
@@ -40,6 +49,8 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
     averageHrvCoherence: trendSummary.averageCoherence,
     currentStreakDays,
   });
+  const filteredLifestyleTips = filterNeuroNutritionTips(lifestyleCategory);
+  const neuroSynergy = computeNeuroSynergyBonus(completedHabitIds);
 
   useEffect(() => {
     if (!isOpen || !svgRef.current || sessions.length === 0) return;
@@ -249,8 +260,16 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
         latestHrvCoherencePct: trendSummary.latestCoherence,
         tenSessionMeanHrvCoherencePct: trendSummary.averageCoherence,
         autonomicStatus: trendSummary.relaxationStatus,
+        neuroLifestyleReadinessPct: neuroSynergy.readinessPct,
+        neuroLifestyleSynergyMultiplier: neuroSynergy.bonusNectarMultiplier,
       },
       cognitiveDomains: domainProfile.domains,
+      neuroNutritionAndSleepProtocols: NEURO_NUTRITION_SLEEP_TIPS.map((t) => ({
+        id: t.id,
+        category: t.category,
+        title: t.title,
+        completedToday: completedHabitIds.includes(t.id),
+      })),
       hrvSessionHistory: sessions,
     };
 
@@ -477,6 +496,145 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
               </div>
             </div>
           )}
+        </section>
+
+        {/* NEURO-NUTRITION & GLYMPHATIC SLEEP HYGIENE CLINICAL PROTOCOLS */}
+        <section
+          aria-labelledby="neuro-nutrition-heading"
+          data-testid="neuro-nutrition-section"
+          className="mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#233D32] space-y-4"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <span className="text-xs font-mono uppercase tracking-wider text-[#68D391]">
+                Biological Foundation · Diet, Polyphenols, Omega-3 DHA &amp; Glymphatic Sleep
+              </span>
+              <h3
+                id="neuro-nutrition-heading"
+                className="text-lg font-display font-semibold text-[#F4EFE6]"
+              >
+                Neuro-Nutrition Tip &amp; Sleep Hygiene Protocols for Synaptic Plasticity
+              </h3>
+              <p className="text-xs text-[#A3B8B0] mt-0.5">
+                Actionable metabolic and circadian interventions that upregulate endogenous BDNF and clear neural metabolites. Check off habits practiced today for an in-sanctuary BDNF Nectar synergy boost.
+              </p>
+            </div>
+
+            {/* Biological Readiness & In-Sanctuary Synergy Badge */}
+            <div className="px-3.5 py-2 rounded-xl bg-[#10231C] border border-[#2C4C3E] text-right font-mono shrink-0">
+              <div className="text-[10px] uppercase tracking-wider text-[#A3B8B0]">
+                BIOLOGICAL READINESS SYNERGY
+              </div>
+              <div className="flex items-baseline justify-end gap-2 mt-0.5">
+                <span className="text-lg font-bold text-[#68D391] tabular-nums">
+                  {neuroSynergy.bonusNectarMultiplier.toFixed(2)}x BDNF
+                </span>
+                <span className="text-xs text-[#F2B84B] tabular-nums">
+                  ({neuroSynergy.completedCount}/{neuroSynergy.totalCount} Habits · +{neuroSynergy.startingNectarBonus} Start Nectar)
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Filter Tabs: All Pillars / Neuro-Nutrition & Diet / Glymphatic Sleep Hygiene */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-[#1E3A2F]">
+            <div className="flex flex-wrap items-center gap-2">
+              {(
+                [
+                  { id: 'all', label: 'All Protocols (4)' },
+                  { id: 'diet', label: 'Neuro-Nutrition & Diet (2)' },
+                  { id: 'sleep', label: 'Glymphatic Sleep Hygiene (2)' },
+                ] as const
+              ).map((tab) => {
+                const active = lifestyleCategory === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    data-testid={`neuro-filter-${tab.id}`}
+                    onClick={() => setLifestyleCategory(tab.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition-colors cursor-pointer border ${
+                      active
+                        ? 'bg-[#1D4032] text-[#F4EFE6] border-[#68D391]'
+                        : 'bg-[#10231C] text-[#A3B8B0] border-[#1E3A2F] hover:text-[#F4EFE6]'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+            <span className="text-[11px] font-mono text-[#68D391]">
+              {neuroSynergy.statusLabel}
+            </span>
+          </div>
+
+          {/* Actionable Neuro-Nutrition & Sleep Hygiene Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            {filteredLifestyleTips.map((tip) => {
+              const isCompleted = completedHabitIds.includes(tip.id);
+              return (
+                <div
+                  key={tip.id}
+                  data-testid={`neuro-tip-card-${tip.id}`}
+                  className={`p-4 rounded-xl border transition-colors flex flex-col justify-between space-y-3 ${
+                    isCompleted
+                      ? 'bg-[#122A20] border-[#68D391]/70'
+                      : 'bg-[#10231C] border-[#1E3A2F]'
+                  }`}
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        className="px-2 py-0.5 rounded text-[10px] font-mono font-bold text-[#091510]"
+                        style={{ backgroundColor: tip.accentHex }}
+                      >
+                        {tip.categoryBadge}
+                      </span>
+                      {onToggleHabitId && (
+                        <button
+                          type="button"
+                          data-testid={`neuro-habit-toggle-${tip.id}`}
+                          onClick={() => onToggleHabitId(tip.id)}
+                          className={`px-2.5 py-1 rounded-md text-[10px] font-mono font-semibold transition-colors cursor-pointer border ${
+                            isCompleted
+                              ? 'bg-[#68D391] text-[#091510] border-[#68D391]'
+                              : 'bg-[#0B1914] text-[#A3B8B0] border-[#2C4C3E] hover:text-[#F4EFE6]'
+                          }`}
+                        >
+                          {isCompleted ? '✓ Practiced Today (+5%)' : '+ Log Daily Habit'}
+                        </button>
+                      )}
+                    </div>
+
+                    <h4 className="text-sm font-display font-semibold text-[#F4EFE6]">
+                      {tip.title}
+                    </h4>
+
+                    <div className="text-[11px] font-mono text-[#68D391]">
+                      <span>{tip.biomarkerTarget}</span>
+                      <span aria-hidden="true"> · </span>
+                      <span className="text-[#A3B8B0]">{tip.citation}</span>
+                    </div>
+
+                    <p className="text-xs text-[#D5E2DC] leading-relaxed">
+                      <strong className="text-[#F4EFE6]">Biological Mechanism:</strong>{' '}
+                      {tip.mechanismSummary}
+                    </p>
+
+                    <div className="p-2.5 rounded-lg bg-[#091510]/85 border border-[#1E3A2F] text-xs text-[#F2B84B] leading-relaxed">
+                      <strong className="text-[#F4EFE6]">Actionable Daily Protocol:</strong>{' '}
+                      {tip.actionableProtocol}
+                    </div>
+                  </div>
+
+                  <div className="pt-1 border-t border-[#1E3A2F] flex items-center justify-between text-[10px] font-mono text-[#4FD1C5]">
+                    <span>{tip.synergyLabel}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </section>
 
         {/* Peer-Reviewed Clinical Protocols List */}

@@ -24,8 +24,35 @@ import {
   SANCTUARY_ATMOSPHERES,
   getSanctuaryAtmosphereConfig,
   getNextSanctuaryAtmosphereId,
+  NEURO_NUTRITION_SLEEP_TIPS,
+  filterNeuroNutritionTips,
+  computeNeuroSynergyBonus,
   type ChimeSymbol,
 } from './rules';
+
+test('Neuro-Nutrition & Sleep Hygiene tips filter accurately by category and compute biological readiness synergy bonuses', () => {
+  assert.equal(NEURO_NUTRITION_SLEEP_TIPS.length, 4);
+  assert.equal(filterNeuroNutritionTips('all').length, 4);
+  assert.equal(filterNeuroNutritionTips('diet').length, 2);
+  assert.equal(filterNeuroNutritionTips('sleep').length, 2);
+
+  const zeroBonus = computeNeuroSynergyBonus([]);
+  assert.equal(zeroBonus.completedCount, 0);
+  assert.equal(zeroBonus.bonusNectarMultiplier, 1.0);
+  assert.equal(zeroBonus.startingNectarBonus, 0);
+
+  const twoBonus = computeNeuroSynergyBonus(['polyphenol_bdnf_diet', 'glymphatic_slow_wave_sleep']);
+  assert.equal(twoBonus.completedCount, 2);
+  assert.equal(twoBonus.readinessPct, 50);
+  assert.equal(twoBonus.bonusNectarMultiplier, 1.1);
+  assert.equal(twoBonus.startingNectarBonus, 8);
+
+  const fullBonus = computeNeuroSynergyBonus(NEURO_NUTRITION_SLEEP_TIPS.map((t) => t.id));
+  assert.equal(fullBonus.completedCount, 4);
+  assert.equal(fullBonus.readinessPct, 100);
+  assert.equal(fullBonus.bonusNectarMultiplier, 1.2);
+  assert.equal(fullBonus.startingNectarBonus, 16);
+});
 
 test('Sanctuary Atmosphere selector provides distinct acoustic profiles for forest, rain, and meadow soundscapes', () => {
   assert.equal(SANCTUARY_ATMOSPHERES.length, 3);

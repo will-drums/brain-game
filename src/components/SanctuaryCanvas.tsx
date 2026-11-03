@@ -18,6 +18,7 @@ import {
   type CognitiveSummary,
   type CognitiveMilestoneId,
   type AdaptiveFlowTier,
+  type SanctuaryAtmosphereId,
 } from '../game/rules';
 import { soundEngine } from '../game/audio';
 
@@ -69,6 +70,7 @@ interface SanctuaryCanvasProps {
   onTreeGrafted?: () => void;
   isDemoMode?: boolean;
   demoStepSignal?: { step: number; seq: number } | null;
+  atmosphereId?: SanctuaryAtmosphereId;
 }
 
 interface NeuralTree {
@@ -161,6 +163,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
   onTreeGrafted,
   isDemoMode = false,
   demoStepSignal = null,
+  atmosphereId = 'forest',
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -178,6 +181,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
     activeMilestoneId,
     onTreeGrafted,
     isDemoMode,
+    atmosphereId,
   });
 
   useEffect(() => {
@@ -193,6 +197,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       activeMilestoneId,
       onTreeGrafted,
       isDemoMode,
+      atmosphereId,
     };
   }, [
     gameState,
@@ -206,6 +211,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
     activeMilestoneId,
     onTreeGrafted,
     isDemoMode,
+    atmosphereId,
   ]);
 
   // Ref for signals from HUD buttons
@@ -1965,6 +1971,45 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       }
 
       ctx.restore();
+
+      // 7C-1. Render Sanctuary Atmosphere Weather Layer (Rain Streaks & Ripples / Meadow Sunbeams / Forest Shafts)
+      const activeAtm = stateRef.current.atmosphereId || 'forest';
+      if (activeAtm === 'rain') {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(129, 230, 217, 0.22)';
+        ctx.lineWidth = 1.25;
+        const rainCount = 42;
+        for (let r = 0; r < rainCount; r++) {
+          const rx = ((r * 97 + stageElapsedSec * 140) % (viewWidth + 120)) - 60;
+          const ry = ((r * 131 + stageElapsedSec * 520) % (viewHeight + 120)) - 60;
+          ctx.beginPath();
+          ctx.moveTo(rx, ry);
+          ctx.lineTo(rx - 12, ry + 26);
+          ctx.stroke();
+        }
+        // Subtle raindrop floor ripples
+        for (let rp = 0; rp < 6; rp++) {
+          const cycle = (stageElapsedSec * 0.9 + rp * 0.62) % 1;
+          const rpx = ((rp * 233 + 180) % (viewWidth - 200)) + 100;
+          const rpy = ((rp * 179 + 140) % (viewHeight - 200)) + 100;
+          ctx.strokeStyle = `rgba(79, 209, 197, ${(1 - cycle) * 0.24})`;
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.ellipse(rpx, rpy, 6 + cycle * 24, 3 + cycle * 11, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.restore();
+      } else if (activeAtm === 'meadow') {
+        ctx.save();
+        // Warm golden crepuscular sunbeams from top-right canopy
+        const beamGrad = ctx.createLinearGradient(viewWidth * 0.75, 0, viewWidth * 0.25, viewHeight);
+        beamGrad.addColorStop(0, 'rgba(242, 184, 75, 0.09)');
+        beamGrad.addColorStop(0.6, 'rgba(242, 184, 75, 0.03)');
+        beamGrad.addColorStop(1, 'rgba(242, 184, 75, 0)');
+        ctx.fillStyle = beamGrad;
+        ctx.fillRect(0, 0, viewWidth, viewHeight);
+        ctx.restore();
+      }
 
       // 7C. Render Diegetic Sanctuary Radar Minimap (Bottom-Right Corner during Active Play)
       if (currentGameState === 'playing' && viewWidth >= 760) {

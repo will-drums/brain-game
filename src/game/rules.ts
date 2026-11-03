@@ -957,3 +957,133 @@ export function getNextSanctuaryAtmosphereId(
   if (idx < 0) return 'forest';
   return SANCTUARY_ATMOSPHERES[(idx + 1) % SANCTUARY_ATMOSPHERES.length].id;
 }
+
+/**
+ * Neuro-Nutrition & Glymphatic Sleep Hygiene Evidence-Based Protocols
+ * Provides actionable diet and sleep hygiene interventions that upregulate BDNF,
+ * synaptic membrane fluidity, and glymphatic slow-wave memory consolidation.
+ */
+export type NeuroLifestyleCategory = 'all' | 'diet' | 'sleep';
+
+export interface NeuroNutritionTip {
+  id: string;
+  category: 'diet' | 'sleep';
+  categoryBadge: string;
+  title: string;
+  biomarkerTarget: string;
+  citation: string;
+  mechanismSummary: string;
+  actionableProtocol: string;
+  synergyProtocolId: ProtocolId;
+  synergyLabel: string;
+  accentHex: string;
+}
+
+export const NEURO_NUTRITION_STORAGE_KEY = 'sylvan_synapse_neuro_habits_v1';
+
+export const NEURO_NUTRITION_SLEEP_TIPS: NeuroNutritionTip[] = [
+  {
+    id: 'polyphenol_bdnf_diet',
+    category: 'diet',
+    categoryBadge: 'NEURO-NUTRITION · POLYPHENOLS',
+    title: 'Dietary Anthocyanins & Flavonol Polyphenols (MIND Protocol)',
+    biomarkerTarget: 'Hippocampal CREB-BDNF Signaling & Dentate Gyrus Perfusion',
+    citation: 'Morris et al., Alzheimer’s & Dementia (2015); Brickman et al., PNAS (2014)',
+    mechanismSummary:
+      'Berry anthocyanins and cocoa/olive flavonols cross the blood-brain barrier, activating the ERK/CREB transcriptional pathway to upregulate endogenous BDNF and increase dentate gyrus capillary density.',
+    actionableProtocol:
+      'Consume 1 cup of wild blueberries or dark berries daily alongside polyphenol-rich extra-virgin olive oil and dark leafy greens 60–90 minutes prior to spatial memory training.',
+    synergyProtocolId: 'dendrite_graft',
+    synergyLabel: 'Synergizes with Protocol 04 · BDNF Dendrite Graft (+5% Nectar Yield)',
+    accentHex: '#B794F4',
+  },
+  {
+    id: 'omega3_dha_membrane',
+    category: 'diet',
+    categoryBadge: 'NEURO-NUTRITION · SYNAPTIC LIPIDS',
+    title: 'Marine Omega-3 DHA & Choline Phospholipid Synthesis',
+    biomarkerTarget: 'Dendritic Spine Lipid Raft Fluidity & Prefrontal Conduction',
+    citation: 'Witte et al., Cerebral Cortex (2014); Yurko-Mauro et al., Alzheimer’s & Dementia (2010)',
+    mechanismSummary:
+      'Docosahexaenoic acid (DHA) comprises over 30% of grey-matter phospholipid membranes, accelerating AMPA/NMDA receptor trafficking and frontoparietal axonal myelination required for rapid working-memory updating.',
+    actionableProtocol:
+      'Target 1,000–2,000 mg/day of combined EPA/DHA (wild salmon, sardines, or microalgae oil) paired with dietary phosphatidylcholine (pasture-raised eggs or cruciferous greens).',
+    synergyProtocolId: 'nback_chimes',
+    synergyLabel: 'Synergizes with Protocol 02 · N-Back Echo Chimes (+5% Nectar Yield)',
+    accentHex: '#4FD1C5',
+  },
+  {
+    id: 'glymphatic_slow_wave_sleep',
+    category: 'sleep',
+    categoryBadge: 'SLEEP HYGIENE · GLYMPHATIC CLEARANCE',
+    title: 'NREM Slow-Wave Glymphatic Washout & Core Thermal Drop',
+    biomarkerTarget: 'Astrocytic Aquaporin-4 (AQP4) Clearance & Synaptic Homeostasis',
+    citation: 'Xie et al. (Nedergaard Lab), Science (2013); Mander et al., Nat. Neurosci. (2013)',
+    mechanismSummary:
+      'During deep NREM slow-wave sleep, interstitial space expands by ~60%, allowing cerebrospinal fluid to flush metabolic beta-amyloid and tau while replaying hippocampal-prefrontal sharp-wave ripples.',
+    actionableProtocol:
+      'Maintain a cool 65°F (18.3°C) sleeping environment, favor lateral (side) sleeping posture for optimal glymphatic transport, and cease heavy meals 3 hours before sleep onset.',
+    synergyProtocolId: 'ufov_forage',
+    synergyLabel: 'Synergizes with Protocol 01 · UFOV Speed-of-Processing (+5% Nectar Yield)',
+    accentHex: '#F2B84B',
+  },
+  {
+    id: 'circadian_vagal_winddown',
+    category: 'sleep',
+    categoryBadge: 'SLEEP HYGIENE · CIRCADIAN & VAGAL',
+    title: 'Morning Photonic Anchor & Pre-Sleep 0.1 Hz Vagal Down-Regulation',
+    biomarkerTarget: 'Suprachiasmatic Nucleus (SCN) Entrainment & Stage N2 Sleep Spindles',
+    citation: 'Diekelmann & Born, Nat. Rev. Neurosci. (2010); Lehrer & Gevirtz, Front. Psychol. (2014)',
+    mechanismSummary:
+      'Morning outdoor lux anchors cortisol awakening curves and nocturnal melatonin onset, while 5 minutes of pre-sleep 0.1 Hz resonance breathing elevates nocturnal vagal HRV and thalamocortical sleep spindle density.',
+    actionableProtocol:
+      'Get 10–15 minutes of direct outdoor daylight within 45 minutes of waking, dim overhead short-wavelength light 90 minutes before bed, and practice 5 minutes of 6-breaths/min (0.1 Hz) pacing.',
+    synergyProtocolId: 'coherence_breath',
+    synergyLabel: 'Synergizes with Protocol 03 · 0.1 Hz Resonance Breath (+5% Nectar Yield)',
+    accentHex: '#68D391',
+  },
+];
+
+export function filterNeuroNutritionTips(
+  category: NeuroLifestyleCategory
+): NeuroNutritionTip[] {
+  if (category === 'all') return NEURO_NUTRITION_SLEEP_TIPS;
+  return NEURO_NUTRITION_SLEEP_TIPS.filter((tip) => tip.category === category);
+}
+
+export function computeNeuroSynergyBonus(completedHabitIds: string[]): {
+  completedCount: number;
+  totalCount: number;
+  readinessPct: number;
+  bonusNectarMultiplier: number; // 1.00 .. 1.20
+  startingNectarBonus: number; // 0 .. 16
+  statusLabel: string;
+} {
+  const validSet = new Set(NEURO_NUTRITION_SLEEP_TIPS.map((t) => t.id));
+  const uniqueCompleted = Array.from(new Set(completedHabitIds)).filter((id) =>
+    validSet.has(id)
+  );
+  const completedCount = uniqueCompleted.length;
+  const totalCount = NEURO_NUTRITION_SLEEP_TIPS.length;
+  const readinessPct = Math.round((completedCount / totalCount) * 100);
+  const bonusNectarMultiplier = Math.round((1 + completedCount * 0.05) * 100) / 100;
+  const startingNectarBonus = completedCount * 4;
+
+  let statusLabel = 'Baseline Biological Readiness';
+  if (completedCount === 4) {
+    statusLabel = 'Peak Metabolic & Glymphatic Readiness (+20% BDNF Yield)';
+  } else if (completedCount >= 2) {
+    statusLabel = `Active Neuro-Lifestyle Synergy (+${completedCount * 5}% BDNF Yield)`;
+  } else if (completedCount === 1) {
+    statusLabel = 'Developing Neuro-Lifestyle Habit (+5% BDNF Yield)';
+  }
+
+  return {
+    completedCount,
+    totalCount,
+    readinessPct,
+    bonusNectarMultiplier,
+    startingNectarBonus,
+    statusLabel,
+  };
+}
