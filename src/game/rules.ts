@@ -344,6 +344,9 @@ export interface DailyStreakState {
   longestStreak: number;
   lastPracticedDate: string | null; // YYYY-MM-DD in local time
   totalDaysPracticed: number;
+  nsdrCompletedToday?: boolean;
+  cognitiveReframingCompletedToday?: boolean;
+  habitTrackerDateIso?: string | null;
 }
 
 export const STREAK_STORAGE_KEY = 'sylvan_synapse_daily_streak_v1';
@@ -1089,6 +1092,185 @@ export function computeNeuroSynergyBonus(completedHabitIds: string[]): {
 }
 
 /**
+ * Daily Neuro-Restorative Habit Tracker (Non-Sleep Deep Rest & Daily Cognitive Reframing)
+ * Logs completion of NSDR and Daily Cognitive Reframing exercises and synchronizes directly
+ * with the user's DailyStreakState.
+ */
+export type DailyHabitExerciseId = 'nsdr_protocol' | 'cognitive_reframing';
+
+export interface DailyHabitExercise {
+  id: DailyHabitExerciseId;
+  title: string;
+  shortLabel: string;
+  protocolBadge: string;
+  durationLabel: string;
+  biomarkerTarget: string;
+  citation: string;
+  mechanismSummary: string;
+  exercisePrompt: string;
+  synergyBonusLabel: string;
+  accentHex: string;
+}
+
+export const DAILY_HABIT_TRACKER_STORAGE_KEY = 'sylvan_synapse_daily_habit_tracker_v1';
+
+export interface DailyHabitTrackerState {
+  dateIso: string; // YYYY-MM-DD synced with daily streak
+  nsdrCompleted: boolean;
+  cognitiveReframingCompleted: boolean;
+  syncedStreakDays: number;
+  lastUpdatedIso: string | null;
+}
+
+export const DAILY_HABIT_EXERCISES: DailyHabitExercise[] = [
+  {
+    id: 'nsdr_protocol',
+    title: 'Non-Sleep Deep Rest (NSDR)',
+    shortLabel: 'Non-Sleep Deep Rest (NSDR)',
+    protocolBadge: 'RESTORATIVE NEUROPLASTICITY · NSDR PROTOCOL',
+    durationLabel: '10–20 Min Guided Rest',
+    biomarkerTarget: '+65% Striatal Dopamine Recovery & Parasympathetic Theta Shift',
+    citation: 'Kjaer et al., Cognitive Brain Research (2002); Yoga Nidra / NSDR Clinical Trials',
+    mechanismSummary:
+      'Guided supine body-scan and slow-exhale physiological sigh protocol that transitions thalamocortical networks into restorative alpha/theta waves, replenishing striatal dopamine reserves and accelerating hippocampal motor-spatial consolidation.',
+    exercisePrompt:
+      'Complete a 10–20 minute eyes-closed NSDR or Yoga Nidra body-scan session after intensive cognitive focus or mid-afternoon mental fatigue.',
+    synergyBonusLabel: 'Syncs with Daily Streak · +10% Vagal & Striatal Recovery Readiness',
+    accentHex: '#4FD1C5',
+  },
+  {
+    id: 'cognitive_reframing',
+    title: 'Daily Cognitive Reframing',
+    shortLabel: 'Daily Cognitive Reframing',
+    protocolBadge: 'TOP-DOWN PREFRONTAL REGULATION · CBT REAPPRAISAL',
+    durationLabel: '5 Min Executive Exercise',
+    biomarkerTarget: 'dlPFC-Amygdala Top-Down Attenuation & Cortisol Buffering',
+    citation: 'Ochsner & Gross, Trends Cogn. Sci. (2005); Jamieson et al., J. Exp. Psychol. (2012)',
+    mechanismSummary:
+      'Structured cognitive reappraisal recruits dorsolateral and ventrolateral prefrontal cortex (dlPFC/vlPFC) executive pathways to down-regulate amygdala threat reactivity, converting acute stress arousal into adaptive neuroplastic eustress.',
+    exercisePrompt:
+      'Identify one automatic stress appraisal today and re-author it into an objective, growth-oriented prefrontal reframe.',
+    synergyBonusLabel: 'Syncs with Daily Streak · +10% Prefrontal Executive Readiness',
+    accentHex: '#B794F4',
+  },
+];
+
+export function syncDailyHabitTrackerWithStreak(
+  savedStreak: DailyStreakState | null | undefined,
+  savedTracker: DailyHabitTrackerState | null | undefined,
+  todayIso: string
+): { streak: DailyStreakState; tracker: DailyHabitTrackerState } {
+  const evaluatedStreak = evaluateStreakOnLoad(savedStreak, todayIso);
+  const isSameDayTracker = Boolean(savedTracker && savedTracker.dateIso === todayIso);
+  const isSameDayStreakHabits = Boolean(
+    savedStreak && savedStreak.habitTrackerDateIso === todayIso
+  );
+
+  const nsdrCompleted = isSameDayTracker
+    ? Boolean(savedTracker?.nsdrCompleted)
+    : isSameDayStreakHabits
+    ? Boolean(savedStreak?.nsdrCompletedToday)
+    : false;
+
+  const cognitiveReframingCompleted = isSameDayTracker
+    ? Boolean(savedTracker?.cognitiveReframingCompleted)
+    : isSameDayStreakHabits
+    ? Boolean(savedStreak?.cognitiveReframingCompletedToday)
+    : false;
+
+  // If either exercise was already completed today, ensure today's streak session is recorded
+  const syncedStreakBase =
+    nsdrCompleted || cognitiveReframingCompleted
+      ? recordDailyPracticeSession(evaluatedStreak, todayIso)
+      : evaluatedStreak;
+
+  const streak: DailyStreakState = {
+    ...syncedStreakBase,
+    nsdrCompletedToday: nsdrCompleted,
+    cognitiveReframingCompletedToday: cognitiveReframingCompleted,
+    habitTrackerDateIso: todayIso,
+  };
+
+  const tracker: DailyHabitTrackerState = {
+    dateIso: todayIso,
+    nsdrCompleted,
+    cognitiveReframingCompleted,
+    syncedStreakDays: streak.currentStreak,
+    lastUpdatedIso: isSameDayTracker ? savedTracker?.lastUpdatedIso ?? todayIso : null,
+  };
+
+  return { streak, tracker };
+}
+
+export function toggleDailyHabitExercise(params: {
+  streak: DailyStreakState | null | undefined;
+  tracker: DailyHabitTrackerState | null | undefined;
+  exerciseId: DailyHabitExerciseId;
+  todayIso: string;
+}): {
+  streak: DailyStreakState;
+  tracker: DailyHabitTrackerState;
+  completedCount: number;
+  allExercisesCompleted: boolean;
+  streakSyncedLabel: string;
+} {
+  const { streak: baseStreak, tracker: baseTracker } = syncDailyHabitTrackerWithStreak(
+    params.streak,
+    params.tracker,
+    params.todayIso
+  );
+
+  const nextNsdr =
+    params.exerciseId === 'nsdr_protocol'
+      ? !baseTracker.nsdrCompleted
+      : baseTracker.nsdrCompleted;
+
+  const nextReframing =
+    params.exerciseId === 'cognitive_reframing'
+      ? !baseTracker.cognitiveReframingCompleted
+      : baseTracker.cognitiveReframingCompleted;
+
+  // Completing either NSDR or Daily Cognitive Reframing logs a daily practice session on todayIso
+  const practicedStreak =
+    nextNsdr || nextReframing
+      ? recordDailyPracticeSession(baseStreak, params.todayIso)
+      : baseStreak;
+
+  const updatedStreak: DailyStreakState = {
+    ...practicedStreak,
+    nsdrCompletedToday: nextNsdr,
+    cognitiveReframingCompletedToday: nextReframing,
+    habitTrackerDateIso: params.todayIso,
+  };
+
+  const updatedTracker: DailyHabitTrackerState = {
+    dateIso: params.todayIso,
+    nsdrCompleted: nextNsdr,
+    cognitiveReframingCompleted: nextReframing,
+    syncedStreakDays: updatedStreak.currentStreak,
+    lastUpdatedIso: params.todayIso,
+  };
+
+  const completedCount = (nextNsdr ? 1 : 0) + (nextReframing ? 1 : 0);
+  const allExercisesCompleted = nextNsdr && nextReframing;
+  const streakDaysLabel = `${updatedStreak.currentStreak}-Day Streak`;
+  const streakSyncedLabel =
+    completedCount === 2
+      ? `Synced with ${streakDaysLabel} · Both NSDR & Cognitive Reframing Completed Today`
+      : completedCount === 1
+      ? `Synced with ${streakDaysLabel} · 1/2 Mind-Body Exercises Logged Today`
+      : `Synced with ${streakDaysLabel} · Log NSDR or Cognitive Reframing Today`;
+
+  return {
+    streak: updatedStreak,
+    tracker: updatedTracker,
+    completedCount,
+    allExercisesCompleted,
+    streakSyncedLabel,
+  };
+}
+
+/**
  * Cognitive Insight Journal — Post-Session Reflective 'Neural Logs' Linked to Daily Streak
  * Grounded in Metacognitive Monitoring & Expressive Consolidation (Fleming & Dolan, Phil. Trans. R. Soc. B, 2012).
  */
@@ -1182,3 +1364,39 @@ export function appendNeuralLogEntry(
 
   return [created, ...existingLogs].slice(0, maxLogs);
 }
+
+/**
+ * Zen Mode HUD Visibility & HRV Focus Configuration
+ * Hides non-essential status telemetry (BDNF Nectar, Trees Grafted, Rejuvenation Score,
+ * Synaptic Flow Multiplier, N-Back Chime Stream, Protocol Deck, Radar Minimap) to provide
+ * an unobstructed, minimalist sanctuary view for focused 0.1 Hz HRV coherence breathing.
+ */
+export interface ZenModeHudState {
+  isZenMode: boolean;
+  showNectar: boolean;
+  showTreesGrafted: boolean;
+  showRejuvenation: boolean;
+  showSynapticFlow: boolean;
+  showNBackStream: boolean;
+  showProtocolDeck: boolean;
+  showRadarMinimap: boolean;
+  showZenBreathingGuide: boolean;
+  autoEngageVagalBreathing: boolean;
+}
+
+export function computeZenModeHudState(isZenMode: boolean): ZenModeHudState {
+  const active = Boolean(isZenMode);
+  return {
+    isZenMode: active,
+    showNectar: !active,
+    showTreesGrafted: !active,
+    showRejuvenation: !active,
+    showSynapticFlow: !active,
+    showNBackStream: !active,
+    showProtocolDeck: !active,
+    showRadarMinimap: !active,
+    showZenBreathingGuide: active,
+    autoEngageVagalBreathing: active,
+  };
+}
+

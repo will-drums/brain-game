@@ -71,6 +71,7 @@ interface SanctuaryCanvasProps {
   isDemoMode?: boolean;
   demoStepSignal?: { step: number; seq: number } | null;
   atmosphereId?: SanctuaryAtmosphereId;
+  isZenMode?: boolean;
 }
 
 interface NeuralTree {
@@ -164,6 +165,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
   isDemoMode = false,
   demoStepSignal = null,
   atmosphereId = 'forest',
+  isZenMode = false,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -182,6 +184,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
     onTreeGrafted,
     isDemoMode,
     atmosphereId,
+    isZenMode,
   });
 
   useEffect(() => {
@@ -198,6 +201,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       onTreeGrafted,
       isDemoMode,
       atmosphereId,
+      isZenMode,
     };
   }, [
     gameState,
@@ -212,6 +216,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
     onTreeGrafted,
     isDemoMode,
     atmosphereId,
+    isZenMode,
   ]);
 
   // Ref for signals from HUD buttons
@@ -1231,6 +1236,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
           }
 
           const isCoherentBreathing =
+            Boolean(stateRef.current.isZenMode) ||
             demoCoherentBreathOverride ||
             keysHeld.has('ShiftLeft') ||
             keysHeld.has('ShiftRight') ||
@@ -1848,6 +1854,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       // 6. Render Player (Bioluminescent Forest Sprite) & Resonance Breath Ring
       const breathState = computeResonanceBreathState(stageElapsedSec);
       const isCoherentBreathing =
+        Boolean(stateRef.current.isZenMode) ||
         (stateRef.current.isDemoMode && demoStepIndex === 2) ||
         keysHeld.has('ShiftLeft') ||
         keysHeld.has('ShiftRight') ||
@@ -2011,8 +2018,8 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         ctx.restore();
       }
 
-      // 7C. Render Diegetic Sanctuary Radar Minimap (Bottom-Right Corner during Active Play)
-      if (currentGameState === 'playing' && viewWidth >= 760) {
+      // 7C. Render Diegetic Sanctuary Radar Minimap (Bottom-Right Corner during Active Play, hidden in Zen Mode)
+      if (currentGameState === 'playing' && !stateRef.current.isZenMode && viewWidth >= 760) {
         const mapW = 136;
         const mapH = 92;
         const mapX = viewWidth - mapW - 22;
@@ -2133,6 +2140,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
           breathPhaseLabel: breathState.phaseLabel,
           breathExpansion: breathState.expansion,
           isCoherentBreathing:
+            Boolean(stateRef.current.isZenMode) ||
             (stateRef.current.isDemoMode && demoStepIndex === 2) ||
             keysHeld.has('ShiftLeft') ||
             keysHeld.has('ShiftRight') ||

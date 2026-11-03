@@ -20,6 +20,12 @@ import {
   NEURAL_LOGS_STORAGE_KEY,
   DEFAULT_NEURAL_LOGS_SEED,
   appendNeuralLogEntry,
+  computeZenModeHudState,
+  DAILY_HABIT_TRACKER_STORAGE_KEY,
+  syncDailyHabitTrackerWithStreak,
+  toggleDailyHabitExercise,
+  type DailyHabitExerciseId,
+  type DailyHabitTrackerState,
   type NeuralLogEntry,
   type NeuralLogMoodTag,
   type SanctuaryAtmosphereId,
@@ -95,6 +101,8 @@ export default function App() {
   const [activeProtocol, setActiveProtocol] = useState<ProtocolId>('ufov_forage');
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isBinauralEnabled, setIsBinauralEnabled] = useState<boolean>(true);
+  const [isZenMode, setIsZenMode] = useState<boolean>(false);
+  const zenHud = computeZenModeHudState(isZenMode);
   const [atmosphereId, setAtmosphereId] = useState<SanctuaryAtmosphereId>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -301,6 +309,62 @@ export default function App() {
       return updated;
     });
   }, []);
+
+  // Daily Mind-Body Habit Tracker (NSDR & Daily Cognitive Reframing) synced with DailyStreakState
+  const [dailyHabitTracker, setDailyHabitTracker] = useState<DailyHabitTrackerState>(() => {
+    const todayIso = formatLocalDateIso();
+    if (typeof window !== 'undefined') {
+      try {
+        const rawTracker = window.localStorage.getItem(DAILY_HABIT_TRACKER_STORAGE_KEY);
+        const parsedTracker = rawTracker
+          ? (JSON.parse(rawTracker) as DailyHabitTrackerState)
+          : null;
+        const { streak, tracker } = syncDailyHabitTrackerWithStreak(
+          dailyStreak,
+          parsedTracker,
+          todayIso
+        );
+        window.localStorage.setItem(DAILY_HABIT_TRACKER_STORAGE_KEY, JSON.stringify(tracker));
+        window.localStorage.setItem(STREAK_STORAGE_KEY, JSON.stringify(streak));
+        return tracker;
+      } catch {
+        // Ignore storage errors
+      }
+    }
+    return syncDailyHabitTrackerWithStreak(dailyStreak, null, todayIso).tracker;
+  });
+
+  const handleToggleDailyHabitExercise = useCallback(
+    (exerciseId: DailyHabitExerciseId) => {
+      const todayIso = formatLocalDateIso();
+      setDailyHabitTracker((prevTracker) => {
+        const result = toggleDailyHabitExercise({
+          streak: dailyStreak,
+          tracker: prevTracker,
+          exerciseId,
+          todayIso,
+        });
+        setDailyStreak(result.streak);
+        soundEngine.playLightNote(659.25, 0.16);
+        if (typeof window !== 'undefined') {
+          try {
+            window.localStorage.setItem(
+              DAILY_HABIT_TRACKER_STORAGE_KEY,
+              JSON.stringify(result.tracker)
+            );
+            window.localStorage.setItem(
+              STREAK_STORAGE_KEY,
+              JSON.stringify(result.streak)
+            );
+          } catch {
+            // Ignore storage errors
+          }
+        }
+        return result.tracker;
+      });
+    },
+    [dailyStreak]
+  );
 
   // HRV Coherence History (Last 10 Practice Sessions) persisted in localStorage
   const [hrvHistory, setHrvHistory] = useState<HrvSessionRecord[]>(() => {
@@ -569,6 +633,30 @@ export default function App() {
     setIsBinauralEnabled(enabled);
   };
 
+  const handleToggleZenMode = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.currentTarget.blur();
+    setIsZenMode((prev) => !prev);
+  };
+
+  // Bind [Z] keyboard shortcut during active play to toggle Zen Mode
+  useEffect(() => {
+    if (gameState !== 'playing' || isCodexOpen) return;
+    const onZenKey = (e: KeyboardEvent) => {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) {
+        return;
+      }
+      if (e.code === 'KeyZ' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setIsZenMode((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', onZenKey);
+    return () => window.removeEventListener('keydown', onZenKey);
+  }, [gameState, isCodexOpen]);
+
   const handleToggleFullscreen = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.currentTarget.blur();
     if (!document.fullscreenElement) {
@@ -616,6 +704,7 @@ export default function App() {
         isDemoMode={isDemoMode}
         demoStepSignal={demoStepSignal}
         atmosphereId={atmosphereId}
+        isZenMode={isZenMode}
       />
 
       {/* 2. TITLE SCREEN OVERLAY (30%-40% negative space left column over live world camera pan) */}
@@ -986,101 +1075,114 @@ export default function App() {
                 </div>
               </div>
 
-              {/* BDNF Nectar Counter */}
-              <div className="pl-3 border-l border-[#233D32]">
-                <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
-                  BDNF NECTAR
+              {/* BDNF Nectar Counter (Hidden in Zen Mode) */}
+              {zenHud.showNectar && (
+                <div data-testid="hud-nectar" className="pl-3 border-l border-[#233D32]">
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
+                    BDNF NECTAR
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-xl font-mono font-bold text-[#F2B84B] tabular-nums hud-text-stroke">
+                      {Math.round(hud.nectar)}
+                    </span>
+                    <span className="text-[11px] font-mono text-[#A3B8B0] tabular-nums">
+                      /{hud.nectarCostPerTree}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-xl font-mono font-bold text-[#F2B84B] tabular-nums hud-text-stroke">
-                    {Math.round(hud.nectar)}
-                  </span>
-                  <span className="text-[11px] font-mono text-[#A3B8B0] tabular-nums">
-                    /{hud.nectarCostPerTree}
-                  </span>
-                </div>
-              </div>
+              )}
 
-              {/* Hippocampal Trees Grafted */}
-              <div className="pl-3 border-l border-[#233D32]">
-                <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
-                  TREES GRAFTED
+              {/* Hippocampal Trees Grafted (Hidden in Zen Mode) */}
+              {zenHud.showTreesGrafted && (
+                <div data-testid="hud-trees-grafted" className="pl-3 border-l border-[#233D32]">
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
+                    TREES GRAFTED
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-xl font-mono font-bold text-[#B794F4] tabular-nums hud-text-stroke">
+                      {hud.treesGrafted}/{hud.targetTrees}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-xl font-mono font-bold text-[#B794F4] tabular-nums hud-text-stroke">
-                    {hud.treesGrafted}/{hud.targetTrees}
-                  </span>
-                </div>
-              </div>
+              )}
 
-              {/* Rejuvenation Index */}
-              <div className="pl-3 border-l border-[#233D32] hidden md:block">
-                <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
-                  REJUVENATION
+              {/* Rejuvenation Index (Hidden in Zen Mode) */}
+              {zenHud.showRejuvenation && (
+                <div data-testid="hud-rejuvenation" className="pl-3 border-l border-[#233D32] hidden md:block">
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
+                    REJUVENATION
+                  </div>
+                  <div className="text-xl font-mono font-bold text-[#4FD1C5] tabular-nums hud-text-stroke">
+                    {Math.round(hud.rejuvenationScore)}
+                  </div>
                 </div>
-                <div className="text-xl font-mono font-bold text-[#4FD1C5] tabular-nums hud-text-stroke">
-                  {Math.round(hud.rejuvenationScore)}
-                </div>
-              </div>
+              )}
 
-              {/* Adaptive Psychometric Synaptic Flow Multiplier */}
-              <div
-                data-testid="hud-synaptic-flow"
-                className="pl-3 border-l border-[#233D32] hidden xl:block"
-                title={`Adaptive UFOV Staircase Window: ${hud.adaptiveUfovWindowMs}ms · Consecutive Accuracy Streak: ${hud.flowStreak}`}
-              >
-                <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0] flex items-center gap-1">
-                  <span>SYNAPTIC FLOW</span>
-                  <span className="px-1 py-0.2 rounded bg-[#142D23] text-[#68D391] text-[9px] border border-[#2C4C3E] tabular-nums">
-                    {hud.adaptiveUfovWindowMs}ms
-                  </span>
+              {/* Adaptive Psychometric Synaptic Flow Multiplier (Hidden in Zen Mode) */}
+              {zenHud.showSynapticFlow && (
+                <div
+                  data-testid="hud-synaptic-flow"
+                  className="pl-3 border-l border-[#233D32] hidden xl:block"
+                  title={`Adaptive UFOV Staircase Window: ${hud.adaptiveUfovWindowMs}ms · Consecutive Accuracy Streak: ${hud.flowStreak}`}
+                >
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0] flex items-center gap-1">
+                    <span>SYNAPTIC FLOW</span>
+                    <span className="px-1 py-0.2 rounded bg-[#142D23] text-[#68D391] text-[9px] border border-[#2C4C3E] tabular-nums">
+                      {hud.adaptiveUfovWindowMs}ms
+                    </span>
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-xl font-mono font-bold text-[#68D391] tabular-nums hud-text-stroke">
+                      {hud.flowMultiplier.toFixed(2)}x
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-xl font-mono font-bold text-[#68D391] tabular-nums hud-text-stroke">
-                    {hud.flowMultiplier.toFixed(2)}x
-                  </span>
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Top-Right Cluster: Live N-Back Working Memory Strip + Compact Utility Buttons */}
             <div className="flex items-center gap-3 pointer-events-auto">
-              {/* Live N-Back Totem Sequence Indicator */}
-              <div className="hidden md:flex items-center gap-3 px-4 py-2 rounded-2xl bg-[#091510]/88 border border-[#233D32] shadow-xl">
-                <div>
-                  <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
-                    {hud.nBackLevel}-BACK CHIME STREAM
-                  </div>
-                  <div className="flex items-center gap-1.5 mt-1">
-                    {hud.chimeHistory.slice(-3).map((sym, idx, arr) => {
-                      const isLatest = idx === arr.length - 1;
-                      return (
-                        <React.Fragment key={idx}>
-                          {renderSymbolBadge(sym, isLatest && hud.isNBackReadyToMatch)}
-                          {idx < arr.length - 1 && (
-                            <span className="text-xs text-[#526B61]">→</span>
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  onClick={(e) => {
-                    e.currentTarget.blur();
-                    setTriggerActionSignal({ action: 'chime', seq: Date.now() });
-                  }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                    hud.isNBackReadyToMatch
-                      ? 'bg-[#F2B84B] text-[#091510] shadow-md'
-                      : 'bg-[#152E24] text-[#4FD1C5] border border-[#2C4C3E] hover:bg-[#1E3F32]'
-                  }`}
+              {/* Live N-Back Totem Sequence Indicator (Hidden in Zen Mode) */}
+              {zenHud.showNBackStream && (
+                <div
+                  data-testid="hud-nback-stream"
+                  className="hidden md:flex items-center gap-3 px-4 py-2 rounded-2xl bg-[#091510]/88 border border-[#233D32] shadow-xl"
                 >
-                  Ring Echo [E]
-                </button>
-              </div>
+                  <div>
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
+                      {hud.nBackLevel}-BACK CHIME STREAM
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      {hud.chimeHistory.slice(-3).map((sym, idx, arr) => {
+                        const isLatest = idx === arr.length - 1;
+                        return (
+                          <React.Fragment key={idx}>
+                            {renderSymbolBadge(sym, isLatest && hud.isNBackReadyToMatch)}
+                            {idx < arr.length - 1 && (
+                              <span className="text-xs text-[#526B61]">→</span>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      setTriggerActionSignal({ action: 'chime', seq: Date.now() });
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                      hud.isNBackReadyToMatch
+                        ? 'bg-[#F2B84B] text-[#091510] shadow-md'
+                        : 'bg-[#152E24] text-[#4FD1C5] border border-[#2C4C3E] hover:bg-[#1E3F32]'
+                    }`}
+                  >
+                    Ring Echo [E]
+                  </button>
+                </div>
+              )}
 
               {/* Compact Square SVG Utility Buttons: Codex, Mute [M], Restart [R], Pause [P] */}
               <div className="flex items-center gap-1.5 p-1.5 rounded-xl bg-[#091510]/88 border border-[#233D32]">
@@ -1130,6 +1232,28 @@ export default function App() {
                     );
                   })}
                 </div>
+
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  data-testid="toggle-zen-mode-btn"
+                  aria-pressed={isZenMode}
+                  aria-label="Toggle Zen Mode [Z] — Minimalist HRV Breathing View"
+                  onClick={handleToggleZenMode}
+                  className={`px-2.5 h-9 flex items-center gap-1.5 rounded-lg text-[10px] font-mono font-semibold border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    isZenMode
+                      ? 'bg-[#1A4231] text-[#68D391] border-[#68D391] shadow-md'
+                      : 'bg-[#132A21] text-[#A3B8B0] hover:text-[#F4EFE6] border-[#2C4C3E]'
+                  }`}
+                  title="Toggle Zen Mode [Z] — Hide non-essential telemetry (nectar, trees, flow) for focused 0.1 Hz HRV breathing"
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      isZenMode ? 'bg-[#68D391]' : 'bg-[#526B61]'
+                    }`}
+                  />
+                  <span>{isZenMode ? 'Zen: ON' : 'Zen [Z]'}</span>
+                </button>
 
                 <button
                   type="button"
@@ -1336,75 +1460,123 @@ export default function App() {
             </div>
           )}
 
-          {/* Bottom Unified Perimeter Dock: 0.1 Hz Breath Guide + 4 Clinical Action Slots */}
+          {/* Bottom Unified Perimeter Dock: Zen Minimalist 0.1 Hz HRV Guide OR Full 4-Protocol Deck */}
           <div className="flex flex-col items-center gap-2">
-            {hud.statusBannerText && (
-              <div className="px-4 py-1.5 rounded-xl bg-[#091510]/90 border border-[#233D32] text-xs font-mono text-[#F4EFE6] shadow-md">
-                {hud.statusBannerText}
-              </div>
-            )}
-
-            <div className="flex flex-wrap items-center justify-center gap-2.5 px-4 py-2.5 rounded-2xl bg-[#091510]/90 border border-[#233D32] shadow-2xl pointer-events-auto">
-              {/* 4 Evidence-Based Cognitive Protocol Action Slots */}
-              {(Object.keys(CLINICAL_PROTOCOLS) as ProtocolId[]).map((pid) => {
-                const proto = CLINICAL_PROTOCOLS[pid];
-                const isSelected = activeProtocol === pid;
-                return (
-                  <button
-                    key={pid}
-                    type="button"
-                    tabIndex={-1}
-                    onClick={(e) => {
-                      e.currentTarget.blur();
-                      setActiveProtocol(pid);
-                      if (pid === 'ufov_forage') {
-                        setTriggerActionSignal({ action: 'pulse', seq: Date.now() });
-                      } else if (pid === 'nback_chimes') {
-                        setTriggerActionSignal({ action: 'chime', seq: Date.now() });
-                      } else if (pid === 'dendrite_graft') {
-                        setTriggerActionSignal({ action: 'graft', seq: Date.now() });
-                      }
-                    }}
-                    className={`flex items-center gap-2.5 px-3.5 py-2 rounded-xl text-left transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                      isSelected
-                        ? 'bg-[#18382B] border-2 border-[#68D391] text-[#F4EFE6]'
-                        : 'bg-[#0F241C] border border-[#233D32] text-[#A3B8B0] hover:text-[#F4EFE6]'
-                    }`}
-                  >
-                    <span
-                      className="w-6 h-6 rounded-md flex items-center justify-center text-xs font-mono font-bold text-[#091510]"
-                      style={{ backgroundColor: proto.accentHex }}
-                    >
-                      {proto.keyBinding}
-                    </span>
-                    <div>
-                      <div className="text-xs font-semibold text-[#F4EFE6]">
-                        {proto.actionName}
-                      </div>
-                      <div className="text-[10px] font-mono text-[#A3B8B0]">
-                        {proto.roleClue}
-                      </div>
+            {zenHud.showZenBreathingGuide ? (
+              <div
+                data-testid="zen-mode-breathing-bar"
+                className="flex flex-wrap items-center justify-between gap-4 px-5 py-3 rounded-2xl bg-[#091510]/88 border border-[#68D391]/50 shadow-2xl pointer-events-auto max-w-xl w-full"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="w-3 h-3 rounded-full bg-[#68D391] animate-pulse" />
+                  <div>
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-[#68D391] font-semibold">
+                      ZEN HRV COHERENCE MODE · 0.1 Hz (6 BREATHS / MIN)
                     </div>
-                  </button>
-                );
-              })}
-
-              {/* Live 0.1 Hz HRV Resonance Breath Cadence Meter */}
-              <div className="pl-3 border-l border-[#233D32] flex items-center gap-2.5">
-                <div className="w-24">
-                  <div className="flex items-center justify-between text-[10px] font-mono">
-                    <span className="text-[#68D391] font-semibold">{hud.breathPhaseLabel}</span>
-                    <span className="text-[#A3B8B0]">0.1 Hz</span>
-                  </div>
-                  <div className="w-full h-2 mt-1 rounded-full bg-[#122920] overflow-hidden border border-[#233D32]">
-                    <div
-                      className="h-full bg-[#68D391] origin-left"
-                      style={{ transform: `scaleX(${Math.max(0.08, hud.breathExpansion)})` }}
-                    />
+                    <div className="text-xs text-[#D5E2DC]">
+                      5s Inhale · 5s Exhale — Vagal Coherence Shield Active
+                    </div>
                   </div>
                 </div>
+
+                <div className="flex items-center gap-4">
+                  <div className="w-36">
+                    <div className="flex items-center justify-between text-[11px] font-mono">
+                      <span className="text-[#68D391] font-bold">{hud.breathPhaseLabel}</span>
+                      <span className="text-[#A3B8B0]">0.1 Hz</span>
+                    </div>
+                    <div className="w-full h-2.5 mt-1 rounded-full bg-[#122920] overflow-hidden border border-[#2C4C3E]">
+                      <div
+                        className="h-full bg-[#68D391] origin-left"
+                        style={{ transform: `scaleX(${Math.max(0.08, hud.breathExpansion)})` }}
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    data-testid="exit-zen-mode-btn"
+                    onClick={handleToggleZenMode}
+                    className="px-3 py-1.5 rounded-lg bg-[#132A21] hover:bg-[#1E3F32] text-[#F4EFE6] text-xs font-mono font-semibold border border-[#2C4C3E] transition-colors cursor-pointer"
+                  >
+                    Exit Zen [Z]
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <>
+                {hud.statusBannerText && (
+                  <div className="px-4 py-1.5 rounded-xl bg-[#091510]/90 border border-[#233D32] text-xs font-mono text-[#F4EFE6] shadow-md">
+                    {hud.statusBannerText}
+                  </div>
+                )}
+
+                <div
+                  data-testid="hud-protocol-deck"
+                  className="flex flex-wrap items-center justify-center gap-2.5 px-4 py-2.5 rounded-2xl bg-[#091510]/90 border border-[#233D32] shadow-2xl pointer-events-auto"
+                >
+                  {/* 4 Evidence-Based Cognitive Protocol Action Slots */}
+                  {(Object.keys(CLINICAL_PROTOCOLS) as ProtocolId[]).map((pid) => {
+                    const proto = CLINICAL_PROTOCOLS[pid];
+                    const isSelected = activeProtocol === pid;
+                    return (
+                      <button
+                        key={pid}
+                        type="button"
+                        tabIndex={-1}
+                        onClick={(e) => {
+                          e.currentTarget.blur();
+                          setActiveProtocol(pid);
+                          if (pid === 'ufov_forage') {
+                            setTriggerActionSignal({ action: 'pulse', seq: Date.now() });
+                          } else if (pid === 'nback_chimes') {
+                            setTriggerActionSignal({ action: 'chime', seq: Date.now() });
+                          } else if (pid === 'dendrite_graft') {
+                            setTriggerActionSignal({ action: 'graft', seq: Date.now() });
+                          }
+                        }}
+                        className={`flex items-center gap-2.5 px-3.5 py-2 rounded-xl text-left transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#18382B] border-2 border-[#68D391] text-[#F4EFE6]'
+                            : 'bg-[#0F241C] border border-[#233D32] text-[#A3B8B0] hover:text-[#F4EFE6]'
+                        }`}
+                      >
+                        <span
+                          className="w-6 h-6 rounded-md flex items-center justify-center text-xs font-mono font-bold text-[#091510]"
+                          style={{ backgroundColor: proto.accentHex }}
+                        >
+                          {proto.keyBinding}
+                        </span>
+                        <div>
+                          <div className="text-xs font-semibold text-[#F4EFE6]">
+                            {proto.actionName}
+                          </div>
+                          <div className="text-[10px] font-mono text-[#A3B8B0]">
+                            {proto.roleClue}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+
+                  {/* Live 0.1 Hz HRV Resonance Breath Cadence Meter */}
+                  <div className="pl-3 border-l border-[#233D32] flex items-center gap-2.5">
+                    <div className="w-24">
+                      <div className="flex items-center justify-between text-[10px] font-mono">
+                        <span className="text-[#68D391] font-semibold">{hud.breathPhaseLabel}</span>
+                        <span className="text-[#A3B8B0]">0.1 Hz</span>
+                      </div>
+                      <div className="w-full h-2 mt-1 rounded-full bg-[#122920] overflow-hidden border border-[#233D32]">
+                        <div
+                          className="h-full bg-[#68D391] origin-left"
+                          style={{ transform: `scaleX(${Math.max(0.08, hud.breathExpansion)})` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -1664,6 +1836,8 @@ export default function App() {
         currentStreakDays={dailyStreak.currentStreak}
         completedHabitIds={completedHabitIds}
         onToggleHabitId={handleToggleNeuroHabit}
+        dailyHabitTracker={dailyHabitTracker}
+        onToggleDailyHabitExercise={handleToggleDailyHabitExercise}
         neuralLogs={neuralLogs}
         onAddNeuralLog={handleAddNeuralLog}
         onRecordSimulatedSession={() => {

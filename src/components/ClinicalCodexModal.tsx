@@ -9,7 +9,10 @@ import {
   NEURO_NUTRITION_SLEEP_TIPS,
   filterNeuroNutritionTips,
   computeNeuroSynergyBonus,
+  DAILY_HABIT_EXERCISES,
   DEFAULT_NEURAL_LOGS_SEED,
+  type DailyHabitExerciseId,
+  type DailyHabitTrackerState,
   type NeuroLifestyleCategory,
   type NeuralLogEntry,
   type NeuralLogMoodTag,
@@ -29,6 +32,8 @@ interface ClinicalCodexModalProps {
   currentStreakDays?: number;
   completedHabitIds?: string[];
   onToggleHabitId?: (habitId: string) => void;
+  dailyHabitTracker?: DailyHabitTrackerState;
+  onToggleDailyHabitExercise?: (exerciseId: DailyHabitExerciseId) => void;
   neuralLogs?: NeuralLogEntry[];
   onAddNeuralLog?: (params: {
     moodTag: NeuralLogMoodTag;
@@ -49,6 +54,8 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
   currentStreakDays = 1,
   completedHabitIds = ['polyphenol_bdnf_diet', 'glymphatic_slow_wave_sleep'],
   onToggleHabitId,
+  dailyHabitTracker,
+  onToggleDailyHabitExercise,
   neuralLogs = DEFAULT_NEURAL_LOGS_SEED,
   onAddNeuralLog,
 }) => {
@@ -56,6 +63,42 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
   const [hoveredSession, setHoveredSession] = useState<HrvSessionRecord | null>(null);
   const [exportStatus, setExportStatus] = useState<string>('');
   const [lifestyleCategory, setLifestyleCategory] = useState<NeuroLifestyleCategory>('all');
+  const [localTrackerFallback, setLocalTrackerFallback] = useState<{
+    nsdrCompleted: boolean;
+    cognitiveReframingCompleted: boolean;
+  }>({
+    nsdrCompleted: false,
+    cognitiveReframingCompleted: false,
+  });
+
+  const activeNsdrCompleted = dailyHabitTracker
+    ? dailyHabitTracker.nsdrCompleted
+    : localTrackerFallback.nsdrCompleted;
+  const activeReframingCompleted = dailyHabitTracker
+    ? dailyHabitTracker.cognitiveReframingCompleted
+    : localTrackerFallback.cognitiveReframingCompleted;
+  const completedExerciseCount =
+    (activeNsdrCompleted ? 1 : 0) + (activeReframingCompleted ? 1 : 0);
+  const syncedStreakDisplay = Math.max(
+    1,
+    dailyHabitTracker?.syncedStreakDays ?? currentStreakDays
+  );
+
+  const handleExerciseToggleClick = (exerciseId: DailyHabitExerciseId) => {
+    if (onToggleDailyHabitExercise) {
+      onToggleDailyHabitExercise(exerciseId);
+    } else {
+      setLocalTrackerFallback((prev) => ({
+        ...prev,
+        nsdrCompleted:
+          exerciseId === 'nsdr_protocol' ? !prev.nsdrCompleted : prev.nsdrCompleted,
+        cognitiveReframingCompleted:
+          exerciseId === 'cognitive_reframing'
+            ? !prev.cognitiveReframingCompleted
+            : prev.cognitiveReframingCompleted,
+      }));
+    }
+  };
 
   // Synchronize last 10 sessions from hrvHistory prop and HRV_HISTORY_STORAGE_KEY
   const resolvedHistory = React.useMemo(() => {
@@ -735,6 +778,129 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
                 </div>
               );
             })}
+          </div>
+
+          {/* DAILY RESTORATIVE HABIT TRACKER: NON-SLEEP DEEP REST (NSDR) & DAILY COGNITIVE REFRAMING (SYNCED WITH DAILY STREAK) */}
+          <div
+            data-testid="daily-habit-tracker-panel"
+            className="mt-4 pt-4 border-t border-[#233D32] space-y-3.5"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <span className="text-[11px] font-mono uppercase tracking-wider text-[#F2B84B]">
+                  Daily Mind-Body Habit Tracker · Synced with Daily Practice Streak
+                </span>
+                <h4 className="text-base font-display font-semibold text-[#F4EFE6]">
+                  Non-Sleep Deep Rest (NSDR) &amp; Daily Cognitive Reframing Log
+                </h4>
+                <p className="text-xs text-[#A3B8B0]">
+                  Completing either daily mind-body exercise automatically logs and synchronizes with your consecutive Daily Streak state.
+                </p>
+              </div>
+
+              <div
+                data-testid="habit-tracker-streak-sync"
+                className="px-3.5 py-2 rounded-xl bg-[#10231C] border border-[#F2B84B]/50 font-mono text-right shrink-0"
+              >
+                <div className="text-[10px] uppercase tracking-wider text-[#F2B84B]">
+                  DAILY STREAK SYNCHRONIZATION
+                </div>
+                <div className="flex items-center justify-end gap-2 mt-0.5">
+                  <span className="text-sm font-bold text-[#F4EFE6] tabular-nums">
+                    {syncedStreakDisplay}-Day Active Streak
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-[#18382B] text-[#68D391] text-[11px] font-semibold border border-[#68D391]/40 tabular-nums">
+                    {completedExerciseCount}/2 Logged Today
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              {DAILY_HABIT_EXERCISES.map((exercise) => {
+                const isExerciseDone =
+                  exercise.id === 'nsdr_protocol'
+                    ? activeNsdrCompleted
+                    : activeReframingCompleted;
+
+                return (
+                  <div
+                    key={exercise.id}
+                    data-testid={`habit-exercise-card-${exercise.id}`}
+                    className={`p-4 rounded-xl border transition-colors flex flex-col justify-between space-y-3 ${
+                      isExerciseDone
+                        ? 'bg-[#132E23] border-[#68D391]'
+                        : 'bg-[#10231C] border-[#1E3A2F]'
+                    }`}
+                  >
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="px-2 py-0.5 rounded text-[10px] font-mono font-bold text-[#091510]"
+                            style={{ backgroundColor: exercise.accentHex }}
+                          >
+                            {exercise.protocolBadge}
+                          </span>
+                          <span className="text-[10px] font-mono text-[#A3B8B0]">
+                            {exercise.durationLabel}
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          data-testid={`habit-exercise-toggle-${exercise.id}`}
+                          aria-pressed={isExerciseDone}
+                          onClick={() => handleExerciseToggleClick(exercise.id)}
+                          className={`px-3 py-1 rounded-md text-[10px] font-mono font-semibold transition-colors cursor-pointer border ${
+                            isExerciseDone
+                              ? 'bg-[#68D391] text-[#091510] border-[#68D391]'
+                              : 'bg-[#0B1914] text-[#F2B84B] border-[#F2B84B]/50 hover:bg-[#163025] hover:text-[#F4EFE6]'
+                          }`}
+                        >
+                          {isExerciseDone
+                            ? '✓ Completed & Synced with Streak'
+                            : `+ Log ${exercise.shortLabel}`}
+                        </button>
+                      </div>
+
+                      <h5 className="text-sm font-display font-semibold text-[#F4EFE6]">
+                        {exercise.title}
+                      </h5>
+
+                      <div className="text-[11px] font-mono text-[#68D391]">
+                        <span>{exercise.biomarkerTarget}</span>
+                        <span aria-hidden="true"> · </span>
+                        <span className="text-[#A3B8B0]">{exercise.citation}</span>
+                      </div>
+
+                      <p className="text-xs text-[#D5E2DC] leading-relaxed">
+                        <strong className="text-[#F4EFE6]">Clinical Mechanism:</strong>{' '}
+                        {exercise.mechanismSummary}
+                      </p>
+
+                      <div className="p-2.5 rounded-lg bg-[#091510]/85 border border-[#1E3A2F] text-xs text-[#F2B84B] leading-relaxed">
+                        <strong className="text-[#F4EFE6]">Daily Exercise Protocol:</strong>{' '}
+                        {exercise.exercisePrompt}
+                      </div>
+                    </div>
+
+                    <div className="pt-1.5 border-t border-[#1E3A2F] flex items-center justify-between text-[10px] font-mono">
+                      <span className="text-[#4FD1C5]">{exercise.synergyBonusLabel}</span>
+                      <span
+                        className={
+                          isExerciseDone ? 'text-[#68D391] font-semibold' : 'text-[#A3B8B0]'
+                        }
+                      >
+                        {isExerciseDone
+                          ? `Streak Synced (${syncedStreakDisplay}d)`
+                          : 'Awaiting Today’s Check-In'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </section>
 

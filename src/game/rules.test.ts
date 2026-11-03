@@ -29,8 +29,89 @@ import {
   computeNeuroSynergyBonus,
   DEFAULT_NEURAL_LOGS_SEED,
   appendNeuralLogEntry,
+  computeZenModeHudState,
+  DAILY_HABIT_EXERCISES,
+  syncDailyHabitTrackerWithStreak,
+  toggleDailyHabitExercise,
   type ChimeSymbol,
 } from './rules';
+
+test('Daily Habit Tracker logs Non-Sleep Deep Rest (NSDR) and Daily Cognitive Reframing and syncs with daily streak state', () => {
+  assert.equal(DAILY_HABIT_EXERCISES.length, 2);
+  assert.equal(DAILY_HABIT_EXERCISES[0].id, 'nsdr_protocol');
+  assert.equal(DAILY_HABIT_EXERCISES[1].id, 'cognitive_reframing');
+
+  // Starting from yesterday's 2-day streak, syncing on a new day resets today's exercise checkboxes while preserving the streak
+  const yesterdayStreak = {
+    currentStreak: 2,
+    longestStreak: 4,
+    lastPracticedDate: '2026-11-02',
+    totalDaysPracticed: 5,
+    nsdrCompletedToday: true,
+    cognitiveReframingCompletedToday: true,
+    habitTrackerDateIso: '2026-11-02',
+  };
+  const syncedOnLoad = syncDailyHabitTrackerWithStreak(yesterdayStreak, null, '2026-11-03');
+  assert.equal(syncedOnLoad.tracker.nsdrCompleted, false);
+  assert.equal(syncedOnLoad.tracker.cognitiveReframingCompleted, false);
+  assert.equal(syncedOnLoad.streak.currentStreak, 2);
+
+  // Completing Non-Sleep Deep Rest (NSDR) on 2026-11-03 advances the consecutive daily streak to 3 days!
+  const afterNsdr = toggleDailyHabitExercise({
+    streak: syncedOnLoad.streak,
+    tracker: syncedOnLoad.tracker,
+    exerciseId: 'nsdr_protocol',
+    todayIso: '2026-11-03',
+  });
+  assert.equal(afterNsdr.tracker.nsdrCompleted, true);
+  assert.equal(afterNsdr.tracker.cognitiveReframingCompleted, false);
+  assert.equal(afterNsdr.completedCount, 1);
+  assert.equal(afterNsdr.streak.currentStreak, 3);
+  assert.equal(afterNsdr.streak.lastPracticedDate, '2026-11-03');
+  assert.equal(afterNsdr.streak.nsdrCompletedToday, true);
+  assert.equal(afterNsdr.tracker.syncedStreakDays, 3);
+
+  // Completing Daily Cognitive Reframing on the same day marks both complete (2/2) and keeps the 3-day streak idempotent
+  const afterReframing = toggleDailyHabitExercise({
+    streak: afterNsdr.streak,
+    tracker: afterNsdr.tracker,
+    exerciseId: 'cognitive_reframing',
+    todayIso: '2026-11-03',
+  });
+  assert.equal(afterReframing.tracker.nsdrCompleted, true);
+  assert.equal(afterReframing.tracker.cognitiveReframingCompleted, true);
+  assert.equal(afterReframing.completedCount, 2);
+  assert.equal(afterReframing.allExercisesCompleted, true);
+  assert.equal(afterReframing.streak.currentStreak, 3);
+  assert.equal(afterReframing.streak.cognitiveReframingCompletedToday, true);
+  assert.ok(afterReframing.streakSyncedLabel.includes('3-Day Streak'));
+});
+
+test('computeZenModeHudState hides non-essential HUD telemetry (nectar, trees, flow) and enables HRV breathing guide in Zen Mode', () => {
+  const normal = computeZenModeHudState(false);
+  assert.equal(normal.isZenMode, false);
+  assert.equal(normal.showNectar, true);
+  assert.equal(normal.showTreesGrafted, true);
+  assert.equal(normal.showRejuvenation, true);
+  assert.equal(normal.showSynapticFlow, true);
+  assert.equal(normal.showNBackStream, true);
+  assert.equal(normal.showProtocolDeck, true);
+  assert.equal(normal.showRadarMinimap, true);
+  assert.equal(normal.showZenBreathingGuide, false);
+  assert.equal(normal.autoEngageVagalBreathing, false);
+
+  const zen = computeZenModeHudState(true);
+  assert.equal(zen.isZenMode, true);
+  assert.equal(zen.showNectar, false);
+  assert.equal(zen.showTreesGrafted, false);
+  assert.equal(zen.showRejuvenation, false);
+  assert.equal(zen.showSynapticFlow, false);
+  assert.equal(zen.showNBackStream, false);
+  assert.equal(zen.showProtocolDeck, false);
+  assert.equal(zen.showRadarMinimap, false);
+  assert.equal(zen.showZenBreathingGuide, true);
+  assert.equal(zen.autoEngageVagalBreathing, true);
+});
 
 test('Cognitive Insight Journal appends post-session Neural Logs linked to daily streak and ignores empty notes', () => {
   assert.equal(DEFAULT_NEURAL_LOGS_SEED.length, 2);
