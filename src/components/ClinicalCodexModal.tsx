@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
 import {
   CLINICAL_PROTOCOLS,
+  HRV_HISTORY_STORAGE_KEY,
+  DEFAULT_HRV_HISTORY_SEED,
   computeHrvTrendSummary,
   computeCognitiveDomainProfile,
   NEURO_NUTRITION_SLEEP_TIPS,
@@ -55,7 +57,28 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
   const [exportStatus, setExportStatus] = useState<string>('');
   const [lifestyleCategory, setLifestyleCategory] = useState<NeuroLifestyleCategory>('all');
 
-  const sessions = hrvHistory.slice(-10);
+  // Synchronize last 10 sessions from hrvHistory prop and HRV_HISTORY_STORAGE_KEY
+  const resolvedHistory = React.useMemo(() => {
+    if (hrvHistory && hrvHistory.length > 0) {
+      return hrvHistory.slice(-10);
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = window.localStorage.getItem(HRV_HISTORY_STORAGE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored) as HrvSessionRecord[];
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed.slice(-10);
+          }
+        }
+      } catch {
+        // Ignore storage read errors
+      }
+    }
+    return DEFAULT_HRV_HISTORY_SEED.slice(-10);
+  }, [hrvHistory]);
+
+  const sessions = resolvedHistory;
   const trendSummary = computeHrvTrendSummary(sessions);
   const domainProfile = computeCognitiveDomainProfile({
     totalTreesGrafted,
@@ -132,8 +155,16 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
       .attr('stroke-dasharray', (d) => (d === 75 ? 'none' : '4,4'))
       .attr('stroke-width', 1);
 
-    // Clinical Resonance Target Threshold Line (75% Vagal Coherence Zone)
+    // Shaded Optimal Vagal Resonance Zone (75% - 100%)
     const thresholdY = yScale(75);
+    g.append('rect')
+      .attr('x', 0)
+      .attr('y', yScale(100))
+      .attr('width', innerWidth)
+      .attr('height', Math.max(0, thresholdY - yScale(100)))
+      .attr('fill', 'rgba(104, 211, 145, 0.06)');
+
+    // Clinical Resonance Target Threshold Line (75% Vagal Coherence Zone)
     g.append('line')
       .attr('x1', 0)
       .attr('x2', innerWidth)
@@ -196,6 +227,55 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
       .datum(sessions)
       .attr('fill', 'url(#hrvCoherenceAreaGradient)')
       .attr('d', areaGenerator);
+
+    // Baseline-to-Latest Vagal Coherence Growth Vector Line (S1 -> S10)
+    if (sessions.length >= 2) {
+      const firstSession = sessions[0];
+      const lastSession = sessions[sessions.length - 1];
+      const x1 = xScale(firstSession.sessionLabel) ?? 0;
+      const y1 = yScale(firstSession.coherenceScore);
+      const x2 = xScale(lastSession.sessionLabel) ?? innerWidth;
+      const y2 = yScale(lastSession.coherenceScore);
+      const delta = lastSession.coherenceScore - firstSession.coherenceScore;
+
+      g.append('line')
+        .attr('data-testid', 'hrv-d3-growth-trendline')
+        .attr('x1', x1)
+        .attr('y1', y1)
+        .attr('x2', x2)
+        .attr('y2', y2)
+        .attr('stroke', '#4FD1C5')
+        .attr('stroke-width', 1.5)
+        .attr('stroke-dasharray', '3,3')
+        .attr('opacity', 0.75);
+
+      // In-Chart Vagal Coherence Growth Callout Badge
+      const badgeGroup = g
+        .append('g')
+        .attr('data-testid', 'hrv-d3-growth-badge')
+        .attr('transform', 'translate(10, 4)');
+
+      badgeGroup
+        .append('rect')
+        .attr('width', 292)
+        .attr('height', 22)
+        .attr('rx', 6)
+        .attr('fill', '#10281F')
+        .attr('stroke', '#68D391')
+        .attr('stroke-width', 1);
+
+      badgeGroup
+        .append('text')
+        .attr('x', 10)
+        .attr('y', 14.5)
+        .attr('fill', '#68D391')
+        .attr('font-family', 'JetBrains Mono, monospace')
+        .attr('font-size', '10px')
+        .attr('font-weight', '700')
+        .text(
+          `▲ ${delta >= 0 ? `+${delta}%` : `${delta}%`} Vagal Coherence Growth (${firstSession.sessionLabel}: ${firstSession.coherenceScore}% → ${lastSession.sessionLabel}: ${lastSession.coherenceScore}%)`
+        );
+    }
 
     // D3 Line generator
     const lineGenerator = d3
@@ -345,7 +425,116 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
           </div>
         </div>
 
-        {/* 4-Domain Cognitive Reserve & Neuroplasticity Profile */}
+        {/* 1. D3.js Physiological Relaxation & HRV Coherence Line Chart (Last 10 Practice Sessions from HRV_HISTORY_STORAGE_KEY) */}
+        <section
+          aria-labelledby="hrv-chart-heading"
+          data-testid="clinical-codex-hrv-chart"
+          className="mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#233D32] space-y-4"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-mono uppercase tracking-wider text-[#4FD1C5]">
+                  0.1 Hz Resonance Biofeedback · Last {sessions.length} Practice Sessions
+                </span>
+                <span className="px-2 py-0.5 rounded bg-[#142D23] text-[#68D391] border border-[#2C4C3E] text-[10px] font-mono font-semibold tabular-nums">
+                  ▲ {trendSummary.trendDelta >= 0 ? `+${trendSummary.trendDelta}%` : `${trendSummary.trendDelta}%`} Vagal Coherence Growth
+                </span>
+              </div>
+              <h3
+                id="hrv-chart-heading"
+                className="text-lg font-display font-semibold text-[#F4EFE6] mt-0.5"
+              >
+                HRV Coherence Score Trajectory &amp; Vagal Growth (D3.js Visualization)
+              </h3>
+            </div>
+
+            {onRecordSimulatedSession && (
+              <button
+                type="button"
+                data-testid="log-hrv-session-btn"
+                onClick={onRecordSimulatedSession}
+                className="px-3.5 py-1.5 rounded-lg bg-[#152E24] hover:bg-[#1E3F32] text-xs font-mono font-semibold text-[#68D391] border border-[#2C4C3E] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                + Log 0.1 Hz Breath Check-In
+              </button>
+            )}
+          </div>
+
+          {/* 4 Tabular-Nums Physiological Relaxation KPIs */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+            <div className="p-3 rounded-lg bg-[#10231C] border border-[#1E3A2F]">
+              <div className="text-[10px] font-mono uppercase text-[#A3B8B0]">
+                LATEST COHERENCE
+              </div>
+              <div className="text-xl font-mono font-bold text-[#68D391] tabular-nums">
+                {trendSummary.latestCoherence}%
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg bg-[#10231C] border border-[#1E3A2F]">
+              <div className="text-[10px] font-mono uppercase text-[#A3B8B0]">
+                10-SESSION MEAN
+              </div>
+              <div className="text-xl font-mono font-bold text-[#4FD1C5] tabular-nums">
+                {trendSummary.averageCoherence}%
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg bg-[#10231C] border border-[#1E3A2F]">
+              <div className="text-[10px] font-mono uppercase text-[#A3B8B0]">
+                VAGAL COHERENCE GROWTH
+              </div>
+              <div className="text-xl font-mono font-bold text-[#F2B84B] tabular-nums">
+                {trendSummary.trendDelta >= 0 ? `+${trendSummary.trendDelta}%` : `${trendSummary.trendDelta}%`}
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg bg-[#10231C] border border-[#1E3A2F]">
+              <div className="text-[10px] font-mono uppercase text-[#A3B8B0]">
+                AUTONOMIC STATE
+              </div>
+              <div className="text-xs font-mono font-semibold text-[#F4EFE6] mt-1">
+                {trendSummary.relaxationStatus}
+              </div>
+            </div>
+          </div>
+
+          {/* D3 Responsive SVG Line Chart */}
+          <div className="w-full overflow-x-auto pt-1">
+            <svg
+              ref={svgRef}
+              viewBox="0 0 760 250"
+              role="img"
+              aria-label="D3 Line Chart of HRV Coherence Scores over the last 10 practice sessions"
+              className="w-full h-auto min-w-[540px] select-none"
+            />
+          </div>
+
+          {/* Interactive Session Inspector Footer */}
+          {activeInspect && (
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#1E3A2F] text-xs font-mono text-[#A3B8B0] tabular-nums">
+              <div>
+                <span className="text-[#F4EFE6] font-semibold">
+                  Session {activeInspect.sessionLabel}
+                </span>
+                <span aria-hidden="true"> · </span>
+                <span>{activeInspect.stageName}</span>
+                <span aria-hidden="true"> · </span>
+                <span>Recorded {activeInspect.recordedAtIso}</span>
+              </div>
+              <div>
+                <span className="text-[#68D391] font-semibold">
+                  HRV Coherence Score: {activeInspect.coherenceScore}%
+                </span>
+                <span aria-hidden="true"> · </span>
+                <span>{activeInspect.coherenceSeconds.toFixed(1)}s Paced 0.1 Hz Breath</span>
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* 2. 4-Domain Cognitive Reserve & Neuroplasticity Profile */}
         <section
           aria-label="4-Domain Cognitive Reserve Profile"
           data-testid="cognitive-domain-profile"
@@ -408,109 +597,6 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
               </div>
             ))}
           </div>
-        </section>
-
-        {/* D3.js Physiological Relaxation & HRV Coherence Line Chart (Last 10 Practice Sessions) */}
-        <section
-          aria-labelledby="hrv-chart-heading"
-          data-testid="clinical-codex-hrv-chart"
-          className="mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#233D32] space-y-4"
-        >
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <span className="text-xs font-mono uppercase tracking-wider text-[#4FD1C5]">
-                0.1 Hz Resonance Biofeedback · Last {sessions.length} Practice Sessions
-              </span>
-              <h3
-                id="hrv-chart-heading"
-                className="text-lg font-display font-semibold text-[#F4EFE6]"
-              >
-                HRV Vagal Coherence &amp; Physiological Relaxation Trajectory
-              </h3>
-            </div>
-
-            {onRecordSimulatedSession && (
-              <button
-                type="button"
-                onClick={onRecordSimulatedSession}
-                className="px-3.5 py-1.5 rounded-lg bg-[#152E24] hover:bg-[#1E3F32] text-xs font-mono font-semibold text-[#68D391] border border-[#2C4C3E] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-              >
-                + Log 0.1 Hz Breath Check-In
-              </button>
-            )}
-          </div>
-
-          {/* 4 Tabular-Nums Physiological Relaxation KPIs */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
-            <div className="p-3 rounded-lg bg-[#10231C] border border-[#1E3A2F]">
-              <div className="text-[10px] font-mono uppercase text-[#A3B8B0]">
-                LATEST COHERENCE
-              </div>
-              <div className="text-xl font-mono font-bold text-[#68D391] tabular-nums">
-                {trendSummary.latestCoherence}%
-              </div>
-            </div>
-
-            <div className="p-3 rounded-lg bg-[#10231C] border border-[#1E3A2F]">
-              <div className="text-[10px] font-mono uppercase text-[#A3B8B0]">
-                10-SESSION MEAN
-              </div>
-              <div className="text-xl font-mono font-bold text-[#4FD1C5] tabular-nums">
-                {trendSummary.averageCoherence}%
-              </div>
-            </div>
-
-            <div className="p-3 rounded-lg bg-[#10231C] border border-[#1E3A2F]">
-              <div className="text-[10px] font-mono uppercase text-[#A3B8B0]">
-                RELAXATION TREND
-              </div>
-              <div className="text-xl font-mono font-bold text-[#F2B84B] tabular-nums">
-                {trendSummary.trendDelta >= 0 ? `+${trendSummary.trendDelta}%` : `${trendSummary.trendDelta}%`}
-              </div>
-            </div>
-
-            <div className="p-3 rounded-lg bg-[#10231C] border border-[#1E3A2F]">
-              <div className="text-[10px] font-mono uppercase text-[#A3B8B0]">
-                AUTONOMIC STATE
-              </div>
-              <div className="text-xs font-mono font-semibold text-[#F4EFE6] mt-1">
-                {trendSummary.relaxationStatus}
-              </div>
-            </div>
-          </div>
-
-          {/* D3 Responsive SVG Line Chart */}
-          <div className="w-full overflow-x-auto pt-1">
-            <svg
-              ref={svgRef}
-              viewBox="0 0 760 250"
-              role="img"
-              aria-label="D3 Line Chart of HRV Coherence Scores over the last 10 practice sessions"
-              className="w-full h-auto min-w-[540px] select-none"
-            />
-          </div>
-
-          {/* Interactive Session Inspector Footer */}
-          {activeInspect && (
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#1E3A2F] text-xs font-mono text-[#A3B8B0] tabular-nums">
-              <div>
-                <span className="text-[#F4EFE6] font-semibold">
-                  Session {activeInspect.sessionLabel}
-                </span>
-                <span aria-hidden="true"> · </span>
-                <span>{activeInspect.stageName}</span>
-                <span aria-hidden="true"> · </span>
-                <span>Recorded {activeInspect.recordedAtIso}</span>
-              </div>
-              <div>
-                <span className="text-[#68D391] font-semibold">
-                  HRV Coherence: {activeInspect.coherenceScore}%
-                </span>
-                <span aria-hidden="true"> · </span>
-                <span>{activeInspect.coherenceSeconds.toFixed(1)}s Paced 0.1 Hz Breath</span>
-              </div>
-            </div>
-          )}
         </section>
 
         {/* NEURO-NUTRITION & GLYMPHATIC SLEEP HYGIENE CLINICAL PROTOCOLS */}
