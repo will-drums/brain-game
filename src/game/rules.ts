@@ -1882,6 +1882,165 @@ export function buildEnterpriseClinicalExportBundle(params: {
   };
 }
 
+/**
+ * 'Adaptive Difficulty Scaling' System
+ * Dynamically adjusts N-Back working memory difficulty (1-Back, 2-Back, 3-Back)
+ * and UFOV peripheral window timing (ms) based on the user's running 5-session
+ * average HRV coherence score to maintain the optimal autonomic-cognitive 'Flow' state.
+ */
+export type AdaptiveScalingTierId =
+  | 'restorative_support'
+  | 'balanced_resonance'
+  | 'elevated_flow'
+  | 'peak_mastery';
+
+export interface RunningFiveSessionHrvSummary {
+  runningFiveSessionAvg: number; // 0 .. 100
+  sampleCount: number; // 0 .. 5
+  recentFiveScores: number[];
+}
+
+export function computeRunningFiveSessionHrvAverage(
+  history?: readonly HrvSessionRecord[] | null
+): RunningFiveSessionHrvSummary {
+  if (!history || history.length === 0) {
+    return {
+      runningFiveSessionAvg: 0,
+      sampleCount: 0,
+      recentFiveScores: [],
+    };
+  }
+  const recentFive = history.slice(-5);
+  const recentFiveScores = recentFive.map((s) =>
+    Math.max(0, Math.min(100, Math.round(Number(s.coherenceScore) || 0)))
+  );
+  const sum = recentFiveScores.reduce((acc, v) => acc + v, 0);
+  const runningFiveSessionAvg = Math.round(sum / recentFiveScores.length);
+
+  return {
+    runningFiveSessionAvg,
+    sampleCount: recentFiveScores.length,
+    recentFiveScores,
+  };
+}
+
+export function createInitialChimeHistoryForNBack(nBackLevel: number): ChimeSymbol[] {
+  const clamped = Math.max(1, Math.min(3, Math.round(nBackLevel || 1)));
+  if (clamped === 1) {
+    return ['LEAF', 'SUN', 'SUN'];
+  }
+  if (clamped === 2) {
+    return ['SUN', 'LEAF', 'SUN'];
+  }
+  return ['SUN', 'LEAF', 'DROP', 'SUN'];
+}
+
+export interface AdaptiveDifficultyScalingState {
+  tierId: AdaptiveScalingTierId;
+  tierLabel: string;
+  runningFiveSessionHrvAvg: number;
+  recentFiveScores: number[];
+  baseNBackLevel: 1 | 2;
+  effectiveNBackLevel: 1 | 2 | 3;
+  nBackDelta: number;
+  baseUfovWindowMs: number;
+  hrvUfovAdjustmentMs: number;
+  streakUfovAdjustmentMs: number;
+  effectiveUfovWindowMs: number;
+  effectiveUfovFlashSec: number;
+  flowStateSummary: string;
+  clinicalRationale: string;
+  accentHex: string;
+}
+
+export function computeAdaptiveDifficultyScaling(params: {
+  hrvHistory?: readonly HrvSessionRecord[] | null;
+  runningFiveSessionHrvAvgOverride?: number | null;
+  baseNBackLevel: 1 | 2;
+  baseUfovFlashSec: number;
+  consecutiveCognitiveHits?: number;
+}): AdaptiveDifficultyScalingState {
+  const fiveSessionSummary = computeRunningFiveSessionHrvAverage(
+    params.hrvHistory && params.hrvHistory.length > 0
+      ? params.hrvHistory
+      : DEFAULT_HRV_HISTORY_SEED
+  );
+
+  const hasOverride =
+    typeof params.runningFiveSessionHrvAvgOverride === 'number' &&
+    Number.isFinite(params.runningFiveSessionHrvAvgOverride);
+
+  const runningFiveSessionHrvAvg = hasOverride
+    ? Math.max(0, Math.min(100, Math.round(params.runningFiveSessionHrvAvgOverride!)))
+    : fiveSessionSummary.runningFiveSessionAvg;
+
+  const baseNBackLevel: 1 | 2 = params.baseNBackLevel === 2 ? 2 : 1;
+  const baseUfovWindowMs = Math.round(Math.max(0.8, params.baseUfovFlashSec || 1.8) * 1000);
+  const streak = Math.max(0, Math.floor(params.consecutiveCognitiveHits || 0));
+  const streakUfovAdjustmentMs = -Math.min(700, streak * 120);
+
+  let tierId: AdaptiveScalingTierId = 'balanced_resonance';
+  let tierLabel = 'Balanced Vagal Flow';
+  let effectiveNBackLevel: 1 | 2 | 3 = baseNBackLevel;
+  let hrvUfovAdjustmentMs = 0;
+  let flowStateSummary = `${baseNBackLevel}-Back Baseline · Balanced UFOV`;
+  let clinicalRationale =
+    '5-session HRV (72–83%) reflects balanced vagal tone; maintains stage baseline N-Back and standard UFOV timing.';
+  let accentHex = '#4FD1C5';
+
+  if (runningFiveSessionHrvAvg < 72) {
+    tierId = 'restorative_support';
+    tierLabel = 'Restorative Flow Support';
+    effectiveNBackLevel = 1;
+    hrvUfovAdjustmentMs = 350;
+    flowStateSummary = '1-Back Support · +350ms UFOV Buffer';
+    clinicalRationale =
+      '5-session HRV (<72%) indicates autonomic fatigue; eases N-Back to 1-Back and widens UFOV window (+350ms) to restore parasympathetic flow.';
+    accentHex = '#68D391';
+  } else if (runningFiveSessionHrvAvg >= 92) {
+    tierId = 'peak_mastery';
+    tierLabel = 'Peak Autonomic Mastery';
+    effectiveNBackLevel = 3;
+    hrvUfovAdjustmentMs = -380;
+    flowStateSummary = '3-Back Mastery · -380ms Apex UFOV';
+    clinicalRationale =
+      '5-session HRV (≥92%) indicates elite autonomic resonance; unlocks 3-Back working memory and high-speed UFOV (-380ms) to lock deep Flow.';
+    accentHex = '#B794F4';
+  } else if (runningFiveSessionHrvAvg >= 82) {
+    tierId = 'elevated_flow';
+    tierLabel = 'Elevated Prefrontal Flow';
+    effectiveNBackLevel = Math.max(2, baseNBackLevel) as 1 | 2 | 3;
+    hrvUfovAdjustmentMs = -220;
+    flowStateSummary = `${effectiveNBackLevel}-Back Promoted · -220ms Rapid UFOV`;
+    clinicalRationale =
+      '5-session HRV (82–91%) demonstrates strong vagal-prefrontal coupling; promotes N-Back to 2-Back and tightens UFOV window (-220ms) to sustain Flow.';
+    accentHex = '#F2B84B';
+  }
+
+  const rawUfovMs = baseUfovWindowMs + hrvUfovAdjustmentMs + streakUfovAdjustmentMs;
+  const effectiveUfovWindowMs = Math.max(750, Math.min(2600, Math.round(rawUfovMs)));
+  const effectiveUfovFlashSec = Math.round((effectiveUfovWindowMs / 1000) * 1000) / 1000;
+  const nBackDelta = effectiveNBackLevel - baseNBackLevel;
+
+  return {
+    tierId,
+    tierLabel,
+    runningFiveSessionHrvAvg,
+    recentFiveScores: fiveSessionSummary.recentFiveScores,
+    baseNBackLevel,
+    effectiveNBackLevel,
+    nBackDelta,
+    baseUfovWindowMs,
+    hrvUfovAdjustmentMs,
+    streakUfovAdjustmentMs,
+    effectiveUfovWindowMs,
+    effectiveUfovFlashSec,
+    flowStateSummary,
+    clinicalRationale,
+    accentHex,
+  };
+}
+
 
 
 

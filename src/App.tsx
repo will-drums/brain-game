@@ -27,6 +27,8 @@ import {
   DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT,
   clampSanctuaryBloomIntensityPct,
   computeHudFlowPulseState,
+  computeAdaptiveDifficultyScaling,
+  computeRunningFiveSessionHrvAverage,
   syncDailyHabitTrackerWithStreak,
   toggleDailyHabitExercise,
   type DailyHabitExerciseId,
@@ -676,6 +678,28 @@ export default function App() {
     pulseDurationMs: 1400,
   });
 
+  // 5-Session HRV Coherence Adaptive Difficulty Scaling (Maintains Optimal Flow State)
+  const [runningFiveSessionHrvAvgOverride, setRunningFiveSessionHrvAvgOverride] = useState<number | null>(null);
+  const liveFiveSessionHrvAvg = computeRunningFiveSessionHrvAverage(hrvHistory).runningFiveSessionAvg;
+  const activeStageDef = SANCTUARY_STAGES[hud.stageIndex] || SANCTUARY_STAGES[0];
+  const activeAdaptiveScaling = computeAdaptiveDifficultyScaling({
+    hrvHistory,
+    runningFiveSessionHrvAvgOverride: runningFiveSessionHrvAvgOverride ?? undefined,
+    baseNBackLevel: activeStageDef.nBackLevel,
+    baseUfovFlashSec: activeStageDef.ufovFlashDurationSec,
+    consecutiveCognitiveHits: hud.flowStreak,
+  });
+
+  const handleCycleAdaptiveHrvPreset = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    e.currentTarget.blur();
+    e.stopPropagation();
+    const presets: Array<number | null> = [66, 78, 86, 95, null];
+    setRunningFiveSessionHrvAvgOverride((prev) => {
+      const idx = presets.indexOf(prev);
+      return presets[(idx + 1) % presets.length];
+    });
+  }, []);
+
   // Mirror game state to document.body.dataset.state
   useEffect(() => {
     document.body.dataset.state = gameState;
@@ -896,7 +920,7 @@ export default function App() {
   const renderSymbolBadge = (sym: ChimeSymbol, isHighlight: boolean) => {
     return (
       <span
-        className={`inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-mono font-semibold ${
+        className={`inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[11px] font-mono font-semibold ${
           isHighlight
             ? 'bg-[#F2B84B] text-[#091510]'
             : 'bg-[#152E24] text-[#D5E2DC] border border-[#2C4C3E]'
@@ -935,6 +959,8 @@ export default function App() {
         completedStagesCount={completedStagesCount}
         isSanctuaryBloomActive={isSanctuaryBloomActive}
         sanctuaryBloomIntensityPct={sanctuaryBloomIntensityPct}
+        hrvHistory={hrvHistory}
+        runningFiveSessionHrvAvgOverride={runningFiveSessionHrvAvgOverride}
       />
 
       {/* 2. TITLE SCREEN OVERLAY (30%-40% negative space left column over live world camera pan) */}
@@ -1263,12 +1289,12 @@ export default function App() {
 
       {/* 3. PLAYING HUD (World-Matched, >= 85% Clear Playfield, No Backdrop-Filter) */}
       {gameState === 'playing' && (
-        <div className="fixed inset-0 z-10 pointer-events-none flex flex-col justify-between p-4 md:p-6">
+        <div className="fixed inset-0 z-10 pointer-events-none flex flex-col justify-between p-3 md:px-4 md:py-4">
           <div className="space-y-3">
             {/* Top Row: Top-Left Vitality/Nectar/Trees Cluster + Top-Right Utility & N-Back Totem */}
-            <div className="flex flex-wrap xl:flex-nowrap items-start justify-between gap-2.5">
+            <div className="flex flex-wrap xl:flex-nowrap items-start justify-between gap-2">
               {/* Top-Left Perimeter Cluster: Calm Vitality Pips, BDNF Nectar & Grafted Trees */}
-              <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-2xl bg-[#091510]/88 border border-[#233D32] shadow-xl pointer-events-auto shrink-0">
+              <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-2xl bg-[#091510]/88 border border-[#233D32] shadow-xl pointer-events-auto shrink-0">
               {/* Calm Vitality Pips (3 readable states: Full, Damaged, Hollow) */}
               <div className="whitespace-nowrap">
                 <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
@@ -1443,19 +1469,37 @@ export default function App() {
             </div>
 
             {/* Top-Right Cluster: Live N-Back Working Memory Strip + Compact Utility Buttons */}
-            <div className="flex items-center gap-2 pointer-events-auto shrink-0">
-              {/* Live N-Back Totem Sequence Indicator (Hidden in Zen Mode) */}
+            <div className="flex items-center gap-1.5 pointer-events-auto shrink-0">
+              {/* Live N-Back Totem Sequence Indicator + 5-Session HRV Adaptive Difficulty Scaling (Hidden in Zen Mode) */}
               {zenHud.showNBackStream && (
                 <div
                   data-testid="hud-nback-stream"
-                  className="hidden md:flex items-center gap-2.5 px-3 py-1.5 rounded-2xl bg-[#091510]/88 border border-[#233D32] shadow-xl whitespace-nowrap"
+                  data-effective-nback-level={hud.nBackLevel}
+                  data-effective-ufov-window-ms={hud.adaptiveUfovWindowMs}
+                  data-running-five-hrv-avg={hud.runningFiveSessionHrvAvg ?? activeAdaptiveScaling.runningFiveSessionHrvAvg}
+                  data-adaptive-tier-id={activeAdaptiveScaling.tierId}
+                  className="hidden md:flex items-center gap-2 px-2.5 py-1.5 rounded-2xl bg-[#091510]/88 border border-[#233D32] shadow-xl whitespace-nowrap"
                 >
                   <div>
-                    <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
-                      {hud.nBackLevel}-BACK CHIME STREAM
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0] flex items-center gap-1.5">
+                      <span data-testid="hud-effective-nback-label">
+                        {hud.nBackLevel}-BACK CHIME STREAM
+                      </span>
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        data-testid="cycle-adaptive-hrv-tier-btn"
+                        onClick={handleCycleAdaptiveHrvPreset}
+                        title={`${activeAdaptiveScaling.tierLabel}: ${activeAdaptiveScaling.clinicalRationale} (5-Session Avg: ${activeAdaptiveScaling.runningFiveSessionHrvAvg}% · Click to test HRV Flow Scaling tiers)`}
+                        className="px-1.5 py-0.2 rounded text-[9px] font-mono font-semibold border transition-colors cursor-pointer bg-[#142D23] hover:bg-[#1D4032] border-[#2C4C3E]"
+                        style={{ color: activeAdaptiveScaling.accentHex }}
+                      >
+                        5-Sess HRV {hud.runningFiveSessionHrvAvg ?? activeAdaptiveScaling.runningFiveSessionHrvAvg}% · {hud.adaptiveUfovWindowMs}ms
+                        {runningFiveSessionHrvAvgOverride !== null ? ' [SIM]' : ''}
+                      </button>
                     </div>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      {hud.chimeHistory.slice(-3).map((sym, idx, arr) => {
+                    <div className="flex items-center gap-1 mt-1">
+                      {hud.chimeHistory.slice(-(hud.nBackLevel === 3 ? 4 : 3)).map((sym, idx, arr) => {
                         const isLatest = idx === arr.length - 1;
                         return (
                           <React.Fragment key={idx}>
@@ -1475,7 +1519,7 @@ export default function App() {
                       e.currentTarget.blur();
                       setTriggerActionSignal({ action: 'chime', seq: Date.now() });
                     }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                       hud.isNBackReadyToMatch
                         ? 'bg-[#F2B84B] text-[#091510] shadow-md'
                         : 'bg-[#152E24] text-[#4FD1C5] border border-[#2C4C3E] hover:bg-[#1E3F32]'
@@ -1487,7 +1531,7 @@ export default function App() {
               )}
 
               {/* Compact Square SVG Utility Buttons: Codex, Mute [M], Restart [R], Pause [P] */}
-              <div className="flex items-center gap-1.5 p-1.5 rounded-xl bg-[#091510]/88 border border-[#233D32]">
+              <div className="flex items-center gap-1 p-1 rounded-xl bg-[#091510]/88 border border-[#233D32]">
                 <button
                   type="button"
                   tabIndex={-1}
@@ -1496,7 +1540,7 @@ export default function App() {
                     e.currentTarget.blur();
                     setIsCodexOpen(true);
                   }}
-                  className="w-9 h-9 flex items-center justify-center rounded-lg bg-[#132A21] hover:bg-[#1E3F32] text-[#68D391] border border-[#2C4C3E] cursor-pointer"
+                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#132A21] hover:bg-[#1E3F32] text-[#68D391] border border-[#2C4C3E] cursor-pointer"
                   title="Clinical Evidence Codex"
                 >
                   <svg viewBox="0 0 24 24" className="w-4 h-4 fill-none stroke-current" strokeWidth="2">
@@ -1523,7 +1567,7 @@ export default function App() {
                           e.currentTarget.blur();
                           handleSelectAtmosphere(atm.id);
                         }}
-                        className={`px-2 h-8 rounded-md text-[10px] font-mono font-semibold transition-colors cursor-pointer ${
+                        className={`px-2 h-7 rounded-md text-[10px] font-mono font-semibold transition-colors cursor-pointer ${
                           isSelected
                             ? 'bg-[#1D4032] text-[#F4EFE6] border border-[#68D391]/60'
                             : 'text-[#A3B8B0] hover:text-[#F4EFE6]'
@@ -1542,7 +1586,7 @@ export default function App() {
                   aria-pressed={isZenMode}
                   aria-label="Toggle Zen Mode [Z] — Minimalist HRV Breathing View"
                   onClick={handleToggleZenMode}
-                  className={`px-2.5 h-9 flex items-center gap-1.5 rounded-lg text-[10px] font-mono font-semibold border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  className={`px-2 h-8 flex items-center gap-1 rounded-lg text-[10px] font-mono font-semibold border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                     isZenMode
                       ? 'bg-[#1A4231] text-[#68D391] border-[#68D391] shadow-md'
                       : 'bg-[#132A21] text-[#A3B8B0] hover:text-[#F4EFE6] border-[#2C4C3E]'
@@ -1550,7 +1594,7 @@ export default function App() {
                   title="Toggle Zen Mode [Z] — Hide non-essential telemetry (nectar, trees, flow) for focused 0.1 Hz HRV breathing"
                 >
                   <span
-                    className={`w-2 h-2 rounded-full ${
+                    className={`w-1.5 h-1.5 rounded-full ${
                       isZenMode ? 'bg-[#68D391]' : 'bg-[#526B61]'
                     }`}
                   />
@@ -1560,7 +1604,7 @@ export default function App() {
                 {/* Sanctuary Bloom Toggle + Bioluminescence Intensity Slider Control */}
                 <div
                   data-testid="hud-sanctuary-bloom-section"
-                  className={`flex items-center gap-2 px-2 h-9 rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
+                  className={`flex items-center gap-1.5 px-2 h-8 rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
                     isSanctuaryBloomActive
                       ? 'bg-[#201A3A] border-[#B794F4] shadow-md'
                       : 'bg-[#132A21] border-[#2C4C3E]'
@@ -1573,7 +1617,7 @@ export default function App() {
                     aria-pressed={isSanctuaryBloomActive}
                     aria-label="Toggle 4-Stage Sanctuary Bloom Post-Processing & Orbital Camera [B]"
                     onClick={handleToggleSanctuaryBloom}
-                    className={`flex items-center gap-1.5 text-[10px] font-mono font-semibold transition-colors cursor-pointer ${
+                    className={`flex items-center gap-1 text-[10px] font-mono font-semibold transition-colors cursor-pointer ${
                       isSanctuaryBloomActive
                         ? 'text-[#B794F4]'
                         : 'text-[#A3B8B0] hover:text-[#F4EFE6]'
@@ -1581,7 +1625,7 @@ export default function App() {
                     title="Sanctuary Bloom [B] — 4-Stage Full-Canvas Bioluminescence Saturation & Slow Orbital Camera Rotation"
                   >
                     <span
-                      className={`w-2 h-2 rounded-full ${
+                      className={`w-1.5 h-1.5 rounded-full ${
                         isSanctuaryBloomActive ? 'bg-[#B794F4]' : 'bg-[#526B61]'
                       }`}
                     />
@@ -1589,7 +1633,7 @@ export default function App() {
                   </button>
 
                   <div
-                    className="flex items-center gap-1.5 pl-2 border-l border-[#2C4C3E]"
+                    className="flex items-center gap-1 pl-1.5 border-l border-[#2C4C3E]"
                     title={`Sanctuary Bloom Bioluminescence Intensity: ${sanctuaryBloomIntensityPct}% (Persisted in localStorage)`}
                   >
                     <label
@@ -1608,7 +1652,7 @@ export default function App() {
                       onChange={handleChangeBloomIntensity}
                       data-testid="sanctuary-bloom-intensity-slider"
                       aria-label="Sanctuary Bloom Bioluminescence Intensity"
-                      className="w-14 h-1.5 accent-[#B794F4] bg-[#0B1914] rounded-lg cursor-pointer"
+                      className="w-12 h-1.5 accent-[#B794F4] bg-[#0B1914] rounded-lg cursor-pointer"
                     />
                     <span
                       data-testid="sanctuary-bloom-intensity-value"
@@ -1625,7 +1669,7 @@ export default function App() {
                   data-testid="toggle-binaural-btn"
                   aria-label="Toggle 10 Hz Alpha Binaural Entrainment"
                   onClick={handleToggleBinaural}
-                  className={`px-2.5 h-9 flex items-center gap-1 rounded-lg text-[10px] font-mono font-semibold border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  className={`px-2 h-8 flex items-center gap-1 rounded-lg text-[10px] font-mono font-semibold border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                     isBinauralEnabled && !isMuted
                       ? 'bg-[#17362B] text-[#4FD1C5] border-[#4FD1C5]/60'
                       : 'bg-[#132A21] text-[#6E857C] border-[#2C4C3E]'
@@ -1640,7 +1684,7 @@ export default function App() {
                   tabIndex={-1}
                   aria-label={isMuted ? 'Unmute Audio [M]' : 'Mute Audio [M]'}
                   onClick={handleToggleMute}
-                  className="w-9 h-9 flex items-center justify-center rounded-lg bg-[#132A21] hover:bg-[#1E3F32] text-[#F4EFE6] border border-[#2C4C3E] cursor-pointer"
+                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#132A21] hover:bg-[#1E3F32] text-[#F4EFE6] border border-[#2C4C3E] cursor-pointer"
                   title="Toggle Mute [M]"
                 >
                   <svg viewBox="0 0 24 24" className="w-4 h-4 fill-none stroke-current" strokeWidth="2">
@@ -1661,7 +1705,7 @@ export default function App() {
                     e.currentTarget.blur();
                     startOrRestartGame(stageIndex);
                   }}
-                  className="w-9 h-9 flex items-center justify-center rounded-lg bg-[#132A21] hover:bg-[#1E3F32] text-[#F4EFE6] border border-[#2C4C3E] cursor-pointer"
+                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#132A21] hover:bg-[#1E3F32] text-[#F4EFE6] border border-[#2C4C3E] cursor-pointer"
                   title="Restart Stage"
                 >
                   <svg viewBox="0 0 24 24" className="w-4 h-4 fill-none stroke-current" strokeWidth="2">
@@ -1675,7 +1719,7 @@ export default function App() {
                   tabIndex={-1}
                   aria-label="Toggle macOS Fullscreen"
                   onClick={handleToggleFullscreen}
-                  className="w-9 h-9 flex items-center justify-center rounded-lg bg-[#132A21] hover:bg-[#1E3F32] text-[#F4EFE6] border border-[#2C4C3E] cursor-pointer"
+                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#132A21] hover:bg-[#1E3F32] text-[#F4EFE6] border border-[#2C4C3E] cursor-pointer"
                   title="Toggle macOS Fullscreen"
                 >
                   <svg viewBox="0 0 24 24" className="w-4 h-4 fill-none stroke-current" strokeWidth="2">
@@ -1691,7 +1735,7 @@ export default function App() {
                     e.currentTarget.blur();
                     handleTogglePause();
                   }}
-                  className="w-9 h-9 flex items-center justify-center rounded-lg bg-[#132A21] hover:bg-[#1E3F32] text-[#F4EFE6] border border-[#2C4C3E] cursor-pointer"
+                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#132A21] hover:bg-[#1E3F32] text-[#F4EFE6] border border-[#2C4C3E] cursor-pointer"
                   title="Pause [⎋ Esc / P]"
                 >
                   <svg viewBox="0 0 24 24" className="w-4 h-4 fill-none stroke-current" strokeWidth="2">

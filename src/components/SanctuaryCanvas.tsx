@@ -11,8 +11,11 @@ import {
   createCognitivePulseConfig,
   stepCognitivePulseWave,
   computeSanctuaryBloomEffect,
+  computeAdaptiveDifficultyScaling,
+  createInitialChimeHistoryForNBack,
   SANCTUARY_STAGES,
   CHIME_SYMBOLS,
+  type HrvSessionRecord,
   type CognitivePulseType,
   type ChimeSymbol,
   type GameState,
@@ -62,6 +65,9 @@ export interface HudSnapshot {
   sanctuaryBloomRotationDeg?: number;
   sanctuaryBloomSaturation?: number;
   sanctuaryBloomIntensityPct?: number;
+  runningFiveSessionHrvAvg?: number;
+  adaptiveScalingTierLabel?: string;
+  hrvUfovAdjustmentMs?: number;
 }
 
 interface SanctuaryCanvasProps {
@@ -85,6 +91,8 @@ interface SanctuaryCanvasProps {
   completedStagesCount?: number;
   isSanctuaryBloomActive?: boolean;
   sanctuaryBloomIntensityPct?: number;
+  hrvHistory?: HrvSessionRecord[];
+  runningFiveSessionHrvAvgOverride?: number | null;
 }
 
 interface NeuralTree {
@@ -182,6 +190,8 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
   completedStagesCount = 0,
   isSanctuaryBloomActive = false,
   sanctuaryBloomIntensityPct = 100,
+  hrvHistory,
+  runningFiveSessionHrvAvgOverride = null,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -204,6 +214,8 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
     completedStagesCount,
     isSanctuaryBloomActive,
     sanctuaryBloomIntensityPct,
+    hrvHistory,
+    runningFiveSessionHrvAvgOverride,
   });
 
   useEffect(() => {
@@ -224,6 +236,8 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       completedStagesCount,
       isSanctuaryBloomActive,
       sanctuaryBloomIntensityPct,
+      hrvHistory,
+      runningFiveSessionHrvAvgOverride,
     };
   }, [
     gameState,
@@ -242,6 +256,8 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
     completedStagesCount,
     isSanctuaryBloomActive,
     sanctuaryBloomIntensityPct,
+    hrvHistory,
+    runningFiveSessionHrvAvgOverride,
   ]);
 
   // Ref for signals from HUD buttons
@@ -612,14 +628,18 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       demoStepElapsed = 0;
       demoSubActionTriggered = false;
       demoSecondSubActionTriggered = false;
-      statusBannerText = `${stage.name} — Harvest Nectar [Space], Match ${stage.nBackLevel}-Back Chimes [E], or Graft Dormant Trees [Q]`;
+      const initScaling = computeAdaptiveDifficultyScaling({
+        hrvHistory: stateRef.current.hrvHistory,
+        runningFiveSessionHrvAvgOverride: stateRef.current.runningFiveSessionHrvAvgOverride,
+        baseNBackLevel: stage.nBackLevel,
+        baseUfovFlashSec: stage.ufovFlashDurationSec,
+        consecutiveCognitiveHits: 0,
+      });
+      statusBannerText = `${stage.name} — Harvest Nectar [Space], Match ${initScaling.effectiveNBackLevel}-Back Chimes [E], or Graft Dormant Trees [Q]`;
       statusBannerTimer = 6.0;
 
-      // Initialize sequence with an immediate 1-back/2-back match opportunity
-      chimeHistory =
-        stage.nBackLevel === 1
-          ? ['LEAF', 'SUN', 'SUN']
-          : ['STAR', 'DROP', 'STAR'];
+      // Initialize sequence with an immediate 1-back/2-back/3-back match opportunity
+      chimeHistory = createInitialChimeHistoryForNBack(initScaling.effectiveNBackLevel);
       chimeCycleTimer = 0;
       chimeMatchClaimedThisBeat = false;
 
@@ -810,10 +830,17 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
 
       // 1. Check nearby Dew-Blooms / UFOV Shrines
       const stage = SANCTUARY_STAGES[stateRef.current.stageIndex] || SANCTUARY_STAGES[0];
+      const adaptiveScaling = computeAdaptiveDifficultyScaling({
+        hrvHistory: stateRef.current.hrvHistory,
+        runningFiveSessionHrvAvgOverride: stateRef.current.runningFiveSessionHrvAvgOverride,
+        baseNBackLevel: stage.nBackLevel,
+        baseUfovFlashSec: stage.ufovFlashDurationSec,
+        consecutiveCognitiveHits,
+      });
       const flowState = computeAdaptiveFlowState({
         consecutiveCognitiveHits,
         coherenceSeconds,
-        baseUfovFlashSec: stage.ufovFlashDurationSec,
+        baseUfovFlashSec: adaptiveScaling.effectiveUfovFlashSec,
       });
 
       for (const bloom of blooms) {
@@ -827,13 +854,13 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
           spawnFloatingCallout(bloom.x, bloom.y, `+${gained} BDNF NECTAR`, '#F2B84B');
 
           if (bloom.isUfovShrine && !ufovChallenge.active) {
-            // Trigger ACTIVE-trial Useful Field of View (UFOV) peripheral flash with Adaptive Staircase window!
+            // Trigger ACTIVE-trial Useful Field of View (UFOV) peripheral flash with 5-Session HRV Adaptive Difficulty Scaling window!
             const sec = Math.floor(Math.random() * 8);
             ufovChallenge = {
               active: true,
               centerSymbol: CHIME_SYMBOLS[Math.floor(Math.random() * CHIME_SYMBOLS.length)],
               peripheralSector: sec,
-              flashTimer: flowState.adaptiveUfovWindowMs / 1000,
+              flashTimer: adaptiveScaling.effectiveUfovWindowMs / 1000,
               awaitingSelection: true,
               shrineX: bloom.x,
               shrineY: bloom.y,
@@ -841,7 +868,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
             const secAngle = (sec * Math.PI) / 4 - Math.PI / 2;
             soundEngine.playLightNote(698.46, 0.25, Math.cos(secAngle) * 0.75);
             soundEngine.playHarmonicChord('ufov');
-            statusBannerText = `UFOV Divided Attention (${flowState.adaptiveUfovWindowMs}ms Window)! Spot peripheral firefly & click compass sector`;
+            statusBannerText = `UFOV Divided Attention (${adaptiveScaling.effectiveUfovWindowMs}ms Window · 5-Sess HRV ${adaptiveScaling.runningFiveSessionHrvAvg}%)! Spot peripheral firefly & click compass sector`;
             statusBannerTimer = 4.5;
           } else {
             statusBannerText = `+${gained} BDNF Nectar harvested (${flowState.flowMultiplier}x Flow)!`;
@@ -884,7 +911,15 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
 
     const triggerNBackEchoChime = () => {
       const stage = SANCTUARY_STAGES[stateRef.current.stageIndex] || SANCTUARY_STAGES[0];
-      const matched = isNBackMatch(chimeHistory, stage.nBackLevel);
+      const adaptiveScaling = computeAdaptiveDifficultyScaling({
+        hrvHistory: stateRef.current.hrvHistory,
+        runningFiveSessionHrvAvgOverride: stateRef.current.runningFiveSessionHrvAvgOverride,
+        baseNBackLevel: stage.nBackLevel,
+        baseUfovFlashSec: stage.ufovFlashDurationSec,
+        consecutiveCognitiveHits,
+      });
+      const activeNBack = adaptiveScaling.effectiveNBackLevel;
+      const matched = isNBackMatch(chimeHistory, activeNBack);
       nBackAttempts += 1;
 
       player.chimeWaveRadius = 20;
@@ -899,7 +934,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         const flowState = computeAdaptiveFlowState({
           consecutiveCognitiveHits,
           coherenceSeconds,
-          baseUfovFlashSec: stage.ufovFlashDurationSec,
+          baseUfovFlashSec: adaptiveScaling.effectiveUfovFlashSec,
         });
         const reward = Math.round(22 * flowState.flowMultiplier);
         player.nectar += reward;
@@ -913,10 +948,10 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         spawnFloatingCallout(
           player.x,
           player.y,
-          `★ ${stage.nBackLevel}-BACK COGNITIVE PULSE +${reward} (${flowState.flowMultiplier}x)`,
+          `★ ${activeNBack}-BACK COGNITIVE PULSE +${reward} (${flowState.flowMultiplier}x)`,
           '#4FD1C5'
         );
-        statusBannerText = `Working Memory ${stage.nBackLevel}-Back Cognitive Pulse (${flowState.flowMultiplier}x Flow)! +${reward} BDNF Nectar & +1 Calm Vitality`;
+        statusBannerText = `Working Memory ${activeNBack}-Back Cognitive Pulse (${flowState.flowMultiplier}x Flow)! +${reward} BDNF Nectar & +1 Calm Vitality`;
         statusBannerTimer = 3.8;
 
         // Clear all hazards within 260px
@@ -932,9 +967,9 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         consecutiveCognitiveHits = Math.max(0, consecutiveCognitiveHits - 1);
         soundEngine.playLightNote(392.0, 0.16);
         spawnParticles(player.x, player.y, 6, 1, 30, 90, 2, 4, 0.4);
-        const targetSym = chimeHistory[chimeHistory.length - 1 - stage.nBackLevel] || 'SUN';
+        const targetSym = chimeHistory[chimeHistory.length - 1 - activeNBack] || 'SUN';
         const currSym = chimeHistory[chimeHistory.length - 1];
-        statusBannerText = `Echo Chime: Current [${currSym}] vs ${stage.nBackLevel}-Back [${targetSym}] — Wait for a match!`;
+        statusBannerText = `Echo Chime: Current [${currSym}] vs ${activeNBack}-Back [${targetSym}] — Wait for a match!`;
         statusBannerTimer = 3.0;
       }
     };
@@ -1493,12 +1528,27 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
             player.chimeWaveAlpha = Math.max(0, player.chimeWaveAlpha - simDt * 1.6);
           }
 
-          // Update N-Back Chime Totem Sequence
+          // Update N-Back Chime Totem Sequence (Scaled by 5-Session HRV Adaptive Difficulty)
+          const liveAdaptiveScaling = computeAdaptiveDifficultyScaling({
+            hrvHistory: stateRef.current.hrvHistory,
+            runningFiveSessionHrvAvgOverride: stateRef.current.runningFiveSessionHrvAvgOverride,
+            baseNBackLevel: stage.nBackLevel,
+            baseUfovFlashSec: stage.ufovFlashDurationSec,
+            consecutiveCognitiveHits,
+          });
+          if (chimeHistory.length <= liveAdaptiveScaling.effectiveNBackLevel) {
+            chimeHistory = createInitialChimeHistoryForNBack(liveAdaptiveScaling.effectiveNBackLevel);
+            chimeMatchClaimedThisBeat = false;
+          }
           chimeCycleTimer += simDt;
           if (chimeCycleTimer >= CHIME_INTERVAL_SEC) {
             chimeCycleTimer = 0;
             chimeMatchClaimedThisBeat = false;
-            const nextSym = generateNextChimeSymbol(chimeHistory, stage.nBackLevel, Math.random());
+            const nextSym = generateNextChimeSymbol(
+              chimeHistory,
+              liveAdaptiveScaling.effectiveNBackLevel,
+              Math.random()
+            );
             chimeHistory = [...chimeHistory.slice(-5), nextSym];
             soundEngine.playChimeSymbol(nextSym);
           }
@@ -1661,6 +1711,16 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       // RENDER PASS (60 FPS Botanical Sanctuary Canvas2D with Mac Retina DPR)
       // ========================================================================
       const aesthetic = getSanctuaryAestheticConfig(stateRef.current.activeMilestoneId);
+      const renderAdaptiveScaling = computeAdaptiveDifficultyScaling({
+        hrvHistory: stateRef.current.hrvHistory,
+        runningFiveSessionHrvAvgOverride: stateRef.current.runningFiveSessionHrvAvgOverride,
+        baseNBackLevel: stage.nBackLevel,
+        baseUfovFlashSec: stage.ufovFlashDurationSec,
+        consecutiveCognitiveHits,
+      });
+      if (chimeHistory.length <= renderAdaptiveScaling.effectiveNBackLevel) {
+        chimeHistory = createInitialChimeHistoryForNBack(renderAdaptiveScaling.effectiveNBackLevel);
+      }
       const bloomEffect = computeSanctuaryBloomEffect({
         completedStagesCount: stateRef.current.completedStagesCount ?? 0,
         totalStages: SANCTUARY_STAGES.length,
@@ -1672,6 +1732,9 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       canvas.dataset.sanctuaryBloom = bloomEffect.isTriggered ? 'active' : 'inactive';
       canvas.dataset.cameraRotationDeg = String(bloomEffect.cameraRotationDeg);
       canvas.dataset.bloomIntensityPct = String(bloomEffect.userIntensityPct);
+      canvas.dataset.effectiveNbackLevel = String(renderAdaptiveScaling.effectiveNBackLevel);
+      canvas.dataset.effectiveUfovWindowMs = String(renderAdaptiveScaling.effectiveUfovWindowMs);
+      canvas.dataset.runningFiveHrvAvg = String(renderAdaptiveScaling.runningFiveSessionHrvAvg);
 
       ctx.save();
       ctx.scale(currentDpr, currentDpr);
@@ -1759,12 +1822,14 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
 
       // Draw current N-Back Totem Symbol above Heart-Tree
       const currentChime = chimeHistory[chimeHistory.length - 1] || 'SUN';
-      const isCurrentlyMatching = isNBackMatch(chimeHistory, stage.nBackLevel);
+      const isCurrentlyMatching = isNBackMatch(chimeHistory, renderAdaptiveScaling.effectiveNBackLevel);
       ctx.fillStyle = isCurrentlyMatching ? '#F2B84B' : '#4FD1C5';
       ctx.font = '600 13px "JetBrains Mono", monospace';
       ctx.textAlign = 'center';
       ctx.fillText(
-        isCurrentlyMatching ? `★ ${stage.nBackLevel}-BACK MATCH! [PRESS E]` : `TOTEM: ${currentChime}`,
+        isCurrentlyMatching
+          ? `★ ${renderAdaptiveScaling.effectiveNBackLevel}-BACK MATCH! [PRESS E]`
+          : `TOTEM: ${currentChime}`,
         0,
         -92
       );
@@ -2397,7 +2462,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         const flowState = computeAdaptiveFlowState({
           consecutiveCognitiveHits,
           coherenceSeconds,
-          baseUfovFlashSec: stage.ufovFlashDurationSec,
+          baseUfovFlashSec: renderAdaptiveScaling.effectiveUfovFlashSec,
         });
 
         stateRef.current.onHudUpdate({
@@ -2409,9 +2474,11 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
           targetTrees: stage.targetTreesGrafted,
           stageIndex: stateRef.current.stageIndex,
           stageName: stage.name,
-          nBackLevel: stage.nBackLevel,
+          nBackLevel: renderAdaptiveScaling.effectiveNBackLevel,
           chimeHistory,
-          isNBackReadyToMatch: isNBackMatch(chimeHistory, stage.nBackLevel) && !chimeMatchClaimedThisBeat,
+          isNBackReadyToMatch:
+            isNBackMatch(chimeHistory, renderAdaptiveScaling.effectiveNBackLevel) &&
+            !chimeMatchClaimedThisBeat,
           activeProtocol: stateRef.current.activeProtocol,
           breathPhaseLabel: breathState.phaseLabel,
           breathExpansion: breathState.expansion,
@@ -2437,7 +2504,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
           demoStepIndex,
           flowMultiplier: flowState.flowMultiplier,
           flowStreak: flowState.flowStreak,
-          adaptiveUfovWindowMs: flowState.adaptiveUfovWindowMs,
+          adaptiveUfovWindowMs: renderAdaptiveScaling.effectiveUfovWindowMs,
           flowTier: flowState.flowTier,
           cognitivePulseCount: totalCognitivePulsesTriggered,
           lastCognitivePulseType,
@@ -2445,6 +2512,9 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
           sanctuaryBloomRotationDeg: bloomEffect.cameraRotationDeg,
           sanctuaryBloomSaturation: bloomEffect.bioluminescenceSaturation,
           sanctuaryBloomIntensityPct: bloomEffect.userIntensityPct,
+          runningFiveSessionHrvAvg: renderAdaptiveScaling.runningFiveSessionHrvAvg,
+          adaptiveScalingTierLabel: renderAdaptiveScaling.tierLabel,
+          hrvUfovAdjustmentMs: renderAdaptiveScaling.hrvUfovAdjustmentMs,
         });
       }
     };

@@ -40,8 +40,75 @@ import {
   computeSanctuaryBloomEffect,
   computeHudFlowPulseState,
   buildEnterpriseClinicalExportBundle,
+  computeRunningFiveSessionHrvAverage,
+  createInitialChimeHistoryForNBack,
+  computeAdaptiveDifficultyScaling,
   type ChimeSymbol,
 } from './rules';
+
+test('computeAdaptiveDifficultyScaling dynamically adjusts N-Back difficulty and UFOV window timing from the running 5-session HRV coherence average', () => {
+  // Default 10-session seed last 5 scores: [73, 79, 84, 88, 92] -> avg = 83%
+  const fiveAvg = computeRunningFiveSessionHrvAverage(DEFAULT_HRV_HISTORY_SEED);
+  assert.equal(fiveAvg.sampleCount, 5);
+  assert.deepEqual(fiveAvg.recentFiveScores, [73, 79, 84, 88, 92]);
+  assert.equal(fiveAvg.runningFiveSessionAvg, 83);
+
+  // Tier 1 (< 72%): Restorative Flow Support -> eases 2-Back to 1-Back and widens UFOV by +350ms
+  const restorative = computeAdaptiveDifficultyScaling({
+    runningFiveSessionHrvAvgOverride: 66,
+    baseNBackLevel: 2,
+    baseUfovFlashSec: 1.35,
+    consecutiveCognitiveHits: 0,
+  });
+  assert.equal(restorative.tierId, 'restorative_support');
+  assert.equal(restorative.effectiveNBackLevel, 1);
+  assert.equal(restorative.nBackDelta, -1);
+  assert.equal(restorative.hrvUfovAdjustmentMs, 350);
+  assert.equal(restorative.effectiveUfovWindowMs, 1700);
+
+  // Tier 2 (72% - 83%): Balanced Vagal Flow -> preserves stage baseline
+  const balanced = computeAdaptiveDifficultyScaling({
+    runningFiveSessionHrvAvgOverride: 78,
+    baseNBackLevel: 1,
+    baseUfovFlashSec: 1.8,
+    consecutiveCognitiveHits: 0,
+  });
+  assert.equal(balanced.tierId, 'balanced_resonance');
+  assert.equal(balanced.effectiveNBackLevel, 1);
+  assert.equal(balanced.hrvUfovAdjustmentMs, 0);
+  assert.equal(balanced.effectiveUfovWindowMs, 1800);
+
+  // Tier 3 (82% - 91%): Elevated Prefrontal Flow -> promotes 1-Back to 2-Back and tightens UFOV by -220ms
+  const elevated = computeAdaptiveDifficultyScaling({
+    hrvHistory: DEFAULT_HRV_HISTORY_SEED, // 83% 5-session avg
+    baseNBackLevel: 1,
+    baseUfovFlashSec: 1.8,
+    consecutiveCognitiveHits: 0,
+  });
+  assert.equal(elevated.tierId, 'elevated_flow');
+  assert.equal(elevated.runningFiveSessionHrvAvg, 83);
+  assert.equal(elevated.effectiveNBackLevel, 2);
+  assert.equal(elevated.nBackDelta, 1);
+  assert.equal(elevated.hrvUfovAdjustmentMs, -220);
+  assert.equal(elevated.effectiveUfovWindowMs, 1580);
+
+  // Tier 4 (>= 92%): Peak Autonomic Mastery -> unlocks 3-Back and tightens UFOV by -380ms
+  const peak = computeAdaptiveDifficultyScaling({
+    runningFiveSessionHrvAvgOverride: 95,
+    baseNBackLevel: 2,
+    baseUfovFlashSec: 1.35,
+    consecutiveCognitiveHits: 1,
+  });
+  assert.equal(peak.tierId, 'peak_mastery');
+  assert.equal(peak.effectiveNBackLevel, 3);
+  assert.equal(peak.hrvUfovAdjustmentMs, -380);
+  assert.equal(peak.effectiveUfovWindowMs, 1350 - 380 - 120);
+
+  // Verify initial chime histories always start with a valid N-Back match
+  assert.equal(isNBackMatch(createInitialChimeHistoryForNBack(1), 1), true);
+  assert.equal(isNBackMatch(createInitialChimeHistoryForNBack(2), 2), true);
+  assert.equal(isNBackMatch(createInitialChimeHistoryForNBack(3), 3), true);
+});
 
 test('computeHudFlowPulseState triggers expanding glow pulse when Flow Multiplier increases and maintains rhythmic concentration cadence', () => {
   const baseline = computeHudFlowPulseState({
