@@ -22,6 +22,7 @@ import {
   appendNeuralLogEntry,
   computeZenModeHudState,
   DAILY_HABIT_TRACKER_STORAGE_KEY,
+  SANCTUARY_BLOOM_STORAGE_KEY,
   syncDailyHabitTrackerWithStreak,
   toggleDailyHabitExercise,
   type DailyHabitExerciseId,
@@ -97,7 +98,62 @@ export default function App() {
   });
 
   const [stageIndex, setStageIndex] = useState<number>(0);
-  const [highestReachedStage, setHighestReachedStage] = useState<number>(0);
+  const [highestReachedStage, setHighestReachedStage] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = window.localStorage.getItem(SANCTUARY_BLOOM_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (typeof parsed?.completedStagesCount === 'number') {
+            return Math.min(SANCTUARY_STAGES.length - 1, Math.max(0, parsed.completedStagesCount));
+          }
+        }
+      } catch {
+        // Ignore storage errors
+      }
+    }
+    return 0;
+  });
+  const [completedStagesCount, setCompletedStagesCount] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('bloom') === '1') {
+        return SANCTUARY_STAGES.length;
+      }
+      try {
+        const raw = window.localStorage.getItem(SANCTUARY_BLOOM_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (typeof parsed?.completedStagesCount === 'number') {
+            return Math.max(0, Math.min(SANCTUARY_STAGES.length, parsed.completedStagesCount));
+          }
+        }
+      } catch {
+        // Ignore storage errors
+      }
+    }
+    return 0;
+  });
+  const [isSanctuaryBloomActive, setIsSanctuaryBloomActive] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('bloom') === '1') {
+        return true;
+      }
+      try {
+        const raw = window.localStorage.getItem(SANCTUARY_BLOOM_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (typeof parsed?.completedStagesCount === 'number' && parsed.completedStagesCount >= SANCTUARY_STAGES.length) {
+            return true;
+          }
+        }
+      } catch {
+        // Ignore storage errors
+      }
+    }
+    return false;
+  });
   const [activeProtocol, setActiveProtocol] = useState<ProtocolId>('ufov_forage');
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isBinauralEnabled, setIsBinauralEnabled] = useState<boolean>(true);
@@ -614,6 +670,23 @@ export default function App() {
       });
       if (outcome === 'victory') {
         setHighestReachedStage((prev) => Math.min(SANCTUARY_STAGES.length - 1, Math.max(prev, stageIndex + 1)));
+        setCompletedStagesCount((prev) => {
+          const nextCount = Math.min(SANCTUARY_STAGES.length, Math.max(prev, stageIndex + 1));
+          if (typeof window !== 'undefined') {
+            try {
+              window.localStorage.setItem(
+                SANCTUARY_BLOOM_STORAGE_KEY,
+                JSON.stringify({ completedStagesCount: nextCount })
+              );
+            } catch {
+              // Ignore storage errors
+            }
+          }
+          if (nextCount >= SANCTUARY_STAGES.length) {
+            setIsSanctuaryBloomActive(true);
+          }
+          return nextCount;
+        });
       }
       setGameState('gameover');
       document.body.dataset.state = 'gameover';
@@ -638,7 +711,29 @@ export default function App() {
     setIsZenMode((prev) => !prev);
   };
 
-  // Bind [Z] keyboard shortcut during active play to toggle Zen Mode
+  const handleToggleSanctuaryBloom = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.currentTarget.blur();
+    setIsSanctuaryBloomActive((prev) => {
+      const next = !prev;
+      if (next && completedStagesCount < SANCTUARY_STAGES.length) {
+        setCompletedStagesCount(SANCTUARY_STAGES.length);
+        setHighestReachedStage(SANCTUARY_STAGES.length - 1);
+        if (typeof window !== 'undefined') {
+          try {
+            window.localStorage.setItem(
+              SANCTUARY_BLOOM_STORAGE_KEY,
+              JSON.stringify({ completedStagesCount: SANCTUARY_STAGES.length })
+            );
+          } catch {
+            // Ignore storage errors
+          }
+        }
+      }
+      return next;
+    });
+  };
+
+  // Bind [Z] keyboard shortcut during active play to toggle Zen Mode, and [B] for Sanctuary Bloom
   useEffect(() => {
     if (gameState !== 'playing' || isCodexOpen) return;
     const onZenKey = (e: KeyboardEvent) => {
@@ -651,6 +746,9 @@ export default function App() {
       if (e.code === 'KeyZ' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
         setIsZenMode((prev) => !prev);
+      } else if (e.code === 'KeyB' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setIsSanctuaryBloomActive((prev) => !prev);
       }
     };
     window.addEventListener('keydown', onZenKey);
@@ -705,6 +803,8 @@ export default function App() {
         demoStepSignal={demoStepSignal}
         atmosphereId={atmosphereId}
         isZenMode={isZenMode}
+        completedStagesCount={completedStagesCount}
+        isSanctuaryBloomActive={isSanctuaryBloomActive}
       />
 
       {/* 2. TITLE SCREEN OVERLAY (30%-40% negative space left column over live world camera pan) */}
@@ -943,7 +1043,7 @@ export default function App() {
                             : 'bg-[#11261E] text-[#A3B8B0] border border-[#233D32] hover:text-[#F4EFE6]'
                         }`}
                       >
-                        S{idx + 1}: {idx === 0 ? '1-Back' : idx === 1 ? '2-Back' : 'Crown'}
+                        S{idx + 1}: {idx === 0 ? '1-Back' : idx === 1 ? '2-Back' : idx === 2 ? 'Crown' : 'Apex'}
                       </button>
                     );
                   })}
@@ -1036,11 +1136,11 @@ export default function App() {
         <div className="fixed inset-0 z-10 pointer-events-none flex flex-col justify-between p-4 md:p-6">
           <div className="space-y-3">
             {/* Top Row: Top-Left Vitality/Nectar/Trees Cluster + Top-Right Utility & N-Back Totem */}
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex flex-wrap xl:flex-nowrap items-start justify-between gap-2.5">
               {/* Top-Left Perimeter Cluster: Calm Vitality Pips, BDNF Nectar & Grafted Trees */}
-              <div className="flex items-center gap-3.5 px-3.5 py-2 rounded-2xl bg-[#091510]/88 border border-[#233D32] shadow-xl pointer-events-auto">
+              <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-2xl bg-[#091510]/88 border border-[#233D32] shadow-xl pointer-events-auto shrink-0">
               {/* Calm Vitality Pips (3 readable states: Full, Damaged, Hollow) */}
-              <div>
+              <div className="whitespace-nowrap">
                 <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
                   CALM VITALITY
                 </div>
@@ -1077,7 +1177,7 @@ export default function App() {
 
               {/* BDNF Nectar Counter (Hidden in Zen Mode) */}
               {zenHud.showNectar && (
-                <div data-testid="hud-nectar" className="pl-3 border-l border-[#233D32]">
+                <div data-testid="hud-nectar" className="pl-2.5 border-l border-[#233D32] whitespace-nowrap">
                   <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
                     BDNF NECTAR
                   </div>
@@ -1094,7 +1194,7 @@ export default function App() {
 
               {/* Hippocampal Trees Grafted (Hidden in Zen Mode) */}
               {zenHud.showTreesGrafted && (
-                <div data-testid="hud-trees-grafted" className="pl-3 border-l border-[#233D32]">
+                <div data-testid="hud-trees-grafted" className="pl-2.5 border-l border-[#233D32] whitespace-nowrap">
                   <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
                     TREES GRAFTED
                   </div>
@@ -1108,7 +1208,12 @@ export default function App() {
 
               {/* Rejuvenation Index (Hidden in Zen Mode) */}
               {zenHud.showRejuvenation && (
-                <div data-testid="hud-rejuvenation" className="pl-3 border-l border-[#233D32] hidden md:block">
+                <div
+                  data-testid="hud-rejuvenation"
+                  className={`pl-2.5 border-l border-[#233D32] whitespace-nowrap ${
+                    isSanctuaryBloomActive || hud.sanctuaryBloomActive ? 'hidden 2xl:block' : 'hidden md:block'
+                  }`}
+                >
                   <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
                     REJUVENATION
                   </div>
@@ -1122,7 +1227,9 @@ export default function App() {
               {zenHud.showSynapticFlow && (
                 <div
                   data-testid="hud-synaptic-flow"
-                  className="pl-3 border-l border-[#233D32] hidden xl:block"
+                  className={`pl-2.5 border-l border-[#233D32] whitespace-nowrap ${
+                    isSanctuaryBloomActive || hud.sanctuaryBloomActive ? 'hidden 2xl:block' : 'hidden xl:block'
+                  }`}
                   title={`Adaptive UFOV Staircase Window: ${hud.adaptiveUfovWindowMs}ms · Consecutive Accuracy Streak: ${hud.flowStreak}`}
                 >
                   <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0] flex items-center gap-1">
@@ -1138,15 +1245,32 @@ export default function App() {
                   </div>
                 </div>
               )}
+
+              {/* Sanctuary Bloom Post-Processing Status Pill (Triggered after completing all 4 stages or toggled via [B]) */}
+              {(isSanctuaryBloomActive || hud.sanctuaryBloomActive) && (
+                <div
+                  data-testid="sanctuary-bloom-badge"
+                  className="pl-2.5 border-l border-[#233D32] whitespace-nowrap shrink-0"
+                  title="All 4 Sanctuary Stages Completed — Full-Canvas Bioluminescence Saturation & Orbital Camera Rotation Active"
+                >
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-[#B794F4] flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#4FD1C5] shrink-0" />
+                    <span>SANCTUARY BLOOM · 4/4</span>
+                  </div>
+                  <div className="text-xs font-mono font-bold text-[#4FD1C5] tabular-nums hud-text-stroke mt-0.5">
+                    100% BIOLUM · ORBIT {Math.round(hud.sanctuaryBloomRotationDeg ?? 0)}°
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Top-Right Cluster: Live N-Back Working Memory Strip + Compact Utility Buttons */}
-            <div className="flex items-center gap-3 pointer-events-auto">
+            <div className="flex items-center gap-2 pointer-events-auto shrink-0">
               {/* Live N-Back Totem Sequence Indicator (Hidden in Zen Mode) */}
               {zenHud.showNBackStream && (
                 <div
                   data-testid="hud-nback-stream"
-                  className="hidden md:flex items-center gap-3 px-4 py-2 rounded-2xl bg-[#091510]/88 border border-[#233D32] shadow-xl"
+                  className="hidden md:flex items-center gap-2.5 px-3 py-1.5 rounded-2xl bg-[#091510]/88 border border-[#233D32] shadow-xl whitespace-nowrap"
                 >
                   <div>
                     <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
@@ -1253,6 +1377,28 @@ export default function App() {
                     }`}
                   />
                   <span>{isZenMode ? 'Zen: ON' : 'Zen [Z]'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  data-testid="toggle-sanctuary-bloom-btn"
+                  aria-pressed={isSanctuaryBloomActive}
+                  aria-label="Toggle 4-Stage Sanctuary Bloom Post-Processing & Orbital Camera [B]"
+                  onClick={handleToggleSanctuaryBloom}
+                  className={`px-2.5 h-9 flex items-center gap-1.5 rounded-lg text-[10px] font-mono font-semibold border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    isSanctuaryBloomActive
+                      ? 'bg-[#201A3A] text-[#B794F4] border-[#B794F4] shadow-md'
+                      : 'bg-[#132A21] text-[#A3B8B0] hover:text-[#F4EFE6] border-[#2C4C3E]'
+                  }`}
+                  title="Sanctuary Bloom [B] — 4-Stage Full-Canvas Bioluminescence Saturation & Slow Orbital Camera Rotation"
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      isSanctuaryBloomActive ? 'bg-[#B794F4]' : 'bg-[#526B61]'
+                    }`}
+                  />
+                  <span>{isSanctuaryBloomActive ? 'Bloom: ON' : 'Bloom [B]'}</span>
                 </button>
 
                 <button
@@ -1702,6 +1848,32 @@ export default function App() {
               </button>
               <button
                 type="button"
+                data-testid="pause-complete-all-stages-bloom-btn"
+                onClick={() => {
+                  setStageIndex(SANCTUARY_STAGES.length - 1);
+                  setHighestReachedStage(SANCTUARY_STAGES.length - 1);
+                  setCompletedStagesCount(SANCTUARY_STAGES.length);
+                  setIsSanctuaryBloomActive(true);
+                  if (typeof window !== 'undefined') {
+                    try {
+                      window.localStorage.setItem(
+                        SANCTUARY_BLOOM_STORAGE_KEY,
+                        JSON.stringify({ completedStagesCount: SANCTUARY_STAGES.length })
+                      );
+                    } catch {
+                      // Ignore storage errors
+                    }
+                  }
+                  soundEngine.resumeAmbient();
+                  setGameState('playing');
+                  document.body.dataset.state = 'playing';
+                }}
+                className="w-full py-2.5 rounded-xl bg-[#1E1936] hover:bg-[#2A224B] text-[#B794F4] border border-[#B794F4]/60 font-medium text-sm transition-colors cursor-pointer"
+              >
+                Complete All 4 Stages &amp; Trigger Sanctuary Bloom
+              </button>
+              <button
+                type="button"
                 onClick={() => setIsCodexOpen(true)}
                 className="w-full py-2.5 rounded-xl bg-[#152E24] hover:bg-[#1E3F32] text-[#4FD1C5] border border-[#2C4C3E] font-medium text-sm transition-colors cursor-pointer"
               >
@@ -1746,6 +1918,17 @@ export default function App() {
                   ? 'Sanctuary Grove Rejuvenated!'
                   : 'Sensory Overwhelm — Rest & Restore'}
               </h2>
+              {(completedStagesCount >= SANCTUARY_STAGES.length || isSanctuaryBloomActive) && (
+                <div
+                  data-testid="victory-sanctuary-bloom-banner"
+                  className="mt-2 inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-[#1E1936] border border-[#B794F4]/60 text-xs font-mono text-[#B794F4]"
+                >
+                  <span className="w-2 h-2 rounded-full bg-[#4FD1C5]" />
+                  <span>
+                    All 4 Sanctuary Stages Completed · Bioluminescence Saturation &amp; Orbital Camera Bloom Active
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* 3 Primary Tabular-Nums Stat Tiles */}

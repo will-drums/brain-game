@@ -10,6 +10,7 @@ import {
   computeAdaptiveFlowState,
   createCognitivePulseConfig,
   stepCognitivePulseWave,
+  computeSanctuaryBloomEffect,
   SANCTUARY_STAGES,
   CHIME_SYMBOLS,
   type CognitivePulseType,
@@ -57,6 +58,9 @@ export interface HudSnapshot {
   flowTier: AdaptiveFlowTier;
   cognitivePulseCount?: number;
   lastCognitivePulseType?: CognitivePulseType | null;
+  sanctuaryBloomActive?: boolean;
+  sanctuaryBloomRotationDeg?: number;
+  sanctuaryBloomSaturation?: number;
 }
 
 interface SanctuaryCanvasProps {
@@ -77,6 +81,8 @@ interface SanctuaryCanvasProps {
   demoStepSignal?: { step: number; seq: number } | null;
   atmosphereId?: SanctuaryAtmosphereId;
   isZenMode?: boolean;
+  completedStagesCount?: number;
+  isSanctuaryBloomActive?: boolean;
 }
 
 interface NeuralTree {
@@ -171,6 +177,8 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
   demoStepSignal = null,
   atmosphereId = 'forest',
   isZenMode = false,
+  completedStagesCount = 0,
+  isSanctuaryBloomActive = false,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -190,6 +198,8 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
     isDemoMode,
     atmosphereId,
     isZenMode,
+    completedStagesCount,
+    isSanctuaryBloomActive,
   });
 
   useEffect(() => {
@@ -207,6 +217,8 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       isDemoMode,
       atmosphereId,
       isZenMode,
+      completedStagesCount,
+      isSanctuaryBloomActive,
     };
   }, [
     gameState,
@@ -222,6 +234,8 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
     isDemoMode,
     atmosphereId,
     isZenMode,
+    completedStagesCount,
+    isSanctuaryBloomActive,
   ]);
 
   // Ref for signals from HUD buttons
@@ -661,16 +675,22 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
 
     initSanctuaryWorld(stateRef.current.stageIndex);
 
-    // Helper: Screen to World coordinates
+    let currentCameraRotationRad = 0;
+
+    // Helper: Screen to World coordinates (accounting for Sanctuary Bloom camera rotation)
     const screenToWorld = (clientX: number, clientY: number) => {
       const rect = canvas.getBoundingClientRect();
       const sx = clientX - rect.left;
       const sy = clientY - rect.top;
       mouseScreenX = sx;
       mouseScreenY = sy;
+      const dx = sx - viewWidth / 2;
+      const dy = sy - viewHeight / 2;
+      const cosR = Math.cos(-currentCameraRotationRad);
+      const sinR = Math.sin(-currentCameraRotationRad);
       return {
-        wx: camera.x + (sx - viewWidth / 2),
-        wy: camera.y + (sy - viewHeight / 2),
+        wx: camera.x + (dx * cosR - dy * sinR),
+        wy: camera.y + (dx * sinR + dy * cosR),
       };
     };
 
@@ -1101,10 +1121,14 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       const dt = clampDeltaTime(rawDt);
 
       const currentGameState = stateRef.current.gameState;
+      const isBloomForceActive =
+        (stateRef.current.completedStagesCount ?? 0) >= SANCTUARY_STAGES.length ||
+        Boolean(stateRef.current.isSanctuaryBloomActive);
+
       const isModalCovering =
         stateRef.current.isOverlayModalOpen ||
         currentGameState === 'paused' ||
-        currentGameState === 'gameover';
+        (currentGameState === 'gameover' && !isBloomForceActive);
 
       if (isModalCovering) {
         if (hasRenderedStaticModalBackdrop) {
@@ -1113,6 +1137,10 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         hasRenderedStaticModalBackdrop = true;
       } else {
         hasRenderedStaticModalBackdrop = false;
+      }
+
+      if (currentGameState === 'gameover' && isBloomForceActive) {
+        stageElapsedSec += dt;
       }
 
       const stage = SANCTUARY_STAGES[stateRef.current.stageIndex] || SANCTUARY_STAGES[0];
@@ -1627,18 +1655,31 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       // RENDER PASS (60 FPS Botanical Sanctuary Canvas2D with Mac Retina DPR)
       // ========================================================================
       const aesthetic = getSanctuaryAestheticConfig(stateRef.current.activeMilestoneId);
+      const bloomEffect = computeSanctuaryBloomEffect({
+        completedStagesCount: stateRef.current.completedStagesCount ?? 0,
+        totalStages: SANCTUARY_STAGES.length,
+        isBloomManuallyActive: stateRef.current.isSanctuaryBloomActive,
+        elapsedSec: stageElapsedSec,
+      });
+      currentCameraRotationRad = bloomEffect.cameraRotationRad;
+      canvas.dataset.sanctuaryBloom = bloomEffect.isTriggered ? 'active' : 'inactive';
+      canvas.dataset.cameraRotationDeg = String(bloomEffect.cameraRotationDeg);
 
       ctx.save();
       ctx.scale(currentDpr, currentDpr);
       ctx.fillStyle = '#091510';
       ctx.fillRect(0, 0, viewWidth, viewHeight);
 
-      // Compute Camera Shake (trauma * trauma)
+      // Compute Camera Shake (trauma * trauma) + Sanctuary Bloom Slow Orbital Camera Rotation
       const shakeMag = camera.trauma * camera.trauma * 14;
       const shakeX = (Math.random() * 2 - 1) * shakeMag;
       const shakeY = (Math.random() * 2 - 1) * shakeMag;
 
-      ctx.translate(viewWidth / 2 - camera.x + shakeX, viewHeight / 2 - camera.y + shakeY);
+      ctx.translate(viewWidth / 2, viewHeight / 2);
+      if (bloomEffect.isTriggered && bloomEffect.cameraRotationRad !== 0) {
+        ctx.rotate(bloomEffect.cameraRotationRad);
+      }
+      ctx.translate(-camera.x + shakeX, -camera.y + shakeY);
 
       // 1. Sanctuary Mossy Glade Floor & Concentric Topographic Rings
       const bgGrad = ctx.createRadialGradient(0, -40, 60, 0, -40, 820);
@@ -2149,6 +2190,61 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
 
       ctx.restore();
 
+      // 7B-2. Render 'Sanctuary Bloom' Full-Canvas Bioluminescence Post-Processing Pass (When All 4 Stages Completed)
+      if (bloomEffect.isTriggered) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+
+        const cx = viewWidth / 2;
+        const cy = viewHeight / 2;
+        const maxDim = Math.max(viewWidth, viewHeight) * 0.85;
+
+        // Layer 1: Full-Viewport Chromatic Bioluminescence Saturation Wash
+        const bloomGrad = ctx.createRadialGradient(cx, cy, 24, cx, cy, maxDim);
+        bloomGrad.addColorStop(
+          0,
+          `rgba(104, 211, 145, ${(bloomEffect.bloomIntensityAlpha * 0.72).toFixed(3)})`
+        );
+        bloomGrad.addColorStop(
+          0.38,
+          `rgba(79, 209, 197, ${(bloomEffect.bloomIntensityAlpha * 0.54).toFixed(3)})`
+        );
+        bloomGrad.addColorStop(
+          0.72,
+          `rgba(183, 148, 244, ${(bloomEffect.bloomIntensityAlpha * 0.38).toFixed(3)})`
+        );
+        bloomGrad.addColorStop(
+          1,
+          `rgba(242, 184, 75, ${(bloomEffect.bloomIntensityAlpha * 0.22).toFixed(3)})`
+        );
+        ctx.fillStyle = bloomGrad;
+        ctx.fillRect(0, 0, viewWidth, viewHeight);
+
+        // Layer 2: Rotating Celestial Bioluminescent Corona Rays
+        ctx.translate(cx, cy);
+        ctx.rotate(-bloomEffect.cameraRotationRad * 1.35);
+        const rayCount = 12;
+        for (let r = 0; r < rayCount; r++) {
+          const rayAngle = (Math.PI * 2 * r) / rayCount;
+          ctx.save();
+          ctx.rotate(rayAngle);
+          const rayGrad = ctx.createLinearGradient(0, 0, maxDim, 0);
+          rayGrad.addColorStop(0, 'rgba(79, 209, 197, 0.22)');
+          rayGrad.addColorStop(0.5, 'rgba(104, 211, 145, 0.09)');
+          rayGrad.addColorStop(1, 'rgba(9, 21, 16, 0)');
+          ctx.fillStyle = rayGrad;
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.lineTo(maxDim, -42);
+          ctx.lineTo(maxDim, 42);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+
+        ctx.restore();
+      }
+
       // 7C-1. Render Sanctuary Atmosphere Weather Layer (Rain Streaks & Ripples / Meadow Sunbeams / Forest Shafts)
       const activeAtm = stateRef.current.atmosphereId || 'forest';
       if (activeAtm === 'rain') {
@@ -2335,6 +2431,9 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
           flowTier: flowState.flowTier,
           cognitivePulseCount: totalCognitivePulsesTriggered,
           lastCognitivePulseType,
+          sanctuaryBloomActive: bloomEffect.isTriggered,
+          sanctuaryBloomRotationDeg: bloomEffect.cameraRotationDeg,
+          sanctuaryBloomSaturation: bloomEffect.bioluminescenceSaturation,
         });
       }
     };

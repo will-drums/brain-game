@@ -36,8 +36,35 @@ import {
   toggleDailyHabitExercise,
   createCognitivePulseConfig,
   stepCognitivePulseWave,
+  computeSanctuaryBloomEffect,
   type ChimeSymbol,
 } from './rules';
+
+test('computeSanctuaryBloomEffect triggers full-canvas bioluminescence saturation and slow camera rotation when all 4 stages are completed', () => {
+  assert.equal(SANCTUARY_STAGES.length, 4);
+
+  const partial = computeSanctuaryBloomEffect({
+    completedStagesCount: 2,
+    elapsedSec: 10,
+  });
+  assert.equal(partial.isTriggered, false);
+  assert.equal(partial.cameraRotationRad, 0);
+  assert.equal(partial.bioluminescenceSaturation, 0);
+  assert.equal(partial.bloomIntensityAlpha, 0);
+
+  const fullMastery = computeSanctuaryBloomEffect({
+    completedStagesCount: 4,
+    elapsedSec: 12.0,
+  });
+  assert.equal(fullMastery.isTriggered, true);
+  assert.equal(fullMastery.completedStagesCount, 4);
+  assert.equal(fullMastery.totalStages, 4);
+  assert.equal(fullMastery.bioluminescenceSaturation, 1.0);
+  assert.ok(fullMastery.cameraRotationRad > 0.9 && fullMastery.cameraRotationRad < 1.2);
+  assert.ok(fullMastery.cameraRotationDeg > 50);
+  assert.ok(fullMastery.bloomIntensityAlpha >= 0.34 && fullMastery.bloomIntensityAlpha <= 0.6);
+  assert.ok(fullMastery.statusBadgeText.includes('SANCTUARY BLOOM ACTIVE'));
+});
 
 test('getDailyHabitClinicalTooltip provides peer-reviewed neuroscientific tooltip explanations for NSDR and Cognitive Reframing', () => {
   const nsdrTip = getDailyHabitClinicalTooltip('nsdr_protocol');

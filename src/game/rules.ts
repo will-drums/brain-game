@@ -149,6 +149,17 @@ export const SANCTUARY_STAGES: StageConfig[] = [
     hazardSpawnIntervalSec: 3.4,
     nectarCostPerTree: 35,
   },
+  {
+    stageIndex: 3,
+    name: 'Stage IV · The Aurora Neuro-Bloom Apex',
+    subtitle: '4-Stage Full Sanctuary Mastery · Bioluminescent Bloom & Harmonic Camera Orbit',
+    targetTreesGrafted: 6,
+    nBackLevel: 2,
+    ufovFlashDurationSec: 0.9,
+    maxConcurrentHazards: 8,
+    hazardSpawnIntervalSec: 3.2,
+    nectarCostPerTree: 35,
+  },
 ];
 
 export type ChimeSymbol = 'SUN' | 'LEAF' | 'DROP' | 'STAR';
@@ -1590,5 +1601,76 @@ export function stepCognitivePulseWave(
     coreGlowAlpha,
   };
 }
+
+/**
+ * 'Sanctuary Bloom' Post-Processing & Orbital Camera Rotation Effect
+ * Triggers when the user completes all 4 stages (or activates the Sanctuary Bloom preview),
+ * saturating the entire canvas with bioluminescence and slowly rotating the camera.
+ */
+export const SANCTUARY_BLOOM_STORAGE_KEY = 'sylvan_synapse_completed_stages_v1';
+
+export interface SanctuaryBloomState {
+  isTriggered: boolean;
+  completedStagesCount: number;
+  totalStages: number;
+  cameraRotationRad: number;
+  cameraRotationDeg: number;
+  bioluminescenceSaturation: number; // 0 .. 1.0
+  bloomIntensityAlpha: number; // 0 .. 0.65
+  chromaticAuroraShift: number; // 0 .. 1.0
+  statusBadgeText: string;
+}
+
+export function computeSanctuaryBloomEffect(params: {
+  completedStagesCount: number;
+  totalStages?: number;
+  isBloomManuallyActive?: boolean;
+  elapsedSec: number;
+}): SanctuaryBloomState {
+  const totalStages = Math.max(1, params.totalStages ?? SANCTUARY_STAGES.length);
+  const completedStagesCount = Math.max(
+    0,
+    Math.min(totalStages, Math.round(params.completedStagesCount || 0))
+  );
+  const isTriggered =
+    completedStagesCount >= totalStages || Boolean(params.isBloomManuallyActive);
+
+  if (!isTriggered) {
+    return {
+      isTriggered: false,
+      completedStagesCount,
+      totalStages,
+      cameraRotationRad: 0,
+      cameraRotationDeg: 0,
+      bioluminescenceSaturation: 0,
+      bloomIntensityAlpha: 0,
+      chromaticAuroraShift: 0,
+      statusBadgeText: `Sanctuary Stages Completed: ${completedStagesCount}/${totalStages}`,
+    };
+  }
+
+  const safeElapsed = Math.max(0, Number.isFinite(params.elapsedSec) ? params.elapsedSec : 0);
+  // Slow, meditative orbital camera rotation (~0.085 rad/sec = ~4.87 deg/sec)
+  const cameraRotationRad = (safeElapsed * 0.085) % (Math.PI * 2);
+  const cameraRotationDeg = Math.round(((cameraRotationRad * 180) / Math.PI) * 10) / 10;
+  const bioluminescenceSaturation = 1.0;
+  const bloomIntensityAlpha =
+    Math.round((0.46 + 0.12 * Math.sin(safeElapsed * 1.35)) * 1000) / 1000;
+  const chromaticAuroraShift =
+    Math.round((0.5 + 0.5 * Math.sin(safeElapsed * 0.65)) * 1000) / 1000;
+
+  return {
+    isTriggered: true,
+    completedStagesCount: Math.max(completedStagesCount, totalStages),
+    totalStages,
+    cameraRotationRad,
+    cameraRotationDeg,
+    bioluminescenceSaturation,
+    bloomIntensityAlpha,
+    chromaticAuroraShift,
+    statusBadgeText: `SANCTUARY BLOOM ACTIVE · ${totalStages}/${totalStages} STAGES COMPLETED`,
+  };
+}
+
 
 
