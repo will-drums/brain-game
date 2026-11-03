@@ -7,10 +7,14 @@ import {
   NEURO_NUTRITION_SLEEP_TIPS,
   filterNeuroNutritionTips,
   computeNeuroSynergyBonus,
+  DEFAULT_NEURAL_LOGS_SEED,
   type NeuroLifestyleCategory,
+  type NeuralLogEntry,
+  type NeuralLogMoodTag,
   type HrvSessionRecord,
   type ProtocolId,
 } from '../game/rules';
+import { CognitiveInsightJournal } from './CognitiveInsightJournal';
 
 interface ClinicalCodexModalProps {
   isOpen: boolean;
@@ -23,6 +27,14 @@ interface ClinicalCodexModalProps {
   currentStreakDays?: number;
   completedHabitIds?: string[];
   onToggleHabitId?: (habitId: string) => void;
+  neuralLogs?: NeuralLogEntry[];
+  onAddNeuralLog?: (params: {
+    moodTag: NeuralLogMoodTag;
+    reflectionNote: string;
+    outcome: 'victory' | 'defeat';
+    rejuvenationScore: number;
+    stageName: string;
+  }) => void;
 }
 
 export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
@@ -35,6 +47,8 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
   currentStreakDays = 1,
   completedHabitIds = ['polyphenol_bdnf_diet', 'glymphatic_slow_wave_sleep'],
   onToggleHabitId,
+  neuralLogs = DEFAULT_NEURAL_LOGS_SEED,
+  onAddNeuralLog,
 }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [hoveredSession, setHoveredSession] = useState<HrvSessionRecord | null>(null);
@@ -270,6 +284,7 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
         title: t.title,
         completedToday: completedHabitIds.includes(t.id),
       })),
+      neuralLogs,
       hrvSessionHistory: sessions,
     };
 
@@ -636,6 +651,20 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
             })}
           </div>
         </section>
+
+        {/* COGNITIVE INSIGHT JOURNAL — NEURAL LOGS ARCHIVE LINKED TO DAILY STREAK */}
+        {onAddNeuralLog && (
+          <div className="mt-6">
+            <CognitiveInsightJournal
+              neuralLogs={neuralLogs}
+              streakDayCount={currentStreakDays}
+              stageName="Sanctuary Practice Reflection"
+              outcome="victory"
+              rejuvenationScore={peakRejuvenationScore}
+              onAddNeuralLog={onAddNeuralLog}
+            />
+          </div>
+        )}
 
         {/* Peer-Reviewed Clinical Protocols List */}
         <div className="mt-6 space-y-5">

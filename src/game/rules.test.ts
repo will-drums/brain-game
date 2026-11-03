@@ -27,8 +27,43 @@ import {
   NEURO_NUTRITION_SLEEP_TIPS,
   filterNeuroNutritionTips,
   computeNeuroSynergyBonus,
+  DEFAULT_NEURAL_LOGS_SEED,
+  appendNeuralLogEntry,
   type ChimeSymbol,
 } from './rules';
+
+test('Cognitive Insight Journal appends post-session Neural Logs linked to daily streak and ignores empty notes', () => {
+  assert.equal(DEFAULT_NEURAL_LOGS_SEED.length, 2);
+
+  // Empty note is ignored
+  const unchanged = appendNeuralLogEntry(DEFAULT_NEURAL_LOGS_SEED, {
+    recordedAtIso: '2026-11-03',
+    streakDayCount: 3,
+    stageName: 'Stage I · The Mossy Dentate Grove',
+    outcome: 'victory',
+    rejuvenationScore: 1580,
+    moodTag: 'Flow State',
+    reflectionNote: '   ',
+  });
+  assert.equal(unchanged.length, 2);
+
+  // Valid note is prepended and linked to streakDayCount
+  const updated = appendNeuralLogEntry(DEFAULT_NEURAL_LOGS_SEED, {
+    id: 'test-log-3',
+    recordedAtIso: '2026-11-03',
+    streakDayCount: 3,
+    stageName: 'Stage I · The Mossy Dentate Grove',
+    outcome: 'victory',
+    rejuvenationScore: 1580,
+    moodTag: 'Focused Clarity',
+    reflectionNote: 'UFOV peripheral locks felt crisp and effortless today.',
+  });
+  assert.equal(updated.length, 3);
+  assert.equal(updated[0].id, 'test-log-3');
+  assert.equal(updated[0].streakDayCount, 3);
+  assert.equal(updated[0].moodTag, 'Focused Clarity');
+  assert.equal(updated[0].reflectionNote, 'UFOV peripheral locks felt crisp and effortless today.');
+});
 
 test('Neuro-Nutrition & Sleep Hygiene tips filter accurately by category and compute biological readiness synergy bonuses', () => {
   assert.equal(NEURO_NUTRITION_SLEEP_TIPS.length, 4);

@@ -1087,3 +1087,98 @@ export function computeNeuroSynergyBonus(completedHabitIds: string[]): {
     statusLabel,
   };
 }
+
+/**
+ * Cognitive Insight Journal — Post-Session Reflective 'Neural Logs' Linked to Daily Streak
+ * Grounded in Metacognitive Monitoring & Expressive Consolidation (Fleming & Dolan, Phil. Trans. R. Soc. B, 2012).
+ */
+export type NeuralLogMoodTag =
+  | 'Focused Clarity'
+  | 'Deep Vagal Calm'
+  | 'Flow State'
+  | 'Mental Fatigue Recovery';
+
+export interface NeuralLogEntry {
+  id: string;
+  recordedAtIso: string; // YYYY-MM-DD
+  streakDayCount: number; // Linked to user's daily practice streak
+  stageName: string;
+  outcome: 'victory' | 'defeat';
+  rejuvenationScore: number;
+  moodTag: NeuralLogMoodTag;
+  reflectionNote: string;
+}
+
+export const NEURAL_LOGS_STORAGE_KEY = 'sylvan_synapse_neural_logs_v1';
+
+export const NEURAL_LOG_MOOD_TAGS: NeuralLogMoodTag[] = [
+  'Focused Clarity',
+  'Deep Vagal Calm',
+  'Flow State',
+  'Mental Fatigue Recovery',
+];
+
+export const NEURAL_LOG_PROMPT_CHIPS: string[] = [
+  'Peripheral UFOV firefly locks felt noticeably faster today.',
+  '0.1 Hz resonance breathing dissolved tension and steadied my focus.',
+  '1-Back / 2-Back Echo Chimes clicked into effortless prefrontal flow.',
+  'Grafting hippocampal neural trees felt deeply restorative after work.',
+];
+
+export const DEFAULT_NEURAL_LOGS_SEED: NeuralLogEntry[] = [
+  {
+    id: 'nlog-seed-1',
+    recordedAtIso: '2026-11-01',
+    streakDayCount: 1,
+    stageName: 'Stage I · The Mossy Dentate Grove',
+    outcome: 'victory',
+    rejuvenationScore: 1280,
+    moodTag: 'Deep Vagal Calm',
+    reflectionNote:
+      'Paced 0.1 Hz breathing immediately calmed my afternoon mental fatigue and made UFOV peripheral spotting feel natural.',
+  },
+  {
+    id: 'nlog-seed-2',
+    recordedAtIso: '2026-11-02',
+    streakDayCount: 2,
+    stageName: 'Stage II · The Bioluminescent Prefrontal Canopy',
+    outcome: 'victory',
+    rejuvenationScore: 1420,
+    moodTag: 'Flow State',
+    reflectionNote:
+      'Chained three 2-Back Echo Chime matches in a row while listening to the Gentle Rain soundscape.',
+  },
+];
+
+export function appendNeuralLogEntry(
+  existingLogs: NeuralLogEntry[],
+  newEntry: {
+    recordedAtIso: string;
+    streakDayCount: number;
+    stageName: string;
+    outcome: 'victory' | 'defeat';
+    rejuvenationScore: number;
+    moodTag: NeuralLogMoodTag;
+    reflectionNote: string;
+    id?: string;
+  },
+  maxLogs = 20
+): NeuralLogEntry[] {
+  const trimmedNote = (newEntry.reflectionNote || '').trim().slice(0, 280);
+  if (!trimmedNote) {
+    return existingLogs;
+  }
+
+  const created: NeuralLogEntry = {
+    id: newEntry.id || `nlog-${Date.now()}-${existingLogs.length + 1}`,
+    recordedAtIso: newEntry.recordedAtIso,
+    streakDayCount: Math.max(1, Math.round(newEntry.streakDayCount)),
+    stageName: newEntry.stageName || SANCTUARY_STAGES[0].name,
+    outcome: newEntry.outcome,
+    rejuvenationScore: Math.max(0, Math.round(newEntry.rejuvenationScore)),
+    moodTag: newEntry.moodTag || 'Focused Clarity',
+    reflectionNote: trimmedNote,
+  };
+
+  return [created, ...existingLogs].slice(0, maxLogs);
+}

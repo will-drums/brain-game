@@ -17,6 +17,11 @@ import {
   SANCTUARY_ATMOSPHERES,
   getSanctuaryAtmosphereConfig,
   NEURO_NUTRITION_STORAGE_KEY,
+  NEURAL_LOGS_STORAGE_KEY,
+  DEFAULT_NEURAL_LOGS_SEED,
+  appendNeuralLogEntry,
+  type NeuralLogEntry,
+  type NeuralLogMoodTag,
   type SanctuaryAtmosphereId,
   type DailyStreakState,
   type HrvSessionRecord,
@@ -31,6 +36,7 @@ import {
 import { soundEngine } from './game/audio';
 import { SanctuaryCanvas, type HudSnapshot } from './components/SanctuaryCanvas';
 import { ClinicalCodexModal } from './components/ClinicalCodexModal';
+import { CognitiveInsightJournal } from './components/CognitiveInsightJournal';
 
 const COMPASS_LABELS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 
@@ -348,6 +354,62 @@ export default function App() {
       });
     },
     [stageIndex]
+  );
+
+  // Cognitive Insight Journal — Post-Session Reflective 'Neural Logs' linked to Daily Streak
+  const [neuralLogs, setNeuralLogs] = useState<NeuralLogEntry[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = window.localStorage.getItem(NEURAL_LOGS_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as NeuralLogEntry[];
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        }
+        window.localStorage.setItem(
+          NEURAL_LOGS_STORAGE_KEY,
+          JSON.stringify(DEFAULT_NEURAL_LOGS_SEED)
+        );
+      } catch {
+        // Ignore storage errors
+      }
+    }
+    return DEFAULT_NEURAL_LOGS_SEED;
+  });
+
+  const handleAddNeuralLog = useCallback(
+    (params: {
+      moodTag: NeuralLogMoodTag;
+      reflectionNote: string;
+      outcome: 'victory' | 'defeat';
+      rejuvenationScore: number;
+      stageName: string;
+    }) => {
+      commitDailyPractice();
+      const todayIso = formatLocalDateIso();
+      soundEngine.playHarmonicChord('nback');
+      setNeuralLogs((prev) => {
+        const updated = appendNeuralLogEntry(prev, {
+          recordedAtIso: todayIso,
+          streakDayCount: Math.max(1, dailyStreak.currentStreak),
+          stageName: params.stageName,
+          outcome: params.outcome,
+          rejuvenationScore: params.rejuvenationScore,
+          moodTag: params.moodTag,
+          reflectionNote: params.reflectionNote,
+        });
+        if (typeof window !== 'undefined') {
+          try {
+            window.localStorage.setItem(NEURAL_LOGS_STORAGE_KEY, JSON.stringify(updated));
+          } catch {
+            // Ignore storage errors
+          }
+        }
+        return updated;
+      });
+    },
+    [commitDailyPractice, dailyStreak.currentStreak]
   );
 
   const [gameOutcome, setGameOutcome] = useState<GameOutcome>(null);
@@ -1449,6 +1511,25 @@ export default function App() {
               </button>
               <button
                 type="button"
+                data-testid="pause-complete-session-btn"
+                onClick={() => {
+                  handleGameEnd('victory', {
+                    rejuvenationScore: Math.max(850, Math.round(hud.rejuvenationScore)),
+                    processingSpeedPct: 88,
+                    workingMemoryPct: 90,
+                    vagalCoherencePct: 86,
+                    spatialPlasticityPct: Math.min(100, Math.round((hud.treesGrafted / Math.max(1, hud.targetTrees)) * 100) || 75),
+                    treesGrafted: hud.treesGrafted,
+                    targetTrees: hud.targetTrees,
+                    isVictory: true,
+                  });
+                }}
+                className="w-full py-2.5 rounded-xl bg-[#152E24] hover:bg-[#1E3F32] text-[#B794F4] border border-[#2C4C3E] font-medium text-sm transition-colors cursor-pointer"
+              >
+                Complete Session &amp; Open Insight Journal
+              </button>
+              <button
+                type="button"
                 onClick={() => setIsCodexOpen(true)}
                 className="w-full py-2.5 rounded-xl bg-[#152E24] hover:bg-[#1E3F32] text-[#4FD1C5] border border-[#2C4C3E] font-medium text-sm transition-colors cursor-pointer"
               >
@@ -1470,16 +1551,16 @@ export default function App() {
         </div>
       )}
 
-      {/* 5. VICTORY / GAME OVER MODAL (Single Focused Status Card with Tabular-Nums Mastery Metrics) */}
+      {/* 5. VICTORY / GAME OVER MODAL (Single Focused Status Card with Tabular-Nums Mastery Metrics + Cognitive Insight Journal) */}
       {gameState === 'gameover' && endSummary && (
         <div
           role="dialog"
           aria-modal="true"
           aria-labelledby="gameover-modal-title"
-          className="fixed inset-0 z-30 flex items-center justify-center p-6 bg-[#07120E]/88 pointer-events-auto"
+          className="fixed inset-0 z-30 flex items-center justify-center p-4 md:p-6 bg-[#07120E]/88 pointer-events-auto"
         >
-          <div className="w-full max-w-lg rounded-2xl bg-[#10231C] border border-[#2C4C3E] p-7 shadow-2xl space-y-6">
-            <div className="text-center space-y-1.5">
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-[#10231C] border border-[#2C4C3E] p-6 shadow-2xl space-y-4">
+            <div className="text-center space-y-1">
               <p className="text-xs font-mono uppercase tracking-wider text-[#68D391]">
                 {gameOutcome === 'victory'
                   ? 'Hippocampal & Prefrontal Circuitry Illuminated'
@@ -1496,7 +1577,7 @@ export default function App() {
             </div>
 
             {/* 3 Primary Tabular-Nums Stat Tiles */}
-            <div className="grid grid-cols-3 gap-3 p-4 rounded-xl bg-[#0B1914] border border-[#233D32] text-center">
+            <div className="grid grid-cols-3 gap-3 p-3.5 rounded-xl bg-[#0B1914] border border-[#233D32] text-center">
               <div>
                 <div className="text-[10px] font-mono text-[#A3B8B0]">REJUVENATION SCORE</div>
                 <div className="text-2xl font-mono font-bold text-[#F2B84B] tabular-nums">
@@ -1524,13 +1605,24 @@ export default function App() {
               </div>
             </div>
 
+            {/* Post-Session Cognitive Insight Journal (Linked to Daily Streak) */}
+            <CognitiveInsightJournal
+              neuralLogs={neuralLogs}
+              streakDayCount={dailyStreak.currentStreak}
+              stageName={hud.stageName}
+              outcome={gameOutcome === 'victory' ? 'victory' : 'defeat'}
+              rejuvenationScore={endSummary.rejuvenationScore}
+              onAddNeuralLog={handleAddNeuralLog}
+              compact
+            />
+
             <div className="flex flex-col sm:flex-row gap-3">
               {gameOutcome === 'victory' && stageIndex < SANCTUARY_STAGES.length - 1 ? (
                 <button
                   type="button"
                   data-start="true"
                   onClick={() => startOrRestartGame(stageIndex + 1, false)}
-                  className="flex-1 py-3.5 px-5 rounded-xl bg-[#F2B84B] hover:bg-[#F6AD55] text-[#091510] font-semibold text-sm transition-colors cursor-pointer"
+                  className="flex-1 py-3 px-5 rounded-xl bg-[#F2B84B] hover:bg-[#F6AD55] text-[#091510] font-semibold text-sm transition-colors cursor-pointer"
                 >
                   Advance to Stage {stageIndex + 2}
                 </button>
@@ -1539,7 +1631,7 @@ export default function App() {
                   type="button"
                   data-start="true"
                   onClick={() => startOrRestartGame(stageIndex, false)}
-                  className="flex-1 py-3.5 px-5 rounded-xl bg-[#F2B84B] hover:bg-[#F6AD55] text-[#091510] font-semibold text-sm transition-colors cursor-pointer"
+                  className="flex-1 py-3 px-5 rounded-xl bg-[#F2B84B] hover:bg-[#F6AD55] text-[#091510] font-semibold text-sm transition-colors cursor-pointer"
                 >
                   {gameOutcome === 'victory' ? 'Play Sanctuary Again' : 'Try Sanctuary Again'}
                 </button>
@@ -1552,7 +1644,7 @@ export default function App() {
                   soundEngine.pauseAmbient();
                   setGameState('title');
                 }}
-                className="py-3.5 px-5 rounded-xl bg-[#152E24] hover:bg-[#1E3F32] text-[#F4EFE6] border border-[#2C4C3E] font-medium text-sm transition-colors cursor-pointer"
+                className="py-3 px-5 rounded-xl bg-[#152E24] hover:bg-[#1E3F32] text-[#F4EFE6] border border-[#2C4C3E] font-medium text-sm transition-colors cursor-pointer"
               >
                 Title Screen
               </button>
@@ -1572,6 +1664,8 @@ export default function App() {
         currentStreakDays={dailyStreak.currentStreak}
         completedHabitIds={completedHabitIds}
         onToggleHabitId={handleToggleNeuroHabit}
+        neuralLogs={neuralLogs}
+        onAddNeuralLog={handleAddNeuralLog}
         onRecordSimulatedSession={() => {
           commitDailyPractice();
           const lastScore = hrvHistory[hrvHistory.length - 1]?.coherenceScore ?? 85;
