@@ -31,12 +31,30 @@ import {
   appendNeuralLogEntry,
   computeZenModeHudState,
   DAILY_HABIT_EXERCISES,
+  getDailyHabitClinicalTooltip,
   syncDailyHabitTrackerWithStreak,
   toggleDailyHabitExercise,
   createCognitivePulseConfig,
   stepCognitivePulseWave,
   type ChimeSymbol,
 } from './rules';
+
+test('getDailyHabitClinicalTooltip provides peer-reviewed neuroscientific tooltip explanations for NSDR and Cognitive Reframing', () => {
+  const nsdrTip = getDailyHabitClinicalTooltip('nsdr_protocol');
+  assert.equal(nsdrTip.id, 'nsdr_protocol');
+  assert.ok(nsdrTip.clinicalBenefit.includes('+65%'));
+  assert.ok(nsdrTip.clinicalBenefit.includes('striatal dopamine'));
+  assert.ok(nsdrTip.neuroLiterature.includes('Kjaer et al.'));
+  assert.equal(nsdrTip.keyMetrics.length, 3);
+
+  const reframeTip = getDailyHabitClinicalTooltip('cognitive_reframing');
+  assert.equal(reframeTip.id, 'cognitive_reframing');
+  assert.ok(reframeTip.clinicalBenefit.includes('dlPFC/vlPFC'));
+  assert.ok(reframeTip.clinicalBenefit.includes('amygdala'));
+  assert.ok(reframeTip.neuroLiterature.includes('Ochsner'));
+  assert.ok(reframeTip.neuroLiterature.includes('Buhle et al.'));
+  assert.equal(reframeTip.keyMetrics.length, 3);
+});
 
 test('createCognitivePulseConfig and stepCognitivePulseWave radiate bioluminescent particles and harmonic rings for N-Back and UFOV completions', () => {
   const nbackPulse = createCognitivePulseConfig('nback_match', 10, -25, 1.15);

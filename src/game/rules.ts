@@ -1110,6 +1110,10 @@ export interface DailyHabitExercise {
   exercisePrompt: string;
   synergyBonusLabel: string;
   accentHex: string;
+  tooltipHeadline: string;
+  tooltipClinicalBenefit: string;
+  tooltipNeuroLiterature: string;
+  tooltipKeyMetrics: string[];
 }
 
 export const DAILY_HABIT_TRACKER_STORAGE_KEY = 'sylvan_synapse_daily_habit_tracker_v1';
@@ -1137,6 +1141,17 @@ export const DAILY_HABIT_EXERCISES: DailyHabitExercise[] = [
       'Complete a 10–20 minute eyes-closed NSDR or Yoga Nidra body-scan session after intensive cognitive focus or mid-afternoon mental fatigue.',
     synergyBonusLabel: 'Syncs with Daily Streak · +10% Vagal & Striatal Recovery Readiness',
     accentHex: '#4FD1C5',
+    tooltipHeadline:
+      'Clinical Benefit · Striatal Dopamine Replenishment & Theta-State Synaptic Replay',
+    tooltipClinicalBenefit:
+      '11C-raclopride PET imaging demonstrates a +65% increase in endogenous striatal dopamine release during deep wakeful rest (NSDR / Yoga Nidra), accompanied by a shift from high-frequency beta to restorative theta/alpha (4–12 Hz) EEG rhythms that accelerates hippocampal-neocortical memory replay and lowers sympathetic cortisol.',
+    tooltipNeuroLiterature:
+      'Kjaer et al., Cognitive Brain Research (2002) [11C-raclopride PET]; Lou et al., Human Brain Mapping (1999); Boukhris et al., Appl. Psychophysiol. Biofeedback (2024)',
+    tooltipKeyMetrics: [
+      '+65% Striatal Dopamine Tone',
+      '4–8 Hz Theta EEG Entrainment',
+      'Hippocampal Replay Consolidation',
+    ],
   },
   {
     id: 'cognitive_reframing',
@@ -1152,8 +1167,43 @@ export const DAILY_HABIT_EXERCISES: DailyHabitExercise[] = [
       'Identify one automatic stress appraisal today and re-author it into an objective, growth-oriented prefrontal reframe.',
     synergyBonusLabel: 'Syncs with Daily Streak · +10% Prefrontal Executive Readiness',
     accentHex: '#B794F4',
+    tooltipHeadline:
+      'Clinical Benefit · Top-Down dlPFC/vlPFC Recruitment & Bilateral Amygdala Attenuation',
+    tooltipClinicalBenefit:
+      'Functional neuroimaging (fMRI) studies demonstrate that conscious cognitive reappraisal recruits dorsolateral, ventrolateral, and ventromedial prefrontal cortices (dlPFC/vlPFC/vmPFC) to exert top-down inhibitory modulation over bilateral amygdala threat reactivity, buffering HPA-axis cortisol spikes and preserving working-memory bandwidth.',
+    tooltipNeuroLiterature:
+      'Ochsner, Bunge, Gross & Gabrieli, J. Cogn. Neurosci. (2002); Buhle et al., Cerebral Cortex (2014) [Meta-analysis of 48 fMRI studies]; Jamieson et al., J. Exp. Psychol. (2012)',
+    tooltipKeyMetrics: [
+      'Bilateral Amygdala Down-Regulation',
+      'dlPFC & vlPFC Executive Recruitment',
+      'HPA-Axis Cortisol & Vagal Buffering',
+    ],
   },
 ];
+
+export function getDailyHabitClinicalTooltip(
+  exerciseId: DailyHabitExerciseId | string
+): {
+  id: DailyHabitExerciseId;
+  title: string;
+  headline: string;
+  clinicalBenefit: string;
+  neuroLiterature: string;
+  keyMetrics: string[];
+  formattedTooltipText: string;
+} {
+  const found =
+    DAILY_HABIT_EXERCISES.find((ex) => ex.id === exerciseId) || DAILY_HABIT_EXERCISES[0];
+  return {
+    id: found.id,
+    title: found.title,
+    headline: found.tooltipHeadline,
+    clinicalBenefit: found.tooltipClinicalBenefit,
+    neuroLiterature: found.tooltipNeuroLiterature,
+    keyMetrics: found.tooltipKeyMetrics,
+    formattedTooltipText: `${found.tooltipHeadline} — ${found.tooltipClinicalBenefit} (Literature: ${found.tooltipNeuroLiterature})`,
+  };
+}
 
 export function syncDailyHabitTrackerWithStreak(
   savedStreak: DailyStreakState | null | undefined,

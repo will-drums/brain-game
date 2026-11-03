@@ -10,6 +10,7 @@ import {
   filterNeuroNutritionTips,
   computeNeuroSynergyBonus,
   DAILY_HABIT_EXERCISES,
+  getDailyHabitClinicalTooltip,
   DEFAULT_NEURAL_LOGS_SEED,
   type DailyHabitExerciseId,
   type DailyHabitTrackerState,
@@ -63,6 +64,8 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
   const [hoveredSession, setHoveredSession] = useState<HrvSessionRecord | null>(null);
   const [exportStatus, setExportStatus] = useState<string>('');
   const [lifestyleCategory, setLifestyleCategory] = useState<NeuroLifestyleCategory>('all');
+  const [hoveredHabitTooltipId, setHoveredHabitTooltipId] = useState<string | null>(null);
+  const [pinnedHabitTooltipId, setPinnedHabitTooltipId] = useState<string | null>(null);
   const [localTrackerFallback, setLocalTrackerFallback] = useState<{
     nsdrCompleted: boolean;
     cognitiveReframingCompleted: boolean;
@@ -717,10 +720,12 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
             {filteredLifestyleTips.map((tip) => {
               const isCompleted = completedHabitIds.includes(tip.id);
+              const tipTooltipText = `${tip.title} — Clinical Benefit: ${tip.mechanismSummary} (${tip.citation})`;
               return (
                 <div
                   key={tip.id}
                   data-testid={`neuro-tip-card-${tip.id}`}
+                  title={tipTooltipText}
                   className={`p-4 rounded-xl border transition-colors flex flex-col justify-between space-y-3 ${
                     isCompleted
                       ? 'bg-[#122A20] border-[#68D391]/70'
@@ -739,6 +744,7 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
                         <button
                           type="button"
                           data-testid={`neuro-habit-toggle-${tip.id}`}
+                          title={tipTooltipText}
                           onClick={() => onToggleHabitId(tip.id)}
                           className={`px-2.5 py-1 rounded-md text-[10px] font-mono font-semibold transition-colors cursor-pointer border ${
                             isCompleted
@@ -822,12 +828,24 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
                   exercise.id === 'nsdr_protocol'
                     ? activeNsdrCompleted
                     : activeReframingCompleted;
+                const tooltipData = getDailyHabitClinicalTooltip(exercise.id);
+                const isTooltipOpen =
+                  hoveredHabitTooltipId === exercise.id ||
+                  pinnedHabitTooltipId === exercise.id;
+                const tooltipDomId = `habit-clinical-tooltip-${exercise.id}`;
 
                 return (
                   <div
                     key={exercise.id}
                     data-testid={`habit-exercise-card-${exercise.id}`}
-                    className={`p-4 rounded-xl border transition-colors flex flex-col justify-between space-y-3 ${
+                    title={tooltipData.formattedTooltipText}
+                    onMouseEnter={() => setHoveredHabitTooltipId(exercise.id)}
+                    onMouseLeave={() =>
+                      setHoveredHabitTooltipId((prev) =>
+                        prev === exercise.id ? null : prev
+                      )
+                    }
+                    className={`relative p-4 rounded-xl border transition-colors flex flex-col justify-between space-y-3 ${
                       isExerciseDone
                         ? 'bg-[#132E23] border-[#68D391]'
                         : 'bg-[#10231C] border-[#1E3A2F]'
@@ -847,21 +865,88 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
                           </span>
                         </div>
 
-                        <button
-                          type="button"
-                          data-testid={`habit-exercise-toggle-${exercise.id}`}
-                          aria-pressed={isExerciseDone}
-                          onClick={() => handleExerciseToggleClick(exercise.id)}
-                          className={`px-3 py-1 rounded-md text-[10px] font-mono font-semibold transition-colors cursor-pointer border ${
-                            isExerciseDone
-                              ? 'bg-[#68D391] text-[#091510] border-[#68D391]'
-                              : 'bg-[#0B1914] text-[#F2B84B] border-[#F2B84B]/50 hover:bg-[#163025] hover:text-[#F4EFE6]'
-                          }`}
-                        >
-                          {isExerciseDone
-                            ? '✓ Completed & Synced with Streak'
-                            : `+ Log ${exercise.shortLabel}`}
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            data-testid={`habit-tooltip-trigger-${exercise.id}`}
+                            aria-describedby={tooltipDomId}
+                            aria-expanded={isTooltipOpen}
+                            title={tooltipData.formattedTooltipText}
+                            onFocus={() => setHoveredHabitTooltipId(exercise.id)}
+                            onBlur={() =>
+                              setHoveredHabitTooltipId((prev) =>
+                                prev === exercise.id ? null : prev
+                              )
+                            }
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPinnedHabitTooltipId((prev) =>
+                                prev === exercise.id ? null : exercise.id
+                              );
+                            }}
+                            className={`px-2 py-1 rounded-md border text-[10px] font-mono font-semibold transition-colors cursor-pointer ${
+                              isTooltipOpen
+                                ? 'bg-[#17382C] text-[#68D391] border-[#68D391]'
+                                : 'bg-[#0B1914] hover:bg-[#163025] text-[#4FD1C5] border-[#2C4C3E]'
+                            }`}
+                          >
+                            ⓘ Clinical Benefit
+                          </button>
+
+                          <button
+                            type="button"
+                            data-testid={`habit-exercise-toggle-${exercise.id}`}
+                            aria-pressed={isExerciseDone}
+                            aria-describedby={tooltipDomId}
+                            title={tooltipData.formattedTooltipText}
+                            onClick={() => handleExerciseToggleClick(exercise.id)}
+                            className={`px-3 py-1 rounded-md text-[10px] font-mono font-semibold transition-colors cursor-pointer border ${
+                              isExerciseDone
+                                ? 'bg-[#68D391] text-[#091510] border-[#68D391]'
+                                : 'bg-[#0B1914] text-[#F2B84B] border-[#F2B84B]/50 hover:bg-[#163025] hover:text-[#F4EFE6]'
+                            }`}
+                          >
+                            {isExerciseDone
+                              ? '✓ Completed & Synced with Streak'
+                              : `+ Log ${exercise.shortLabel}`}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Descriptive Neuroscientific Literature Tooltip Popover */}
+                      <div
+                        id={tooltipDomId}
+                        role="tooltip"
+                        data-testid={`habit-tooltip-popover-${exercise.id}`}
+                        className={`p-3 rounded-xl bg-[#07120E] border border-[#4FD1C5]/60 shadow-xl space-y-1.5 transition-all ${
+                          isTooltipOpen ? 'block' : 'hidden'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-[#4FD1C5]">
+                            {tooltipData.headline}
+                          </span>
+                          <span className="text-[9px] font-mono text-[#68D391] px-1.5 py-0.5 rounded bg-[#10281F] border border-[#2C4C3E]">
+                            Neuroscience Evidence
+                          </span>
+                        </div>
+                        <p className="text-xs text-[#F4EFE6] leading-relaxed">
+                          {tooltipData.clinicalBenefit}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {tooltipData.keyMetrics.map((metric) => (
+                            <span
+                              key={metric}
+                              className="px-2 py-0.5 rounded bg-[#10231C] border border-[#233D32] text-[10px] font-mono text-[#F2B84B]"
+                            >
+                              {metric}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="text-[10px] font-mono text-[#A3B8B0] pt-1 border-t border-[#183328]">
+                          <strong className="text-[#68D391]">Peer-Reviewed Citations:</strong>{' '}
+                          {tooltipData.neuroLiterature}
+                        </div>
                       </div>
 
                       <h5 className="text-sm font-display font-semibold text-[#F4EFE6]">
