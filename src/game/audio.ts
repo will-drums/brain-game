@@ -4,15 +4,26 @@
  * 0.1 Hz resonance breath swells, UFOV lock-on bells, and soft dissonance warnings.
  */
 
-import type { ChimeSymbol } from './rules';
+import {
+  getSanctuaryAtmosphereConfig,
+  type ChimeSymbol,
+  type SanctuaryAtmosphereId,
+} from './rules';
 
 class SoundEngine {
   private ctx: AudioContext | null = null;
   private isMuted: boolean = false;
   private ambientGain: GainNode | null = null;
   private binauralGain: GainNode | null = null;
+  private noiseGain: GainNode | null = null;
+  private droneOsc1: OscillatorNode | null = null;
+  private droneOsc2: OscillatorNode | null = null;
+  private noiseFilter: BiquadFilterNode | null = null;
+  private noiseLfo: OscillatorNode | null = null;
+  private noiseLfoGain: GainNode | null = null;
   private isAmbientRunning: boolean = false;
   private isBinauralEnabled: boolean = true;
+  private currentAtmosphere: SanctuaryAtmosphereId = 'forest';
 
   private getContext(): AudioContext | null {
     if (this.isMuted) return null;
@@ -29,10 +40,92 @@ class SoundEngine {
     return this.ctx;
   }
 
+  public getAtmosphere(): SanctuaryAtmosphereId {
+    return this.currentAtmosphere;
+  }
+
+  public setAtmosphere(atmosphereId: SanctuaryAtmosphereId, playPreviewCue = true): SanctuaryAtmosphereId {
+    this.currentAtmosphere = atmosphereId;
+    const cfg = getSanctuaryAtmosphereConfig(atmosphereId);
+
+    if (!this.isMuted && playPreviewCue && !this.isAmbientRunning) {
+      this.startAmbientSanctuary();
+    }
+
+    if (this.ctx && this.isAmbientRunning) {
+      const now = this.ctx.currentTime;
+      try {
+        if (this.droneOsc1) {
+          this.droneOsc1.frequency.setTargetAtTime(cfg.droneRootHz, now, 0.25);
+        }
+        if (this.droneOsc2) {
+          this.droneOsc2.frequency.setTargetAtTime(cfg.droneFifthHz, now, 0.25);
+        }
+        if (this.noiseFilter) {
+          this.noiseFilter.type = cfg.noiseFilterType;
+          this.noiseFilter.frequency.setTargetAtTime(cfg.noiseCenterHz, now, 0.25);
+          this.noiseFilter.Q.setTargetAtTime(cfg.noiseQ, now, 0.25);
+        }
+        if (this.noiseLfo) {
+          this.noiseLfo.frequency.setTargetAtTime(cfg.lfoRateHz, now, 0.25);
+        }
+        if (this.noiseLfoGain) {
+          this.noiseLfoGain.gain.setTargetAtTime(cfg.lfoDepthHz, now, 0.25);
+        }
+        if (this.noiseGain) {
+          this.noiseGain.gain.setTargetAtTime(this.isMuted ? 0 : cfg.noiseGain, now, 0.25);
+        }
+      } catch {
+        // Ignore audio scheduling errors in headless environments
+      }
+    }
+
+    if (!this.isMuted && playPreviewCue) {
+      this.playAtmospherePreview(cfg.previewNotesHz, atmosphereId);
+    }
+
+    return this.currentAtmosphere;
+  }
+
+  private playAtmospherePreview(notes: number[], atmosphereId: SanctuaryAtmosphereId) {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      notes.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = atmosphereId === 'rain' ? 'sine' : idx % 2 === 0 ? 'sine' : 'triangle';
+        const start = now + idx * (atmosphereId === 'rain' ? 0.055 : 0.075);
+        const dur = atmosphereId === 'meadow' ? 0.42 : 0.34;
+
+        osc.frequency.setValueAtTime(freq, start);
+        if (atmosphereId === 'rain') {
+          osc.frequency.exponentialRampToValueAtTime(freq * 0.96, start + dur);
+        }
+
+        gain.gain.setValueAtTime(0.001, start);
+        gain.gain.linearRampToValueAtTime(0.065, start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + dur + 0.03);
+      });
+    } catch {
+      // Ignore
+    }
+  }
+
   public setMuted(muted: boolean) {
     this.isMuted = muted;
+    const cfg = getSanctuaryAtmosphereConfig(this.currentAtmosphere);
     if (this.ambientGain && this.ctx) {
       this.ambientGain.gain.setTargetAtTime(muted ? 0 : 0.035, this.ctx.currentTime, 0.15);
+    }
+    if (this.noiseGain && this.ctx) {
+      this.noiseGain.gain.setTargetAtTime(muted ? 0 : cfg.noiseGain, this.ctx.currentTime, 0.15);
     }
     if (this.binauralGain && this.ctx) {
       this.binauralGain.gain.setTargetAtTime(
@@ -80,19 +173,21 @@ class SoundEngine {
     if (!ctx) return;
 
     try {
-      // 1. Soft warm pad drone (C major 9th pentatonic warmth: 130.81Hz + 196.00Hz)
+      const cfg = getSanctuaryAtmosphereConfig(this.currentAtmosphere);
+
+      // 1. Soft warm pad drone tuned to active Sanctuary Atmosphere
       const osc1 = ctx.createOscillator();
       const osc2 = ctx.createOscillator();
       const filter = ctx.createBiquadFilter();
       const gain = ctx.createGain();
 
       osc1.type = 'sine';
-      osc1.frequency.value = 130.81; // C3
+      osc1.frequency.value = cfg.droneRootHz;
       osc2.type = 'triangle';
-      osc2.frequency.value = 196.0; // G3
+      osc2.frequency.value = cfg.droneFifthHz;
 
       filter.type = 'lowpass';
-      filter.frequency.value = 320;
+      filter.frequency.value = 340;
 
       gain.gain.value = this.isMuted ? 0 : 0.035;
 
@@ -104,7 +199,54 @@ class SoundEngine {
       osc1.start();
       osc2.start();
 
-      // 2. 10 Hz Alpha Binaural Entrainment Pair (200 Hz Left Ear / 210 Hz Right Ear)
+      // 2. Procedural Pink-Noise Texture Generator (Forest Wind / Rain Patter / Meadow Breeze)
+      const bufferDurationSec = 3;
+      const sampleRate = ctx.sampleRate || 44100;
+      const bufferSize = sampleRate * bufferDurationSec;
+      const noiseBuffer = ctx.createBuffer(1, bufferSize, sampleRate);
+      const output = noiseBuffer.getChannelData(0);
+      // Paul Kellet's refined pink-noise filter approximation
+      let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+      for (let i = 0; i < bufferSize; i++) {
+        const white = Math.random() * 2 - 1;
+        b0 = 0.99886 * b0 + white * 0.0555179;
+        b1 = 0.99332 * b1 + white * 0.0750759;
+        b2 = 0.96900 * b2 + white * 0.1538520;
+        b3 = 0.86650 * b3 + white * 0.3104856;
+        b4 = 0.55000 * b4 + white * 0.5329522;
+        b5 = -0.7616 * b5 - white * 0.0168980;
+        output[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
+        b6 = white * 0.115926;
+      }
+
+      const noiseSource = ctx.createBufferSource();
+      noiseSource.buffer = noiseBuffer;
+      noiseSource.loop = true;
+
+      const nFilter = ctx.createBiquadFilter();
+      nFilter.type = cfg.noiseFilterType;
+      nFilter.frequency.value = cfg.noiseCenterHz;
+      nFilter.Q.value = cfg.noiseQ;
+
+      const lfo = ctx.createOscillator();
+      const lfoGain = ctx.createGain();
+      lfo.type = 'sine';
+      lfo.frequency.value = cfg.lfoRateHz;
+      lfoGain.gain.value = cfg.lfoDepthHz;
+      lfo.connect(lfoGain);
+      lfoGain.connect(nFilter.frequency);
+
+      const nGain = ctx.createGain();
+      nGain.gain.value = this.isMuted ? 0 : cfg.noiseGain;
+
+      noiseSource.connect(nFilter);
+      nFilter.connect(nGain);
+      nGain.connect(ctx.destination);
+
+      noiseSource.start();
+      lfo.start();
+
+      // 3. 10 Hz Alpha Binaural Entrainment Pair (200 Hz Left Ear / 210 Hz Right Ear)
       const leftOsc = ctx.createOscillator();
       const rightOsc = ctx.createOscillator();
       const bGain = ctx.createGain();
@@ -133,7 +275,13 @@ class SoundEngine {
       leftOsc.start();
       rightOsc.start();
 
+      this.droneOsc1 = osc1;
+      this.droneOsc2 = osc2;
       this.ambientGain = gain;
+      this.noiseFilter = nFilter;
+      this.noiseLfo = lfo;
+      this.noiseLfoGain = lfoGain;
+      this.noiseGain = nGain;
       this.binauralGain = bGain;
       this.isAmbientRunning = true;
     } catch {
@@ -145,14 +293,21 @@ class SoundEngine {
     if (this.ambientGain && this.ctx) {
       this.ambientGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.1);
     }
+    if (this.noiseGain && this.ctx) {
+      this.noiseGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.1);
+    }
     if (this.binauralGain && this.ctx) {
       this.binauralGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.1);
     }
   }
 
   public resumeAmbient() {
+    const cfg = getSanctuaryAtmosphereConfig(this.currentAtmosphere);
     if (!this.isMuted && this.ambientGain && this.ctx) {
       this.ambientGain.gain.setTargetAtTime(0.035, this.ctx.currentTime, 0.2);
+    }
+    if (!this.isMuted && this.noiseGain && this.ctx) {
+      this.noiseGain.gain.setTargetAtTime(cfg.noiseGain, this.ctx.currentTime, 0.2);
     }
     if (!this.isMuted && this.isBinauralEnabled && this.binauralGain && this.ctx) {
       this.binauralGain.gain.setTargetAtTime(0.016, this.ctx.currentTime, 0.2);

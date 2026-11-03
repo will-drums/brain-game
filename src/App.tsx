@@ -14,6 +14,9 @@ import {
   evaluateStreakOnLoad,
   recordDailyPracticeSession,
   appendHrvSessionRecord,
+  SANCTUARY_ATMOSPHERES,
+  getSanctuaryAtmosphereConfig,
+  type SanctuaryAtmosphereId,
   type DailyStreakState,
   type HrvSessionRecord,
   type CognitiveMilestoneId,
@@ -85,10 +88,38 @@ export default function App() {
   const [activeProtocol, setActiveProtocol] = useState<ProtocolId>('ufov_forage');
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isBinauralEnabled, setIsBinauralEnabled] = useState<boolean>(true);
+  const [atmosphereId, setAtmosphereId] = useState<SanctuaryAtmosphereId>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = window.localStorage.getItem('sylvan_synapse_atmosphere_v1');
+        if (saved === 'forest' || saved === 'rain' || saved === 'meadow') {
+          soundEngine.setAtmosphere(saved, false);
+          return saved;
+        }
+      } catch {
+        // Ignore storage errors
+      }
+    }
+    return 'forest';
+  });
   const [isCodexOpen, setIsCodexOpen] = useState<boolean>(false);
   const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
   const [demoStepSignal, setDemoStepSignal] = useState<{ step: number; seq: number } | null>(null);
   const [resetSignal, setResetSignal] = useState<number>(0);
+
+  const activeAtmosphere = getSanctuaryAtmosphereConfig(atmosphereId);
+
+  const handleSelectAtmosphere = useCallback((nextId: SanctuaryAtmosphereId) => {
+    setAtmosphereId(nextId);
+    soundEngine.setAtmosphere(nextId, true);
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem('sylvan_synapse_atmosphere_v1', nextId);
+      } catch {
+        // Ignore storage errors
+      }
+    }
+  }, []);
 
   // Lifetime Cognitive Milestone Progression persisted in localStorage
   const [lifetimeProgress, setLifetimeProgress] = useState<LifetimeCognitiveProgress>(() => {
@@ -489,14 +520,14 @@ export default function App() {
       {/* 2. TITLE SCREEN OVERLAY (30%-40% negative space left column over live world camera pan) */}
       {gameState === 'title' && (
         <div
-          className="fixed inset-0 z-20 flex flex-col justify-between p-6 md:px-12 md:py-8 overflow-y-auto pointer-events-none"
+          className="fixed inset-0 z-20 flex flex-col justify-between p-5 md:px-10 md:py-6 overflow-y-auto pointer-events-none"
           style={{
             background:
               'linear-gradient(90deg, rgba(7, 18, 14, 0.98) 0%, rgba(7, 18, 14, 0.95) 46%, rgba(7, 18, 14, 0.25) 76%, rgba(7, 18, 14, 0.1) 100%)',
           }}
         >
           {/* Top-Left Clinical Identity Lockup */}
-          <div className="max-w-xl space-y-4 pointer-events-auto">
+          <div className="max-w-xl space-y-3 pointer-events-auto">
             {/* Custom Inline SVG Title Lockup */}
             <div className="space-y-1.5">
               <svg
@@ -697,33 +728,79 @@ export default function App() {
               </div>
             </div>
 
-            {/* Stage Selector */}
-            <div className="space-y-1.5">
-              <span className="block text-[11px] font-mono uppercase tracking-wider text-[#A3B8B0]">
-                Select Sanctuary Grove Stage
-              </span>
-              <div className="flex flex-wrap gap-2">
-                {SANCTUARY_STAGES.map((st, idx) => {
-                  const locked = idx > highestReachedStage && idx > 0;
-                  const active = stageIndex === idx;
-                  return (
-                    <button
-                      key={st.stageIndex}
-                      type="button"
-                      disabled={locked}
-                      onClick={() => setStageIndex(idx)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                        active
-                          ? 'bg-[#1E4435] text-[#F4EFE6] border border-[#68D391]'
-                          : locked
-                          ? 'bg-[#0D1D17] text-[#526B61] border border-[#192E25] opacity-60 cursor-not-allowed'
-                          : 'bg-[#11261E] text-[#A3B8B0] border border-[#233D32] hover:text-[#F4EFE6]'
-                      }`}
-                    >
-                      Stage {idx + 1}: {idx === 0 ? '1-Back Grove' : idx === 1 ? '2-Back Canopy' : '2-Back Crown'}
-                    </button>
-                  );
-                })}
+            {/* Stage Selector & Sanctuary Atmosphere Soundscape Selector (Side-by-Side) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Stage Selector */}
+              <div className="space-y-1.5">
+                <span className="block text-[11px] font-mono uppercase tracking-wider text-[#A3B8B0]">
+                  Select Sanctuary Grove Stage
+                </span>
+                <div className="flex items-center gap-1.5">
+                  {SANCTUARY_STAGES.map((st, idx) => {
+                    const locked = idx > highestReachedStage && idx > 0;
+                    const active = stageIndex === idx;
+                    return (
+                      <button
+                        key={st.stageIndex}
+                        type="button"
+                        disabled={locked}
+                        onClick={() => setStageIndex(idx)}
+                        className={`flex-1 px-2 py-1.5 rounded-lg text-xs font-mono transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                          active
+                            ? 'bg-[#1E4435] text-[#F4EFE6] border border-[#68D391]'
+                            : locked
+                            ? 'bg-[#0D1D17] text-[#526B61] border border-[#192E25] opacity-60 cursor-not-allowed'
+                            : 'bg-[#11261E] text-[#A3B8B0] border border-[#233D32] hover:text-[#F4EFE6]'
+                        }`}
+                      >
+                        S{idx + 1}: {idx === 0 ? '1-Back' : idx === 1 ? '2-Back' : 'Crown'}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Sanctuary Atmosphere Soundscape Selector */}
+              <div
+                data-testid="title-atmosphere-selector"
+                className="space-y-1.5"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="block text-[11px] font-mono uppercase tracking-wider text-[#A3B8B0]">
+                    Sanctuary Atmosphere
+                  </span>
+                  <span
+                    className="text-[10px] font-mono font-semibold truncate"
+                    style={{ color: activeAtmosphere.accentHex }}
+                  >
+                    {activeAtmosphere.label}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {SANCTUARY_ATMOSPHERES.map((atm) => {
+                    const isSelected = atmosphereId === atm.id;
+                    return (
+                      <button
+                        key={atm.id}
+                        type="button"
+                        data-testid={`atmosphere-btn-${atm.id}`}
+                        onClick={() => handleSelectAtmosphere(atm.id)}
+                        title={`${atm.label}: ${atm.subtitle}`}
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono transition-colors cursor-pointer border ${
+                          isSelected
+                            ? 'bg-[#1A3B2E] text-[#F4EFE6] border-[#68D391] font-semibold'
+                            : 'bg-[#11261E] text-[#A3B8B0] border-[#233D32] hover:text-[#F4EFE6] hover:border-[#4FD1C5]'
+                        }`}
+                      >
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ backgroundColor: atm.accentHex }}
+                        />
+                        <span>{atm.shortLabel}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
@@ -771,13 +848,13 @@ export default function App() {
             {/* Top Row: Top-Left Vitality/Nectar/Trees Cluster + Top-Right Utility & N-Back Totem */}
             <div className="flex items-start justify-between gap-4">
               {/* Top-Left Perimeter Cluster: Calm Vitality Pips, BDNF Nectar & Grafted Trees */}
-              <div className="flex flex-wrap items-center gap-5 px-4 py-2.5 rounded-2xl bg-[#091510]/88 border border-[#233D32] shadow-xl pointer-events-auto">
+              <div className="flex items-center gap-3.5 px-3.5 py-2 rounded-2xl bg-[#091510]/88 border border-[#233D32] shadow-xl pointer-events-auto">
               {/* Calm Vitality Pips (3 readable states: Full, Damaged, Hollow) */}
               <div>
                 <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
                   CALM VITALITY
                 </div>
-                <div className="flex items-center gap-1.5 mt-1" aria-label={`Calm Vitality: ${hud.calmVitality} of ${hud.maxVitality}`}>
+                <div className="flex items-center gap-1 mt-1" aria-label={`Calm Vitality: ${hud.calmVitality} of ${hud.maxVitality}`}>
                   {Array.from({ length: hud.maxVitality }).map((_, i) => {
                     const isFull = i < hud.calmVitality;
                     const isCracked = i === hud.calmVitality && hud.calmVitality < hud.maxVitality;
@@ -785,7 +862,7 @@ export default function App() {
                       <svg
                         key={i}
                         viewBox="0 0 24 24"
-                        className="w-5 h-5"
+                        className="w-4 h-4"
                         aria-hidden="true"
                       >
                         <path
@@ -809,38 +886,38 @@ export default function App() {
               </div>
 
               {/* BDNF Nectar Counter */}
-              <div className="pl-4 border-l border-[#233D32]">
+              <div className="pl-3 border-l border-[#233D32]">
                 <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
                   BDNF NECTAR
                 </div>
-                <div className="flex items-baseline gap-1.5">
-                  <span className="text-2xl font-mono font-bold text-[#F2B84B] tabular-nums hud-text-stroke">
+                <div className="flex items-baseline gap-1">
+                  <span className="text-xl font-mono font-bold text-[#F2B84B] tabular-nums hud-text-stroke">
                     {Math.round(hud.nectar)}
                   </span>
-                  <span className="text-xs font-mono text-[#A3B8B0] tabular-nums">
-                    / {hud.nectarCostPerTree} per tree
+                  <span className="text-[11px] font-mono text-[#A3B8B0] tabular-nums">
+                    /{hud.nectarCostPerTree}
                   </span>
                 </div>
               </div>
 
               {/* Hippocampal Trees Grafted */}
-              <div className="pl-4 border-l border-[#233D32]">
+              <div className="pl-3 border-l border-[#233D32]">
                 <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
-                  NEURAL TREES GRAFTED
+                  TREES GRAFTED
                 </div>
-                <div className="flex items-baseline gap-1.5">
-                  <span className="text-2xl font-mono font-bold text-[#B794F4] tabular-nums hud-text-stroke">
-                    {hud.treesGrafted} / {hud.targetTrees}
+                <div className="flex items-baseline gap-1">
+                  <span className="text-xl font-mono font-bold text-[#B794F4] tabular-nums hud-text-stroke">
+                    {hud.treesGrafted}/{hud.targetTrees}
                   </span>
                 </div>
               </div>
 
               {/* Rejuvenation Index */}
-              <div className="pl-4 border-l border-[#233D32] hidden sm:block">
+              <div className="pl-3 border-l border-[#233D32] hidden md:block">
                 <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
-                  REJUVENATION INDEX
+                  REJUVENATION
                 </div>
-                <div className="text-2xl font-mono font-bold text-[#4FD1C5] tabular-nums hud-text-stroke">
+                <div className="text-xl font-mono font-bold text-[#4FD1C5] tabular-nums hud-text-stroke">
                   {Math.round(hud.rejuvenationScore)}
                 </div>
               </div>
@@ -848,21 +925,18 @@ export default function App() {
               {/* Adaptive Psychometric Synaptic Flow Multiplier */}
               <div
                 data-testid="hud-synaptic-flow"
-                className="pl-4 border-l border-[#233D32] hidden lg:block"
+                className="pl-3 border-l border-[#233D32] hidden xl:block"
                 title={`Adaptive UFOV Staircase Window: ${hud.adaptiveUfovWindowMs}ms · Consecutive Accuracy Streak: ${hud.flowStreak}`}
               >
-                <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0] flex items-center gap-1.5">
+                <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0] flex items-center gap-1">
                   <span>SYNAPTIC FLOW</span>
-                  <span className="px-1.5 py-0.2 rounded bg-[#142D23] text-[#68D391] text-[9px] border border-[#2C4C3E] tabular-nums">
+                  <span className="px-1 py-0.2 rounded bg-[#142D23] text-[#68D391] text-[9px] border border-[#2C4C3E] tabular-nums">
                     {hud.adaptiveUfovWindowMs}ms
                   </span>
                 </div>
-                <div className="flex items-baseline gap-1.5">
-                  <span className="text-2xl font-mono font-bold text-[#68D391] tabular-nums hud-text-stroke">
+                <div className="flex items-baseline gap-1">
+                  <span className="text-xl font-mono font-bold text-[#68D391] tabular-nums hud-text-stroke">
                     {hud.flowMultiplier.toFixed(2)}x
-                  </span>
-                  <span className="text-[10px] font-mono text-[#A3B8B0] truncate max-w-[115px]">
-                    {hud.flowTier}
                   </span>
                 </div>
               </div>
@@ -926,13 +1000,43 @@ export default function App() {
                   </svg>
                 </button>
 
+                {/* Sanctuary Atmosphere Switcher (Forest / Rain / Meadow) */}
+                <div
+                  data-testid="hud-atmosphere-selector"
+                  className="hidden sm:flex items-center gap-1 p-0.5 rounded-lg bg-[#0D1F18] border border-[#233D32]"
+                  title={`Sanctuary Atmosphere: ${activeAtmosphere.label} — ${activeAtmosphere.subtitle}`}
+                >
+                  {SANCTUARY_ATMOSPHERES.map((atm) => {
+                    const isSelected = atmosphereId === atm.id;
+                    return (
+                      <button
+                        key={atm.id}
+                        type="button"
+                        tabIndex={-1}
+                        data-testid={`hud-atmosphere-${atm.id}`}
+                        onClick={(e) => {
+                          e.currentTarget.blur();
+                          handleSelectAtmosphere(atm.id);
+                        }}
+                        className={`px-2 h-8 rounded-md text-[10px] font-mono font-semibold transition-colors cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#1D4032] text-[#F4EFE6] border border-[#68D391]/60'
+                            : 'text-[#A3B8B0] hover:text-[#F4EFE6]'
+                        }`}
+                      >
+                        {atm.shortLabel}
+                      </button>
+                    );
+                  })}
+                </div>
+
                 <button
                   type="button"
                   tabIndex={-1}
                   data-testid="toggle-binaural-btn"
                   aria-label="Toggle 10 Hz Alpha Binaural Entrainment"
                   onClick={handleToggleBinaural}
-                  className={`px-2.5 h-9 flex items-center gap-1 rounded-lg text-[10px] font-mono font-semibold border transition-colors cursor-pointer ${
+                  className={`px-2.5 h-9 flex items-center gap-1 rounded-lg text-[10px] font-mono font-semibold border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                     isBinauralEnabled && !isMuted
                       ? 'bg-[#17362B] text-[#4FD1C5] border-[#4FD1C5]/60'
                       : 'bg-[#132A21] text-[#6E857C] border-[#2C4C3E]'
@@ -1242,6 +1346,44 @@ export default function App() {
                   {Math.round(hud.rejuvenationScore)}
                 </div>
               </div>
+            </div>
+
+            {/* Pause Modal Sanctuary Atmosphere Selector */}
+            <div
+              data-testid="pause-atmosphere-selector"
+              className="p-3.5 rounded-xl bg-[#0B1914] border border-[#233D32] text-left space-y-2"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
+                  SANCTUARY ATMOSPHERE SOUNDSCAPE
+                </span>
+                <span
+                  className="text-[10px] font-mono font-semibold"
+                  style={{ color: activeAtmosphere.accentHex }}
+                >
+                  {activeAtmosphere.label}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {SANCTUARY_ATMOSPHERES.map((atm) => {
+                  const isSelected = atmosphereId === atm.id;
+                  return (
+                    <button
+                      key={atm.id}
+                      type="button"
+                      onClick={() => handleSelectAtmosphere(atm.id)}
+                      className={`py-2 px-2.5 rounded-lg text-xs font-mono font-semibold transition-colors cursor-pointer border ${
+                        isSelected
+                          ? 'bg-[#1A3B2E] text-[#F4EFE6] border-[#68D391]'
+                          : 'bg-[#10231C] text-[#A3B8B0] border-[#233D32] hover:text-[#F4EFE6]'
+                      }`}
+                    >
+                      {atm.shortLabel}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-[#A3B8B0]">{activeAtmosphere.subtitle}</p>
             </div>
 
             <div className="flex flex-col gap-2.5">

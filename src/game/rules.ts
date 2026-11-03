@@ -865,5 +865,95 @@ export function computeCognitiveDomainProfile(params: {
   };
 }
 
+/**
+ * Sanctuary Atmosphere Soundscape Profiles (Forest, Rain, Meadow)
+ * Grounded in Attention Restoration Theory (Berman et al., 2008) & Acoustic Soft Fascination.
+ */
+export type SanctuaryAtmosphereId = 'forest' | 'rain' | 'meadow';
 
+export interface SanctuaryAtmosphereConfig {
+  id: SanctuaryAtmosphereId;
+  label: string;
+  shortLabel: string;
+  subtitle: string;
+  clinicalNote: string;
+  droneRootHz: number;
+  droneFifthHz: number;
+  noiseFilterType: 'bandpass' | 'lowpass';
+  noiseCenterHz: number;
+  noiseQ: number;
+  noiseGain: number;
+  lfoRateHz: number;
+  lfoDepthHz: number;
+  previewNotesHz: number[];
+  accentHex: string;
+}
 
+export const SANCTUARY_ATMOSPHERES: SanctuaryAtmosphereConfig[] = [
+  {
+    id: 'forest',
+    label: 'Forest Canopy',
+    shortLabel: 'Forest',
+    subtitle: 'Deep cedar breeze, resonant C-major woodland drone & rustling leaves',
+    clinicalNote: 'Woodland pink-noise spectrum lowers sympathetic arousal (Berman et al., 2008)',
+    droneRootHz: 130.81, // C3
+    droneFifthHz: 196.0, // G3
+    noiseFilterType: 'bandpass',
+    noiseCenterHz: 420,
+    noiseQ: 1.35,
+    noiseGain: 0.022,
+    lfoRateHz: 0.12,
+    lfoDepthHz: 140,
+    previewNotesHz: [261.63, 329.63, 392.0, 523.25],
+    accentHex: '#68D391',
+  },
+  {
+    id: 'rain',
+    label: 'Gentle Rain',
+    shortLabel: 'Rain',
+    subtitle: 'Soothing rainfall patter on moss, warm D-dorian pad & crystalline droplets',
+    clinicalNote: 'Steady acoustic rainfall masks environmental startle cues & stabilizes vagal tone',
+    droneRootHz: 146.83, // D3
+    droneFifthHz: 220.0, // A3
+    noiseFilterType: 'lowpass',
+    noiseCenterHz: 960,
+    noiseQ: 0.7,
+    noiseGain: 0.034,
+    lfoRateHz: 0.22,
+    lfoDepthHz: 210,
+    previewNotesHz: [783.99, 659.25, 1046.5, 1318.51],
+    accentHex: '#4FD1C5',
+  },
+  {
+    id: 'meadow',
+    label: 'Sunlit Meadow',
+    shortLabel: 'Meadow',
+    subtitle: 'Warm F-lydian golden breeze, tall-grass shimmer & distant harmonic chimes',
+    clinicalNote: 'Open-meadow harmonic overtones promote prefrontal alpha relaxation',
+    droneRootHz: 174.61, // F3
+    droneFifthHz: 261.63, // C4
+    noiseFilterType: 'bandpass',
+    noiseCenterHz: 640,
+    noiseQ: 1.1,
+    noiseGain: 0.018,
+    lfoRateHz: 0.09,
+    lfoDepthHz: 180,
+    previewNotesHz: [587.33, 739.99, 880.0, 1174.66],
+    accentHex: '#F2B84B',
+  },
+];
+
+export function getSanctuaryAtmosphereConfig(
+  id?: SanctuaryAtmosphereId | string | null
+): SanctuaryAtmosphereConfig {
+  const found = SANCTUARY_ATMOSPHERES.find((a) => a.id === id);
+  return found || SANCTUARY_ATMOSPHERES[0];
+}
+
+export function getNextSanctuaryAtmosphereId(
+  current: SanctuaryAtmosphereId
+): SanctuaryAtmosphereId {
+  const idx = SANCTUARY_ATMOSPHERES.findIndex((a) => a.id === current);
+  if (idx < 0) return 'forest';
+  return SANCTUARY_ATMOSPHERES[(idx + 1) % SANCTUARY_ATMOSPHERES.length].id;
+}

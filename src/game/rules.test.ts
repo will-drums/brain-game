@@ -21,8 +21,31 @@ import {
   getSanctuaryAestheticConfig,
   computeAdaptiveFlowState,
   computeCognitiveDomainProfile,
+  SANCTUARY_ATMOSPHERES,
+  getSanctuaryAtmosphereConfig,
+  getNextSanctuaryAtmosphereId,
   type ChimeSymbol,
 } from './rules';
+
+test('Sanctuary Atmosphere selector provides distinct acoustic profiles for forest, rain, and meadow soundscapes', () => {
+  assert.equal(SANCTUARY_ATMOSPHERES.length, 3);
+  const ids = SANCTUARY_ATMOSPHERES.map((a) => a.id);
+  assert.deepEqual(ids, ['forest', 'rain', 'meadow']);
+
+  const forest = getSanctuaryAtmosphereConfig('forest');
+  const rain = getSanctuaryAtmosphereConfig('rain');
+  const meadow = getSanctuaryAtmosphereConfig('meadow');
+
+  assert.notEqual(forest.droneRootHz, rain.droneRootHz);
+  assert.notEqual(rain.droneRootHz, meadow.droneRootHz);
+  assert.notEqual(forest.noiseCenterHz, rain.noiseCenterHz);
+  assert.equal(rain.noiseFilterType, 'lowpass');
+  assert.equal(forest.noiseFilterType, 'bandpass');
+
+  assert.equal(getNextSanctuaryAtmosphereId('forest'), 'rain');
+  assert.equal(getNextSanctuaryAtmosphereId('rain'), 'meadow');
+  assert.equal(getNextSanctuaryAtmosphereId('meadow'), 'forest');
+});
 
 test('Enterprise DTx adaptive psychometric staircase and 4-domain cognitive profile compute accurate multipliers and domain scores', () => {
   const baselineFlow = computeAdaptiveFlowState({
