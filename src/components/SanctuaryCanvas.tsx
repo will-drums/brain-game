@@ -8,8 +8,11 @@ import {
   computeDifficultyRamp,
   getSanctuaryAestheticConfig,
   computeAdaptiveFlowState,
+  createCognitivePulseConfig,
+  stepCognitivePulseWave,
   SANCTUARY_STAGES,
   CHIME_SYMBOLS,
+  type CognitivePulseType,
   type ChimeSymbol,
   type GameState,
   type GameOutcome,
@@ -52,6 +55,8 @@ export interface HudSnapshot {
   flowStreak: number;
   adaptiveUfovWindowMs: number;
   flowTier: AdaptiveFlowTier;
+  cognitivePulseCount?: number;
+  lastCognitivePulseType?: CognitivePulseType | null;
 }
 
 interface SanctuaryCanvasProps {
@@ -123,7 +128,7 @@ interface AmbientFirefly {
 }
 
 // Pre-allocated Zero-GC Particle Ring Buffer
-const MAX_PARTICLES = 220;
+const MAX_PARTICLES = 320;
 const MAX_AMBIENT_FIREFLIES = 80;
 interface ParticlePool {
   active: Uint8Array;
@@ -425,6 +430,81 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       c.colorHex = colorHex;
     };
 
+    // Zero-GC Cognitive Pulse Bioluminescent Wave & Particle Emitter Pool
+    const MAX_COGNITIVE_PULSES = 6;
+    const cognitivePulses: Array<{
+      active: boolean;
+      type: CognitivePulseType;
+      originX: number;
+      originY: number;
+      elapsed: number;
+      durationSec: number;
+      maxRadius: number;
+      primaryColorHex: string;
+      secondaryColorHex: string;
+      coreGlowRgba: string;
+      filamentCount: number;
+    }> = Array.from({ length: MAX_COGNITIVE_PULSES }, () => ({
+      active: false,
+      type: 'nback_match' as CognitivePulseType,
+      originX: 0,
+      originY: 0,
+      elapsed: 0,
+      durationSec: 1.1,
+      maxRadius: 240,
+      primaryColorHex: '#4FD1C5',
+      secondaryColorHex: '#68D391',
+      coreGlowRgba: 'rgba(79, 209, 197, 0.52)',
+      filamentCount: 10,
+    }));
+    let cognitivePulseCursor = 0;
+    let totalCognitivePulsesTriggered = 0;
+    let lastCognitivePulseType: CognitivePulseType | null = null;
+
+    const triggerCognitivePulse = (
+      type: CognitivePulseType,
+      originX: number,
+      originY: number,
+      flowMultiplier: number
+    ) => {
+      const config = createCognitivePulseConfig(type, originX, originY, flowMultiplier);
+
+      // 1. Radiate bioluminescent particles from the exact interaction point via Zero-GC Particle Pool
+      for (let i = 0; i < config.particles.length; i++) {
+        const pSeed = config.particles[i];
+        const idx = particles.cursor;
+        particles.cursor = (particles.cursor + 1) % MAX_PARTICLES;
+        particles.active[idx] = 1;
+        particles.x[idx] = config.originX;
+        particles.y[idx] = config.originY;
+        particles.vx[idx] = pSeed.vx;
+        particles.vy[idx] = pSeed.vy;
+        particles.size[idx] = pSeed.size;
+        particles.alpha[idx] = 1;
+        particles.life[idx] = 0;
+        particles.maxLife[idx] = pSeed.lifeSec;
+        particles.colorIdx[idx] = pSeed.colorIdx;
+      }
+
+      // 2. Activate bioluminescent harmonic shockwave & synaptic filament ring at interaction point
+      const slot = cognitivePulses[cognitivePulseCursor];
+      cognitivePulseCursor = (cognitivePulseCursor + 1) % MAX_COGNITIVE_PULSES;
+      slot.active = true;
+      slot.type = config.type;
+      slot.originX = config.originX;
+      slot.originY = config.originY;
+      slot.elapsed = 0;
+      slot.durationSec = config.durationSec;
+      slot.maxRadius = config.maxRadius;
+      slot.primaryColorHex = config.primaryColorHex;
+      slot.secondaryColorHex = config.secondaryColorHex;
+      slot.coreGlowRgba = config.coreGlowRgba;
+      slot.filamentCount = config.filamentCount;
+
+      totalCognitivePulsesTriggered += 1;
+      lastCognitivePulseType = type;
+    };
+
     // N-Back Totem Sequence State
     let chimeHistory: ChimeSymbol[] = ['SUN', 'LEAF', 'SUN'];
     let chimeCycleTimer = 0;
@@ -505,6 +585,9 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       consecutiveCognitiveHits = 0;
       coherenceSeconds = 0;
       for (const c of callouts) c.active = false;
+      for (const cp of cognitivePulses) cp.active = false;
+      totalCognitivePulsesTriggered = 0;
+      lastCognitivePulseType = null;
       demoStepIndex = 0;
       demoStepElapsed = 0;
       demoSubActionTriggered = false;
@@ -798,14 +881,16 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         hitstopTimer = 0.05;
         camera.trauma = Math.min(1, camera.trauma + 0.25);
         soundEngine.playHarmonicChord('nback');
-        spawnParticles(player.x, player.y, 24, 1, 80, 240, 3, 7, 0.85);
+        // Trigger Cognitive Pulse bioluminescence from the player & Central Heart-Tree Chime Totem!
+        triggerCognitivePulse('nback_match', player.x, player.y, flowState.flowMultiplier);
+        triggerCognitivePulse('nback_match', 0, -40, flowState.flowMultiplier);
         spawnFloatingCallout(
           player.x,
           player.y,
-          `★ ${stage.nBackLevel}-BACK RESONANCE +${reward} (${flowState.flowMultiplier}x)`,
+          `★ ${stage.nBackLevel}-BACK COGNITIVE PULSE +${reward} (${flowState.flowMultiplier}x)`,
           '#4FD1C5'
         );
-        statusBannerText = `Working Memory ${stage.nBackLevel}-Back Resonance (${flowState.flowMultiplier}x Flow)! +${reward} BDNF Nectar & +1 Calm Vitality`;
+        statusBannerText = `Working Memory ${stage.nBackLevel}-Back Cognitive Pulse (${flowState.flowMultiplier}x Flow)! +${reward} BDNF Nectar & +1 Calm Vitality`;
         statusBannerTimer = 3.8;
 
         // Clear all hazards within 260px
@@ -933,14 +1018,19 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         player.nectar += reward;
         hitstopTimer = 0.05;
         soundEngine.playHarmonicChord('ufov');
-        spawnParticles(player.x, player.y, 22, 0, 80, 220, 3, 6.5, 0.8);
+        // Compute the exact peripheral sector interaction point and radiate a Cognitive Pulse!
+        const secAngle = (ufovChallenge.peripheralSector * Math.PI) / 4 - Math.PI / 2;
+        const sectorWorldX = player.x + Math.cos(secAngle) * 145;
+        const sectorWorldY = player.y + Math.sin(secAngle) * 145;
+        triggerCognitivePulse('ufov_complete', sectorWorldX, sectorWorldY, flowState.flowMultiplier);
+        triggerCognitivePulse('ufov_complete', player.x, player.y, flowState.flowMultiplier);
         spawnFloatingCallout(
-          player.x,
-          player.y,
-          `✦ UFOV TARGET LOCK +${reward} (${flowState.flowMultiplier}x FLOW)`,
+          sectorWorldX,
+          sectorWorldY,
+          `✦ UFOV COGNITIVE PULSE +${reward} (${flowState.flowMultiplier}x FLOW)`,
           '#F2B84B'
         );
-        statusBannerText = `UFOV Peripheral Target Locked (${flowState.flowMultiplier}x Flow)! +${reward} Bonus BDNF Nectar`;
+        statusBannerText = `UFOV Peripheral Cognitive Pulse (${flowState.flowMultiplier}x Flow)! +${reward} Bonus BDNF Nectar`;
         statusBannerTimer = 4.0;
       } else {
         consecutiveCognitiveHits = Math.max(0, consecutiveCognitiveHits - 1);
@@ -1942,14 +2032,94 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
 
       ctx.restore();
 
-      // 7. Render Zero-GC Pooled Particles
+      // 6B. Update & Render 'Cognitive Pulse' Bioluminescent Shockwaves & Synaptic Filaments
+      for (const cp of cognitivePulses) {
+        if (!cp.active) continue;
+        cp.elapsed += dt;
+        const wave = stepCognitivePulseWave(cp.elapsed, cp.durationSec, cp.maxRadius);
+        if (!wave.active) {
+          cp.active = false;
+          continue;
+        }
+
+        ctx.save();
+        ctx.translate(cp.originX, cp.originY);
+
+        // Bioluminescent radial aura bloom from interaction origin
+        const bloomGrad = ctx.createRadialGradient(0, 0, 6, 0, 0, wave.primaryRadius);
+        bloomGrad.addColorStop(0, cp.coreGlowRgba);
+        bloomGrad.addColorStop(0.55, cp.type === 'nback_match' ? 'rgba(104, 211, 145, 0.18)' : 'rgba(79, 209, 197, 0.18)');
+        bloomGrad.addColorStop(1, 'rgba(9, 21, 16, 0)');
+        ctx.globalAlpha = wave.coreGlowAlpha;
+        ctx.fillStyle = bloomGrad;
+        ctx.beginPath();
+        ctx.arc(0, 0, wave.primaryRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Outer primary bioluminescent harmonic ring
+        ctx.globalAlpha = wave.alpha;
+        ctx.strokeStyle = cp.primaryColorHex;
+        ctx.lineWidth = 3.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, wave.primaryRadius, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Inner trailing harmonic echo ring
+        ctx.strokeStyle = cp.secondaryColorHex;
+        ctx.lineWidth = 2.0;
+        ctx.setLineDash([10, 8]);
+        ctx.beginPath();
+        ctx.arc(0, 0, wave.secondaryRadius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Radiating synaptic bioluminescent filaments & glowing nodes along the wave front
+        for (let f = 0; f < cp.filamentCount; f++) {
+          const angle = (Math.PI * 2 * f) / cp.filamentCount + wave.progress * 0.45;
+          const innerR = wave.secondaryRadius * 0.65;
+          const outerR = wave.primaryRadius;
+          const ix = Math.cos(angle) * innerR;
+          const iy = Math.sin(angle) * innerR;
+          const ox = Math.cos(angle) * outerR;
+          const oy = Math.sin(angle) * outerR;
+
+          ctx.strokeStyle = f % 2 === 0 ? cp.primaryColorHex : cp.secondaryColorHex;
+          ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          ctx.moveTo(ix, iy);
+          ctx.lineTo(ox, oy);
+          ctx.stroke();
+
+          ctx.fillStyle = '#FFFDF9';
+          ctx.beginPath();
+          ctx.arc(ox, oy, 3.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        ctx.restore();
+      }
+
+      // 7. Render Zero-GC Pooled Bioluminescent Particles (with soft radial halo)
       for (let i = 0; i < MAX_PARTICLES; i++) {
         if (particles.active[i] === 0) continue;
+        const pColor = PARTICLE_COLORS[particles.colorIdx[i]] || '#FFFDF9';
+        const px = particles.x[i];
+        const py = particles.y[i];
+        const pSize = particles.size[i];
+
         ctx.save();
-        ctx.globalAlpha = particles.alpha[i];
-        ctx.fillStyle = PARTICLE_COLORS[particles.colorIdx[i]] || '#FFFDF9';
+        // Soft bioluminescent outer halo
+        ctx.globalAlpha = particles.alpha[i] * 0.34;
+        ctx.fillStyle = pColor;
         ctx.beginPath();
-        ctx.arc(particles.x[i], particles.y[i], particles.size[i], 0, Math.PI * 2);
+        ctx.arc(px, py, pSize * 2.1, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Crisp luminous core
+        ctx.globalAlpha = particles.alpha[i];
+        ctx.fillStyle = pColor;
+        ctx.beginPath();
+        ctx.arc(px, py, pSize, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
       }
@@ -2163,6 +2333,8 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
           flowStreak: flowState.flowStreak,
           adaptiveUfovWindowMs: flowState.adaptiveUfovWindowMs,
           flowTier: flowState.flowTier,
+          cognitivePulseCount: totalCognitivePulsesTriggered,
+          lastCognitivePulseType,
         });
       }
     };

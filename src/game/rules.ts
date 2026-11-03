@@ -1400,3 +1400,145 @@ export function computeZenModeHudState(isZenMode: boolean): ZenModeHudState {
   };
 }
 
+/**
+ * Cognitive Pulse Bioluminescent Particle & Harmonic Wave Effect
+ * Triggers whenever the user successfully matches an N-Back chime or completes a UFOV challenge,
+ * radiating bioluminescent particles and dual-ring synaptic waves from the interaction point.
+ */
+export type CognitivePulseType = 'nback_match' | 'ufov_complete';
+
+export interface CognitivePulseParticleSeed {
+  angleRad: number;
+  vx: number;
+  vy: number;
+  size: number;
+  lifeSec: number;
+  colorIdx: number; // 0: Amber gold, 1: Cyan-teal, 2: Vagal emerald, 5: Starlight white
+  ringTier: 'inner_burst' | 'outer_corona';
+}
+
+export interface CognitivePulseWaveConfig {
+  type: CognitivePulseType;
+  originX: number;
+  originY: number;
+  primaryColorHex: string;
+  secondaryColorHex: string;
+  coreGlowRgba: string;
+  maxRadius: number;
+  durationSec: number;
+  filamentCount: number;
+  particles: CognitivePulseParticleSeed[];
+}
+
+export function createCognitivePulseConfig(
+  type: CognitivePulseType,
+  originX: number,
+  originY: number,
+  flowMultiplier = 1.0
+): CognitivePulseWaveConfig {
+  const clampedFlow = Math.min(1.35, Math.max(1.0, Number.isFinite(flowMultiplier) ? flowMultiplier : 1.0));
+  const isNBack = type === 'nback_match';
+  const baseParticleCount = isNBack ? 36 : 32;
+  const totalParticles = Math.round(baseParticleCount * clampedFlow);
+
+  const primaryColorHex = isNBack ? '#4FD1C5' : '#F2B84B';
+  const secondaryColorHex = isNBack ? '#68D391' : '#4FD1C5';
+  const coreGlowRgba = isNBack
+    ? 'rgba(79, 209, 197, 0.52)'
+    : 'rgba(242, 184, 75, 0.52)';
+  const maxRadius = Math.round((isNBack ? 260 : 240) * clampedFlow);
+  const durationSec = isNBack ? 1.15 : 1.08;
+  const filamentCount = isNBack ? 12 : 8;
+
+  const particles: CognitivePulseParticleSeed[] = [];
+  for (let i = 0; i < totalParticles; i++) {
+    const isOuter = i % 2 === 0;
+    const baseAngle = (Math.PI * 2 * i) / totalParticles;
+    const goldenJitter = ((i * 0.6180339887) % 1 - 0.5) * 0.18;
+    const angleRad = baseAngle + goldenJitter;
+
+    const speedBase = isOuter ? 165 + (i % 5) * 24 : 75 + (i % 4) * 18;
+    const speed = speedBase * clampedFlow;
+
+    // Color palette indices: N-Back alternates Cyan (1), Emerald (2), and White (5)
+    // UFOV alternates Amber Gold (0), Starlight White (5), and Cyan (1)
+    let colorIdx = 1;
+    if (isNBack) {
+      colorIdx = i % 4 === 0 ? 5 : i % 2 === 0 ? 1 : 2;
+    } else {
+      colorIdx = i % 4 === 0 ? 5 : i % 3 === 0 ? 1 : 0;
+    }
+
+    const size = isOuter ? 3.8 + (i % 3) * 1.3 : 2.6 + (i % 3) * 0.9;
+    const lifeSec = isOuter ? 0.88 + (i % 3) * 0.12 : 0.65 + (i % 3) * 0.1;
+
+    particles.push({
+      angleRad,
+      vx: Math.cos(angleRad) * speed,
+      vy: Math.sin(angleRad) * speed,
+      size,
+      lifeSec,
+      colorIdx,
+      ringTier: isOuter ? 'outer_corona' : 'inner_burst',
+    });
+  }
+
+  return {
+    type,
+    originX,
+    originY,
+    primaryColorHex,
+    secondaryColorHex,
+    coreGlowRgba,
+    maxRadius,
+    durationSec,
+    filamentCount,
+    particles,
+  };
+}
+
+export function stepCognitivePulseWave(
+  elapsedSec: number,
+  durationSec: number,
+  maxRadius: number
+): {
+  active: boolean;
+  progress: number;
+  primaryRadius: number;
+  secondaryRadius: number;
+  alpha: number;
+  coreGlowAlpha: number;
+} {
+  if (durationSec <= 0 || elapsedSec >= durationSec || elapsedSec < 0) {
+    return {
+      active: false,
+      progress: 1,
+      primaryRadius: maxRadius,
+      secondaryRadius: maxRadius * 0.78,
+      alpha: 0,
+      coreGlowAlpha: 0,
+    };
+  }
+
+  const progress = Math.min(1, Math.max(0, elapsedSec / durationSec));
+  // Smooth cubic ease-out expansion for bioluminescent shockwave
+  const easeOut = 1 - Math.pow(1 - progress, 3);
+  const secondaryProgress = Math.max(0, (progress - 0.12) / 0.88);
+  const secondaryEaseOut = 1 - Math.pow(1 - secondaryProgress, 2.6);
+
+  const primaryRadius = 18 + (maxRadius - 18) * easeOut;
+  const secondaryRadius = 12 + (maxRadius * 0.82 - 12) * secondaryEaseOut;
+  const alpha = Math.max(0, Math.pow(1 - progress, 1.45));
+  const coreGlowAlpha = Math.max(0, Math.pow(1 - progress, 2.1) * 0.68);
+
+  return {
+    active: true,
+    progress,
+    primaryRadius,
+    secondaryRadius,
+    alpha,
+    coreGlowAlpha,
+  };
+}
+
+

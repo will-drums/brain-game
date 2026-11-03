@@ -33,8 +33,39 @@ import {
   DAILY_HABIT_EXERCISES,
   syncDailyHabitTrackerWithStreak,
   toggleDailyHabitExercise,
+  createCognitivePulseConfig,
+  stepCognitivePulseWave,
   type ChimeSymbol,
 } from './rules';
+
+test('createCognitivePulseConfig and stepCognitivePulseWave radiate bioluminescent particles and harmonic rings for N-Back and UFOV completions', () => {
+  const nbackPulse = createCognitivePulseConfig('nback_match', 10, -25, 1.15);
+  assert.equal(nbackPulse.type, 'nback_match');
+  assert.equal(nbackPulse.originX, 10);
+  assert.equal(nbackPulse.originY, -25);
+  assert.equal(nbackPulse.primaryColorHex, '#4FD1C5');
+  assert.equal(nbackPulse.secondaryColorHex, '#68D391');
+  assert.ok(nbackPulse.particles.length >= 36);
+  assert.ok(nbackPulse.particles.some((p) => p.ringTier === 'outer_corona'));
+  assert.ok(nbackPulse.particles.some((p) => p.ringTier === 'inner_burst'));
+
+  const ufovPulse = createCognitivePulseConfig('ufov_complete', 145, 40, 1.0);
+  assert.equal(ufovPulse.type, 'ufov_complete');
+  assert.equal(ufovPulse.originX, 145);
+  assert.equal(ufovPulse.originY, 40);
+  assert.equal(ufovPulse.primaryColorHex, '#F2B84B');
+  assert.equal(ufovPulse.secondaryColorHex, '#4FD1C5');
+  assert.equal(ufovPulse.particles.length, 32);
+
+  const midWave = stepCognitivePulseWave(0.4, ufovPulse.durationSec, ufovPulse.maxRadius);
+  assert.equal(midWave.active, true);
+  assert.ok(midWave.primaryRadius > 18 && midWave.primaryRadius < ufovPulse.maxRadius);
+  assert.ok(midWave.alpha > 0 && midWave.alpha < 1);
+
+  const finishedWave = stepCognitivePulseWave(1.5, ufovPulse.durationSec, ufovPulse.maxRadius);
+  assert.equal(finishedWave.active, false);
+  assert.equal(finishedWave.alpha, 0);
+});
 
 test('Daily Habit Tracker logs Non-Sleep Deep Rest (NSDR) and Daily Cognitive Reframing and syncs with daily streak state', () => {
   assert.equal(DAILY_HABIT_EXERCISES.length, 2);
