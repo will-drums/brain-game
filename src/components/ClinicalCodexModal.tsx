@@ -17,6 +17,9 @@ import {
   DEFAULT_WEEKLY_COGNITIVE_GOALS,
   sanitizeWeeklyCognitiveGoalsConfig,
   computeWeeklyCognitiveGoalsProgress,
+  CLINICAL_CODEX_EXIT_DURATION_MS,
+  computeCodexModalAnimationState,
+  type CodexModalTransitionPhase,
   type WeeklyCognitiveGoalsConfig,
   type NeuroProjectionMonthPoint,
   type DailyHabitExerciseId,
@@ -84,6 +87,36 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
     nsdrCompleted: false,
     cognitiveReframingCompleted: false,
   });
+
+  // Enterprise Modal Entrance & Exit Transition State ('closed' -> 'entering' -> 'entered' -> 'exiting')
+  const [transitionPhase, setTransitionPhase] = useState<CodexModalTransitionPhase>(() =>
+    isOpen ? 'entered' : 'closed'
+  );
+
+  useEffect(() => {
+    if (isOpen) {
+      setTransitionPhase('entering');
+      const rafId = window.requestAnimationFrame(() => {
+        setTransitionPhase('entered');
+      });
+      return () => window.cancelAnimationFrame(rafId);
+    }
+
+    setTransitionPhase((prev) => (prev === 'closed' ? 'closed' : 'exiting'));
+    const timerId = window.setTimeout(() => {
+      setTransitionPhase('closed');
+    }, CLINICAL_CODEX_EXIT_DURATION_MS);
+    return () => window.clearTimeout(timerId);
+  }, [isOpen]);
+
+  const effectiveTransitionPhase: CodexModalTransitionPhase = isOpen
+    ? transitionPhase === 'entered'
+      ? 'entered'
+      : 'entering'
+    : transitionPhase;
+
+  const modalAnimState = computeCodexModalAnimationState(effectiveTransitionPhase);
+  const shouldRenderModal = modalAnimState.shouldRender;
 
   // Personal Weekly Cognitive Goals (N-Back Accuracy % & UFOV Speed ms) persisted in localStorage
   const [weeklyGoalsConfig, setWeeklyGoalsConfig] = useState<WeeklyCognitiveGoalsConfig>(() => {
@@ -226,7 +259,7 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
   );
 
   useEffect(() => {
-    if (!isOpen || !svgRef.current || sessions.length === 0) return;
+    if (!shouldRenderModal || !svgRef.current || sessions.length === 0) return;
 
     const svg = d3.select(svgRef.current);
     svg.selectAll('*').remove();
@@ -385,11 +418,11 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
         .attr('stroke-dasharray', '3,3')
         .attr('opacity', 0.75);
 
-      // In-Chart Vagal Coherence Growth Callout Badge
+      // In-Chart Vagal Coherence Growth Callout Badge (Bottom-Right Plot Area)
       const badgeGroup = g
         .append('g')
         .attr('data-testid', 'hrv-d3-growth-badge')
-        .attr('transform', 'translate(10, 4)');
+        .attr('transform', `translate(${Math.max(10, innerWidth - 304)}, ${innerHeight - 28})`);
 
       badgeGroup
         .append('rect')
@@ -470,11 +503,11 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
       .attr('font-size', '10px')
       .attr('font-weight', '600')
       .text((d) => `${d.coherenceScore}%`);
-  }, [isOpen, sessions]);
+  }, [shouldRenderModal, sessions]);
 
   // D3 'Neuro-Projection Graph' — 6-Month Cognitive Reserve Growth Forecast
   useEffect(() => {
-    if (!isOpen || !projectionSvgRef.current || neuroProjection.points.length === 0) return;
+    if (!shouldRenderModal || !projectionSvgRef.current || neuroProjection.points.length === 0) return;
 
     const svg = d3.select(projectionSvgRef.current);
     svg.selectAll('*').remove();
@@ -736,9 +769,9 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
       .attr('font-size', '10px')
       .attr('font-weight', '700')
       .text((d) => `${d.projectedReserveIndex}`);
-  }, [isOpen, neuroProjection]);
+  }, [shouldRenderModal, neuroProjection]);
 
-  if (!isOpen) return null;
+  if (!shouldRenderModal) return null;
 
   const protocols = Object.values(CLINICAL_PROTOCOLS);
   const activeInspect = hoveredSession || sessions[sessions.length - 1] || null;
@@ -799,22 +832,39 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="clinical-codex-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8 bg-[#07120E]/90 pointer-events-auto"
+      data-testid="clinical-codex-backdrop"
+      data-animation-phase={modalAnimState.phase}
+      data-animation-easing={modalAnimState.easingCurve}
+      data-animation-duration-ms={modalAnimState.durationMs}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+      className={`fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8 bg-[#07120E]/90 ${modalAnimState.backdropClassName} ${
+        modalAnimState.isInteractive ? 'pointer-events-auto' : 'pointer-events-none'
+      }`}
     >
-      <div className="w-full max-w-4xl max-h-[88vh] overflow-y-auto rounded-2xl bg-[#10231C] border border-[#2C4C3E] shadow-2xl p-6 md:p-8 text-[#F4EFE6]">
-        <div className="flex flex-wrap items-start justify-between gap-4 pb-6 border-b border-[#233D32]">
-          <div>
+      <div
+        data-testid="clinical-codex-panel"
+        data-animation-phase={modalAnimState.phase}
+        data-translate-y-px={modalAnimState.panelTranslateYpx}
+        data-scale={modalAnimState.panelScale}
+        className={`w-full max-w-4xl max-h-[88vh] overflow-y-auto rounded-2xl bg-[#10231C] border border-[#2C4C3E] shadow-2xl p-6 md:p-8 text-[#F4EFE6] ${modalAnimState.panelClassName}`}
+      >
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pb-6 border-b border-[#233D32]">
+          <div className="min-w-0">
             <p className="text-xs font-mono tracking-wider uppercase text-[#68D391]">
               Enterprise Digital Therapeutics (DTx) · Biofeedback &amp; Neuroplasticity Telemetry
             </p>
             <h2
               id="clinical-codex-title"
-              className="mt-1 text-2xl md:text-3xl font-display font-semibold text-[#F4EFE6]"
+              className="mt-1 text-xl md:text-2xl font-display font-semibold text-[#F4EFE6]"
             >
               Clinical Research Codex &amp; Longitudinal Telemetry
             </h2>
           </div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 shrink-0">
             <button
               type="button"
               data-testid="export-dtx-telemetry-btn"
@@ -838,9 +888,9 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
         <section
           aria-labelledby="hrv-chart-heading"
           data-testid="clinical-codex-hrv-chart"
-          className="mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#233D32] space-y-4"
+          className="mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#233D32] space-y-4 codex-section-cascade"
         >
-          <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs font-mono uppercase tracking-wider text-[#4FD1C5]">
@@ -951,7 +1001,7 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
           data-month-six-reserve={neuroProjection.monthSixProjectedReserveIndex}
           data-net-reserve-gain={neuroProjection.netSixMonthReserveGain}
           data-habit-adherence-pct={neuroProjection.habitAdherencePct}
-          className="mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#2C4C3E] space-y-4"
+          className="mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#2C4C3E] space-y-4 codex-section-cascade"
         >
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
@@ -1099,7 +1149,7 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
         <section
           aria-label="4-Domain Cognitive Reserve Profile"
           data-testid="cognitive-domain-profile"
-          className="mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#233D32] space-y-4"
+          className="mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#233D32] space-y-4 codex-section-cascade"
         >
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
@@ -1170,7 +1220,7 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
           data-nback-progress-pct={goalsProgress.nBackGoal.progressPct}
           data-ufov-target-ms={goalsProgress.ufovGoal.targetSpeedMs}
           data-ufov-progress-pct={goalsProgress.ufovGoal.progressPct}
-          className="mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#233D32] space-y-4"
+          className="mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#233D32] space-y-4 codex-section-cascade"
         >
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <div className="flex-1 min-w-0">

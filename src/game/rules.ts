@@ -2652,3 +2652,94 @@ export function computeWeeklyCognitiveGoalsProgress(params: {
   };
 }
 
+/**
+ * Clinical Codex Modal Entrance & Exit Animation State Machine
+ * Uses compositor-only properties (opacity + translate3d/scale) and an enterprise
+ * settling curve (cubic-bezier(0.16, 1, 0.3, 1)) within a <=200ms latency budget.
+ */
+export type CodexModalTransitionPhase = 'closed' | 'entering' | 'entered' | 'exiting';
+
+export const CLINICAL_CODEX_ENTER_DURATION_MS = 200;
+export const CLINICAL_CODEX_EXIT_DURATION_MS = 160;
+export const CLINICAL_CODEX_EASING_CURVE = 'cubic-bezier(0.16, 1, 0.3, 1)';
+
+export interface CodexModalAnimationState {
+  phase: CodexModalTransitionPhase;
+  shouldRender: boolean;
+  isInteractive: boolean;
+  backdropClassName: string;
+  panelClassName: string;
+  backdropOpacity: number;
+  panelOpacity: number;
+  panelTranslateYpx: number;
+  panelScale: number;
+  durationMs: number;
+  easingCurve: string;
+}
+
+export function computeCodexModalAnimationState(
+  phase: CodexModalTransitionPhase,
+  prefersReducedMotion = false
+): CodexModalAnimationState {
+  if (phase === 'closed') {
+    return {
+      phase: 'closed',
+      shouldRender: false,
+      isInteractive: false,
+      backdropClassName: 'codex-modal-backdrop codex-backdrop-exit',
+      panelClassName: 'codex-modal-panel codex-panel-exit',
+      backdropOpacity: 0,
+      panelOpacity: 0,
+      panelTranslateYpx: prefersReducedMotion ? 0 : 12,
+      panelScale: prefersReducedMotion ? 1 : 0.985,
+      durationMs: prefersReducedMotion ? 0 : CLINICAL_CODEX_EXIT_DURATION_MS,
+      easingCurve: CLINICAL_CODEX_EASING_CURVE,
+    };
+  }
+
+  if (phase === 'exiting') {
+    return {
+      phase: 'exiting',
+      shouldRender: true,
+      isInteractive: false,
+      backdropClassName: 'codex-modal-backdrop codex-backdrop-exit',
+      panelClassName: 'codex-modal-panel codex-panel-exit',
+      backdropOpacity: 0,
+      panelOpacity: 0,
+      panelTranslateYpx: prefersReducedMotion ? 0 : 10,
+      panelScale: prefersReducedMotion ? 1 : 0.985,
+      durationMs: prefersReducedMotion ? 0 : CLINICAL_CODEX_EXIT_DURATION_MS,
+      easingCurve: CLINICAL_CODEX_EASING_CURVE,
+    };
+  }
+
+  if (phase === 'entering') {
+    return {
+      phase: 'entering',
+      shouldRender: true,
+      isInteractive: true,
+      backdropClassName: 'codex-modal-backdrop codex-backdrop-enter',
+      panelClassName: 'codex-modal-panel codex-panel-enter',
+      backdropOpacity: 1,
+      panelOpacity: 1,
+      panelTranslateYpx: prefersReducedMotion ? 0 : 14,
+      panelScale: prefersReducedMotion ? 1 : 0.985,
+      durationMs: prefersReducedMotion ? 0 : CLINICAL_CODEX_ENTER_DURATION_MS,
+      easingCurve: CLINICAL_CODEX_EASING_CURVE,
+    };
+  }
+
+  return {
+    phase: 'entered',
+    shouldRender: true,
+    isInteractive: true,
+    backdropClassName: 'codex-modal-backdrop codex-backdrop-entered',
+    panelClassName: 'codex-modal-panel codex-panel-entered',
+    backdropOpacity: 1,
+    panelOpacity: 1,
+    panelTranslateYpx: 0,
+    panelScale: 1,
+    durationMs: prefersReducedMotion ? 0 : CLINICAL_CODEX_ENTER_DURATION_MS,
+    easingCurve: CLINICAL_CODEX_EASING_CURVE,
+  };
+}

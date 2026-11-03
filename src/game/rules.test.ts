@@ -49,8 +49,47 @@ import {
   DEFAULT_WEEKLY_COGNITIVE_GOALS,
   sanitizeWeeklyCognitiveGoalsConfig,
   computeWeeklyCognitiveGoalsProgress,
+  CLINICAL_CODEX_ENTER_DURATION_MS,
+  CLINICAL_CODEX_EXIT_DURATION_MS,
+  CLINICAL_CODEX_EASING_CURVE,
+  computeCodexModalAnimationState,
   type ChimeSymbol,
 } from './rules';
+
+test('computeCodexModalAnimationState manages smooth fade-in and upward slide-up transitions within <=200ms budget and respects prefers-reduced-motion', () => {
+  const closed = computeCodexModalAnimationState('closed');
+  assert.equal(closed.shouldRender, false);
+  assert.equal(closed.isInteractive, false);
+  assert.equal(closed.backdropOpacity, 0);
+
+  const entering = computeCodexModalAnimationState('entering');
+  assert.equal(entering.shouldRender, true);
+  assert.equal(entering.isInteractive, true);
+  assert.equal(entering.panelTranslateYpx, 14);
+  assert.equal(entering.panelScale, 0.985);
+  assert.equal(entering.durationMs, CLINICAL_CODEX_ENTER_DURATION_MS);
+  assert.ok(entering.durationMs <= 200);
+  assert.equal(entering.easingCurve, CLINICAL_CODEX_EASING_CURVE);
+
+  const entered = computeCodexModalAnimationState('entered');
+  assert.equal(entered.shouldRender, true);
+  assert.equal(entered.isInteractive, true);
+  assert.equal(entered.panelTranslateYpx, 0);
+  assert.equal(entered.panelScale, 1);
+  assert.equal(entered.backdropOpacity, 1);
+
+  const exiting = computeCodexModalAnimationState('exiting');
+  assert.equal(exiting.shouldRender, true);
+  assert.equal(exiting.isInteractive, false);
+  assert.equal(exiting.backdropOpacity, 0);
+  assert.equal(exiting.panelOpacity, 0);
+  assert.equal(exiting.durationMs, CLINICAL_CODEX_EXIT_DURATION_MS);
+
+  const reduced = computeCodexModalAnimationState('entering', true);
+  assert.equal(reduced.panelTranslateYpx, 0);
+  assert.equal(reduced.panelScale, 1);
+  assert.equal(reduced.durationMs, 0);
+});
 
 test('computeWeeklyCognitiveGoalsProgress evaluates personal weekly N-Back accuracy and UFOV speed goals and progress bars', () => {
   const sanitized = sanitizeWeeklyCognitiveGoalsConfig({

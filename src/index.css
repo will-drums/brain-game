@@ -50,3 +50,99 @@
   -webkit-text-stroke: 3px #07120E;
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85);
 }
+
+/* Enterprise Clinical Codex Modal — Compositor-Only Entrance & Exit Transitions */
+@keyframes codexBackdropFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes codexPanelSlideUp {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes codexSectionCascadeUp {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.codex-modal-backdrop {
+  will-change: opacity;
+  transition: opacity 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.codex-backdrop-enter,
+.codex-backdrop-entered {
+  opacity: 1;
+  animation: codexBackdropFadeIn 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.codex-backdrop-exit {
+  opacity: 0;
+  transition: opacity 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.codex-modal-panel {
+  will-change: transform, opacity;
+  transition:
+    transform 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.codex-panel-enter {
+  opacity: 0;
+  transform: translate3d(0, 14px, 0) scale(0.985);
+}
+
+.codex-panel-entered {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+  animation: codexPanelSlideUp 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.codex-panel-exit {
+  opacity: 0;
+  transform: translate3d(0, 10px, 0) scale(0.985);
+  transition:
+    transform 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.codex-section-cascade {
+  will-change: transform, opacity;
+  animation: codexSectionCascadeUp 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .codex-modal-backdrop,
+  .codex-backdrop-enter,
+  .codex-backdrop-entered,
+  .codex-backdrop-exit,
+  .codex-modal-panel,
+  .codex-panel-enter,
+  .codex-panel-entered,
+  .codex-panel-exit,
+  .codex-section-cascade {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+}
+
