@@ -1698,6 +1698,190 @@ export function computeSanctuaryBloomEffect(params: {
   };
 }
 
+/**
+ * 'Cognitive Flow Pulse' HUD Rhythmic Visual Feedback Loop
+ * Triggers an expanding, bioluminescent glow pulse when the user's Flow Multiplier increases,
+ * and maintains a subtle rhythmic concentration cadence while Flow Multiplier > 1.0x.
+ */
+export interface HudFlowPulseState {
+  isMultiplierIncreased: boolean;
+  isPulsing: boolean;
+  flowMultiplier: number;
+  previousMultiplier: number;
+  multiplierDelta: number;
+  scaleFactor: number; // 1.0 .. 1.12
+  glowOpacity: number; // 0.0 .. 0.92
+  ringExpandScale: number; // 1.0 .. 1.45
+  ringOpacity: number; // 0.0 .. 0.78
+  accentHex: string;
+  rhythmicCadenceSec: number; // 1.35s .. 2.6s
+  statusLabel: string;
+}
+
+export function computeHudFlowPulseState(params: {
+  currentMultiplier: number;
+  previousMultiplier: number;
+  timeSinceIncreaseMs?: number;
+  pulseDurationMs?: number;
+}): HudFlowPulseState {
+  const currentMultiplier = Math.max(
+    1.0,
+    Math.min(2.5, Math.round((Number(params.currentMultiplier) || 1.0) * 100) / 100)
+  );
+  const previousMultiplier = Math.max(
+    1.0,
+    Math.min(2.5, Math.round((Number(params.previousMultiplier) || 1.0) * 100) / 100)
+  );
+  const multiplierDelta = Math.max(
+    0,
+    Math.round((currentMultiplier - previousMultiplier) * 100) / 100
+  );
+  const isMultiplierIncreased = currentMultiplier > previousMultiplier;
+
+  const pulseDurationMs = Math.max(200, params.pulseDurationMs ?? 1400);
+  const rawElapsed = params.timeSinceIncreaseMs;
+  const hasActiveWindow =
+    typeof rawElapsed === 'number' &&
+    Number.isFinite(rawElapsed) &&
+    rawElapsed >= 0 &&
+    rawElapsed < pulseDurationMs;
+
+  const isPulsing = isMultiplierIncreased || hasActiveWindow;
+  const elapsedMs = hasActiveWindow
+    ? rawElapsed!
+    : isMultiplierIncreased
+    ? pulseDurationMs * 0.35
+    : pulseDurationMs;
+
+  // Accent color shifts across neuroplastic flow tiers
+  let accentHex = '#68D391';
+  if (currentMultiplier >= 2.0) {
+    accentHex = '#B794F4'; // Peak Neuroplastic Flow (Amethyst)
+  } else if (currentMultiplier >= 1.5) {
+    accentHex = '#4FD1C5'; // Prefrontal Resonance (Cyan)
+  } else if (currentMultiplier >= 1.2) {
+    accentHex = '#F2B84B'; // Parasympathetic Lock (Amber Gold)
+  }
+
+  // Rhythmic concentration cadence tightens smoothly as flow multiplier rises (2.5s -> 1.4s)
+  const normalizedFlow = Math.min(1, Math.max(0, (currentMultiplier - 1.0) / 1.5));
+  const rhythmicCadenceSec = Math.round((2.5 - normalizedFlow * 1.1) * 100) / 100;
+
+  if (!isPulsing) {
+    const sustainedGlow =
+      currentMultiplier > 1.0
+        ? Math.round((0.14 + normalizedFlow * 0.24) * 1000) / 1000
+        : 0;
+    return {
+      isMultiplierIncreased: false,
+      isPulsing: false,
+      flowMultiplier: currentMultiplier,
+      previousMultiplier,
+      multiplierDelta: 0,
+      scaleFactor: 1.0,
+      glowOpacity: sustainedGlow,
+      ringExpandScale: 1.0,
+      ringOpacity: 0,
+      accentHex,
+      rhythmicCadenceSec,
+      statusLabel:
+        currentMultiplier > 1.0
+          ? `Rhythmic Concentration Active · ${currentMultiplier.toFixed(2)}x`
+          : 'Baseline Flow Calibration · 1.00x',
+    };
+  }
+
+  const progress = Math.min(1, Math.max(0, elapsedMs / pulseDurationMs));
+  const harmonicWave = Math.sin(progress * Math.PI);
+  const easeOut = 1 - Math.pow(1 - progress, 2.4);
+
+  const scaleFactor = Math.round((1.0 + 0.095 * harmonicWave) * 1000) / 1000;
+  const glowOpacity = Math.round((0.28 + 0.62 * harmonicWave) * 1000) / 1000;
+  const ringExpandScale = Math.round((1.0 + 0.42 * easeOut) * 1000) / 1000;
+  const ringOpacity = Math.round(0.78 * (1 - progress) * 1000) / 1000;
+
+  return {
+    isMultiplierIncreased,
+    isPulsing: true,
+    flowMultiplier: currentMultiplier,
+    previousMultiplier,
+    multiplierDelta: multiplierDelta > 0 ? multiplierDelta : 0.25,
+    scaleFactor,
+    glowOpacity,
+    ringExpandScale,
+    ringOpacity,
+    accentHex,
+    rhythmicCadenceSec,
+    statusLabel: `FLOW PULSE +${(multiplierDelta > 0 ? multiplierDelta : 0.25).toFixed(2)}x · ${currentMultiplier.toFixed(2)}x CONCENTRATION SURGE`,
+  };
+}
+
+/**
+ * Enterprise Digital Therapeutics (DTx) Longitudinal Telemetry Bundle Builder
+ * Generates a structured clinical report for practitioner review or personal archiving.
+ */
+export interface EnterpriseClinicalExportBundle {
+  schemaVersion: string;
+  exportedAtIso: string;
+  compositeReserveIndex: number;
+  estimatedPlasticityGainPct: number;
+  currentStreakDays: number;
+  totalTreesGrafted: number;
+  peakRejuvenationScore: number;
+  meanHrvCoherencePct: number;
+  nsdrCompletedToday: boolean;
+  cognitiveReframingCompletedToday: boolean;
+  neuralLogsCount: number;
+  summaryReportText: string;
+}
+
+export function buildEnterpriseClinicalExportBundle(params: {
+  exportedAtIso: string;
+  totalTreesGrafted: number;
+  peakRejuvenationScore: number;
+  currentStreakDays: number;
+  hrvHistory: HrvSessionRecord[];
+  dailyHabitTracker?: DailyHabitTrackerState | null;
+  neuralLogs: NeuralLogEntry[];
+}): EnterpriseClinicalExportBundle {
+  const hrvTrend = computeHrvTrendSummary(params.hrvHistory);
+  const domainProfile = computeCognitiveDomainProfile({
+    totalTreesGrafted: params.totalTreesGrafted,
+    peakRejuvenationScore: params.peakRejuvenationScore,
+    averageHrvCoherence: hrvTrend.averageCoherence,
+    currentStreakDays: params.currentStreakDays,
+  });
+
+  const nsdrCompletedToday = Boolean(params.dailyHabitTracker?.nsdrCompleted);
+  const cognitiveReframingCompletedToday = Boolean(
+    params.dailyHabitTracker?.cognitiveReframingCompleted
+  );
+
+  const summaryReportText = [
+    `SYLVAN SYNAPSE DTx · CLINICAL TELEMETRY REPORT (${params.exportedAtIso})`,
+    `Composite Cognitive Reserve Index: ${domainProfile.compositeReserveIndex}/100 (+${domainProfile.estimatedPlasticityGainPct}% Est. Plasticity Gain)`,
+    `Daily Practice Streak: ${params.currentStreakDays}d | Hippocampal Trees Grafted: ${params.totalTreesGrafted} | Peak Score: ${params.peakRejuvenationScore}`,
+    `10-Session Vagal HRV Coherence Mean: ${hrvTrend.averageCoherence}% (Peak ${hrvTrend.peakCoherence}%, Trend ${hrvTrend.deltaFromFirst >= 0 ? '+' : ''}${hrvTrend.deltaFromFirst}%)`,
+    `Daily Neuro-Habits Today: NSDR=${nsdrCompletedToday ? 'COMPLETED' : 'PENDING'}, Cognitive Reframing=${cognitiveReframingCompletedToday ? 'COMPLETED' : 'PENDING'}`,
+    `Recorded Post-Session Neural Logs: ${params.neuralLogs.length}`,
+  ].join('\n');
+
+  return {
+    schemaVersion: '2026.4-Enterprise-DTx',
+    exportedAtIso: params.exportedAtIso,
+    compositeReserveIndex: domainProfile.compositeReserveIndex,
+    estimatedPlasticityGainPct: domainProfile.estimatedPlasticityGainPct,
+    currentStreakDays: params.currentStreakDays,
+    totalTreesGrafted: params.totalTreesGrafted,
+    peakRejuvenationScore: params.peakRejuvenationScore,
+    meanHrvCoherencePct: hrvTrend.averageCoherence,
+    nsdrCompletedToday,
+    cognitiveReframingCompletedToday,
+    neuralLogsCount: params.neuralLogs.length,
+    summaryReportText,
+  };
+}
+
 
 
 

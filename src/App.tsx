@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   CLINICAL_PROTOCOLS,
   SANCTUARY_STAGES,
@@ -26,6 +26,7 @@ import {
   SANCTUARY_BLOOM_INTENSITY_STORAGE_KEY,
   DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT,
   clampSanctuaryBloomIntensityPct,
+  computeHudFlowPulseState,
   syncDailyHabitTrackerWithStreak,
   toggleDailyHabitExercise,
   type DailyHabitExerciseId,
@@ -597,6 +598,82 @@ export default function App() {
     flowStreak: 0,
     adaptiveUfovWindowMs: 2200,
     flowTier: 'Baseline Calibration',
+  });
+
+  // Cognitive Flow Pulse — HUD Rhythmic Visual Feedback Loop when Flow Multiplier increases
+  const prevFlowMultiplierRef = useRef<number>(1.0);
+  const [flowPulseAnim, setFlowPulseAnim] = useState<{
+    active: boolean;
+    prevMultiplier: number;
+    currentMultiplier: number;
+    elapsedMs: number;
+  }>({
+    active: false,
+    prevMultiplier: 1.0,
+    currentMultiplier: 1.0,
+    elapsedMs: 1400,
+  });
+
+  useEffect(() => {
+    const prev = prevFlowMultiplierRef.current;
+    const curr = hud.flowMultiplier;
+    if (curr > prev) {
+      setFlowPulseAnim({
+        active: true,
+        prevMultiplier: prev,
+        currentMultiplier: curr,
+        elapsedMs: 420,
+      });
+    }
+    prevFlowMultiplierRef.current = curr;
+  }, [hud.flowMultiplier]);
+
+  useEffect(() => {
+    if (!flowPulseAnim.active) return;
+    const intervalId = window.setInterval(() => {
+      setFlowPulseAnim((prev) => {
+        const nextElapsed = prev.elapsedMs + 70;
+        if (nextElapsed >= 1400) {
+          return {
+            ...prev,
+            active: false,
+            elapsedMs: 1400,
+          };
+        }
+        return {
+          ...prev,
+          elapsedMs: nextElapsed,
+        };
+      });
+    }, 70);
+    return () => window.clearInterval(intervalId);
+  }, [flowPulseAnim.active]);
+
+  const triggerManualFlowPulseSurge = useCallback(() => {
+    const baseMult = Math.max(hud.flowMultiplier, flowPulseAnim.currentMultiplier);
+    const nextMult = baseMult >= 2.5 ? 1.5 : Math.min(2.5, Math.round((baseMult + 0.25) * 100) / 100);
+    const prevMult = Math.max(1.0, Math.round((nextMult - 0.25) * 100) / 100);
+    prevFlowMultiplierRef.current = nextMult;
+    setHud((prev) => ({
+      ...prev,
+      flowMultiplier: nextMult,
+      flowStreak: prev.flowStreak + 1,
+      adaptiveUfovWindowMs: Math.max(900, prev.adaptiveUfovWindowMs - 140),
+    }));
+    setFlowPulseAnim({
+      active: true,
+      prevMultiplier: prevMult,
+      currentMultiplier: nextMult,
+      elapsedMs: 420,
+    });
+    soundEngine.playHarmonicChord('nback');
+  }, [hud.flowMultiplier, flowPulseAnim.currentMultiplier]);
+
+  const flowPulseState = computeHudFlowPulseState({
+    currentMultiplier: flowPulseAnim.active ? flowPulseAnim.currentMultiplier : hud.flowMultiplier,
+    previousMultiplier: flowPulseAnim.active ? flowPulseAnim.prevMultiplier : hud.flowMultiplier,
+    timeSinceIncreaseMs: flowPulseAnim.active ? flowPulseAnim.elapsedMs : undefined,
+    pulseDurationMs: 1400,
   });
 
   // Mirror game state to document.body.dataset.state
@@ -1263,9 +1340,7 @@ export default function App() {
               {zenHud.showRejuvenation && (
                 <div
                   data-testid="hud-rejuvenation"
-                  className={`pl-2.5 border-l border-[#233D32] whitespace-nowrap ${
-                    isSanctuaryBloomActive || hud.sanctuaryBloomActive ? 'hidden 2xl:block' : 'hidden md:block'
-                  }`}
+                  className="pl-2.5 border-l border-[#233D32] whitespace-nowrap hidden 2xl:block"
                 >
                   <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
                     REJUVENATION
@@ -1276,25 +1351,75 @@ export default function App() {
                 </div>
               )}
 
-              {/* Adaptive Psychometric Synaptic Flow Multiplier (Hidden in Zen Mode) */}
+              {/* Adaptive Psychometric Synaptic Flow Multiplier + 'Cognitive Flow Pulse' (Hidden in Zen Mode) */}
               {zenHud.showSynapticFlow && (
                 <div
                   data-testid="hud-synaptic-flow"
-                  className={`pl-2.5 border-l border-[#233D32] whitespace-nowrap ${
-                    isSanctuaryBloomActive || hud.sanctuaryBloomActive ? 'hidden 2xl:block' : 'hidden xl:block'
-                  }`}
-                  title={`Adaptive UFOV Staircase Window: ${hud.adaptiveUfovWindowMs}ms · Consecutive Accuracy Streak: ${hud.flowStreak}`}
+                  data-flow-pulsing={flowPulseState.isPulsing ? 'true' : 'false'}
+                  data-flow-multiplier={flowPulseState.flowMultiplier.toFixed(2)}
+                  data-flow-scale={String(flowPulseState.scaleFactor)}
+                  onClick={triggerManualFlowPulseSurge}
+                  role="button"
+                  tabIndex={-1}
+                  className="relative pl-2.5 pr-2 py-0.5 border-l border-[#233D32] hidden lg:block whitespace-nowrap rounded-r-xl transition-transform duration-150 cursor-pointer"
+                  style={{
+                    transform: `scale(${flowPulseState.scaleFactor})`,
+                    boxShadow:
+                      flowPulseState.glowOpacity > 0
+                        ? `0 0 18px rgba(104, 211, 145, ${flowPulseState.glowOpacity})`
+                        : undefined,
+                    backgroundColor: flowPulseState.isPulsing
+                      ? 'rgba(20, 45, 35, 0.92)'
+                      : undefined,
+                  }}
+                  title={`${flowPulseState.statusLabel} · Adaptive UFOV Window: ${hud.adaptiveUfovWindowMs}ms · Click to test Cognitive Flow Pulse`}
                 >
+                  {/* Expanding Rhythmic Concentration Pulse Ring */}
+                  {flowPulseState.isPulsing && (
+                    <span
+                      data-testid="hud-cognitive-flow-pulse-ring"
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 rounded-xl border-2"
+                      style={{
+                        borderColor: flowPulseState.accentHex,
+                        opacity: flowPulseState.ringOpacity,
+                        transform: `scale(${flowPulseState.ringExpandScale})`,
+                        transition: 'transform 120ms ease-out, opacity 120ms ease-out',
+                      }}
+                    />
+                  )}
                   <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0] flex items-center gap-1">
+                    <span
+                      className="w-1.5 h-1.5 rounded-full shrink-0"
+                      style={{
+                        backgroundColor: flowPulseState.accentHex,
+                        boxShadow:
+                          flowPulseState.glowOpacity > 0
+                            ? `0 0 8px ${flowPulseState.accentHex}`
+                            : undefined,
+                      }}
+                    />
                     <span>SYNAPTIC FLOW</span>
                     <span className="px-1 py-0.2 rounded bg-[#142D23] text-[#68D391] text-[9px] border border-[#2C4C3E] tabular-nums">
                       {hud.adaptiveUfovWindowMs}ms
                     </span>
                   </div>
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-xl font-mono font-bold text-[#68D391] tabular-nums hud-text-stroke">
-                      {hud.flowMultiplier.toFixed(2)}x
+                  <div className="flex items-baseline gap-1.5">
+                    <span
+                      data-testid="hud-flow-multiplier-value"
+                      className="text-xl font-mono font-bold tabular-nums hud-text-stroke"
+                      style={{ color: flowPulseState.accentHex }}
+                    >
+                      {flowPulseState.flowMultiplier.toFixed(2)}x
                     </span>
+                    {flowPulseState.isPulsing && (
+                      <span
+                        data-testid="hud-cognitive-flow-pulse-badge"
+                        className="px-1.5 py-0.5 rounded bg-[#1A4231] text-[#68D391] border border-[#68D391]/60 text-[9px] font-mono font-bold tabular-nums"
+                      >
+                        +{flowPulseState.multiplierDelta.toFixed(2)}x PULSE
+                      </span>
+                    )}
                   </div>
                 </div>
               )}

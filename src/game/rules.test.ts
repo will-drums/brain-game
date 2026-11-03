@@ -38,8 +38,71 @@ import {
   stepCognitivePulseWave,
   clampSanctuaryBloomIntensityPct,
   computeSanctuaryBloomEffect,
+  computeHudFlowPulseState,
+  buildEnterpriseClinicalExportBundle,
   type ChimeSymbol,
 } from './rules';
+
+test('computeHudFlowPulseState triggers expanding glow pulse when Flow Multiplier increases and maintains rhythmic concentration cadence', () => {
+  const baseline = computeHudFlowPulseState({
+    currentMultiplier: 1.0,
+    previousMultiplier: 1.0,
+  });
+  assert.equal(baseline.isMultiplierIncreased, false);
+  assert.equal(baseline.isPulsing, false);
+  assert.equal(baseline.scaleFactor, 1.0);
+  assert.equal(baseline.ringOpacity, 0);
+
+  const surge = computeHudFlowPulseState({
+    currentMultiplier: 1.5,
+    previousMultiplier: 1.25,
+    timeSinceIncreaseMs: 650,
+    pulseDurationMs: 1400,
+  });
+  assert.equal(surge.isMultiplierIncreased, true);
+  assert.equal(surge.isPulsing, true);
+  assert.equal(surge.multiplierDelta, 0.25);
+  assert.ok(surge.scaleFactor > 1.05);
+  assert.ok(surge.glowOpacity > 0.7);
+  assert.ok(surge.ringExpandScale > 1.2);
+  assert.ok(surge.ringOpacity > 0.3);
+  assert.equal(surge.accentHex, '#4FD1C5');
+  assert.ok(surge.statusLabel.includes('FLOW PULSE +0.25x'));
+
+  const sustained = computeHudFlowPulseState({
+    currentMultiplier: 2.0,
+    previousMultiplier: 2.0,
+    timeSinceIncreaseMs: 2000,
+    pulseDurationMs: 1400,
+  });
+  assert.equal(sustained.isPulsing, false);
+  assert.ok(sustained.glowOpacity > 0.2);
+  assert.ok(sustained.rhythmicCadenceSec < 2.0);
+  assert.equal(sustained.accentHex, '#B794F4');
+});
+
+test('buildEnterpriseClinicalExportBundle compiles longitudinal DTx telemetry report', () => {
+  const bundle = buildEnterpriseClinicalExportBundle({
+    exportedAtIso: '2026-11-03',
+    totalTreesGrafted: 12,
+    peakRejuvenationScore: 1850,
+    currentStreakDays: 4,
+    hrvHistory: DEFAULT_HRV_HISTORY_SEED,
+    dailyHabitTracker: {
+      dateIso: '2026-11-03',
+      nsdrCompleted: true,
+      cognitiveReframingCompleted: true,
+      syncedStreakDays: 4,
+      lastUpdatedIso: '2026-11-03',
+    },
+    neuralLogs: DEFAULT_NEURAL_LOGS_SEED,
+  });
+  assert.equal(bundle.schemaVersion, '2026.4-Enterprise-DTx');
+  assert.ok(bundle.compositeReserveIndex >= 70);
+  assert.equal(bundle.nsdrCompletedToday, true);
+  assert.equal(bundle.cognitiveReframingCompletedToday, true);
+  assert.ok(bundle.summaryReportText.includes('SYLVAN SYNAPSE DTx · CLINICAL TELEMETRY REPORT'));
+});
 
 test('computeSanctuaryBloomEffect triggers full-canvas bioluminescence saturation and slow camera rotation when all 4 stages are completed and scales with user intensityPct', () => {
   assert.equal(SANCTUARY_STAGES.length, 4);
