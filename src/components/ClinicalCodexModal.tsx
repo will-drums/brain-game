@@ -12,6 +12,8 @@ import {
   DAILY_HABIT_EXERCISES,
   getDailyHabitClinicalTooltip,
   DEFAULT_NEURAL_LOGS_SEED,
+  computeSixMonthNeuroProjection,
+  type NeuroProjectionMonthPoint,
   type DailyHabitExerciseId,
   type DailyHabitTrackerState,
   type NeuroLifestyleCategory,
@@ -61,7 +63,11 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
   onAddNeuralLog,
 }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const projectionSvgRef = useRef<SVGSVGElement | null>(null);
   const [hoveredSession, setHoveredSession] = useState<HrvSessionRecord | null>(null);
+  const [hoveredProjectionMonthIndex, setHoveredProjectionMonthIndex] =
+    useState<number | null>(null);
+  const [simulateOptimalHabits, setSimulateOptimalHabits] = useState<boolean>(false);
   const [exportStatus, setExportStatus] = useState<string>('');
   const [lifestyleCategory, setLifestyleCategory] = useState<NeuroLifestyleCategory>('all');
   const [hoveredHabitTooltipId, setHoveredHabitTooltipId] = useState<string | null>(null);
@@ -134,6 +140,29 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
   });
   const filteredLifestyleTips = filterNeuroNutritionTips(lifestyleCategory);
   const neuroSynergy = computeNeuroSynergyBonus(completedHabitIds);
+  const neuroProjection = React.useMemo(
+    () =>
+      computeSixMonthNeuroProjection({
+        hrvHistory: sessions,
+        totalTreesGrafted,
+        peakRejuvenationScore,
+        currentStreakDays: syncedStreakDisplay,
+        completedHabitIds,
+        nsdrCompleted: activeNsdrCompleted,
+        cognitiveReframingCompleted: activeReframingCompleted,
+        simulateOptimalHabits,
+      }),
+    [
+      sessions,
+      totalTreesGrafted,
+      peakRejuvenationScore,
+      syncedStreakDisplay,
+      completedHabitIds,
+      activeNsdrCompleted,
+      activeReframingCompleted,
+      simulateOptimalHabits,
+    ]
+  );
 
   useEffect(() => {
     if (!isOpen || !svgRef.current || sessions.length === 0) return;
@@ -382,10 +411,282 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
       .text((d) => `${d.coherenceScore}%`);
   }, [isOpen, sessions]);
 
+  // D3 'Neuro-Projection Graph' — 6-Month Cognitive Reserve Growth Forecast
+  useEffect(() => {
+    if (!isOpen || !projectionSvgRef.current || neuroProjection.points.length === 0) return;
+
+    const svg = d3.select(projectionSvgRef.current);
+    svg.selectAll('*').remove();
+
+    const width = 760;
+    const height = 260;
+    const margin = { top: 28, right: 32, bottom: 40, left: 48 };
+    const innerWidth = width - margin.left - margin.right;
+    const innerHeight = height - margin.top - margin.bottom;
+
+    const defs = svg.append('defs');
+    const projGrad = defs
+      .append('linearGradient')
+      .attr('id', 'neuroProjectionAreaGradient')
+      .attr('x1', '0%')
+      .attr('y1', '0%')
+      .attr('x2', '0%')
+      .attr('y2', '100%');
+
+    projGrad
+      .append('stop')
+      .attr('offset', '0%')
+      .attr('stop-color', '#B794F4')
+      .attr('stop-opacity', 0.44);
+
+    projGrad
+      .append('stop')
+      .attr('offset', '55%')
+      .attr('stop-color', '#4FD1C5')
+      .attr('stop-opacity', 0.22);
+
+    projGrad
+      .append('stop')
+      .attr('offset', '100%')
+      .attr('stop-color', '#0B1914')
+      .attr('stop-opacity', 0.02);
+
+    const g = svg
+      .append('g')
+      .attr('transform', `translate(${margin.left},${margin.top})`);
+
+    const points = neuroProjection.points;
+    const xScale = d3
+      .scalePoint<string>()
+      .domain(points.map((p) => p.monthLabel))
+      .range([0, innerWidth])
+      .padding(0.22);
+
+    const yScale = d3
+      .scaleLinear()
+      .domain([40, 100])
+      .nice()
+      .range([innerHeight, 0]);
+
+    // Horizontal clinical reserve gridlines
+    const yTicks = [40, 55, 70, 85, 100];
+    g.selectAll('.proj-grid-line')
+      .data(yTicks)
+      .enter()
+      .append('line')
+      .attr('class', 'proj-grid-line')
+      .attr('x1', 0)
+      .attr('x2', innerWidth)
+      .attr('y1', (d) => yScale(d))
+      .attr('y2', (d) => yScale(d))
+      .attr('stroke', '#1E3A2F')
+      .attr('stroke-dasharray', (d) => (d === 85 ? 'none' : '4,4'))
+      .attr('stroke-width', 1);
+
+    // Shaded High Cognitive Reserve Fortification Zone (85 - 100)
+    const highReserveY = yScale(85);
+    g.append('rect')
+      .attr('x', 0)
+      .attr('y', yScale(100))
+      .attr('width', innerWidth)
+      .attr('height', Math.max(0, highReserveY - yScale(100)))
+      .attr('fill', 'rgba(183, 148, 244, 0.07)');
+
+    g.append('line')
+      .attr('x1', 0)
+      .attr('x2', innerWidth)
+      .attr('y1', highReserveY)
+      .attr('y2', highReserveY)
+      .attr('stroke', '#B794F4')
+      .attr('stroke-width', 1.25)
+      .attr('stroke-dasharray', '5,4')
+      .attr('opacity', 0.8);
+
+    g.append('text')
+      .attr('x', innerWidth - 4)
+      .attr('y', highReserveY - 6)
+      .attr('text-anchor', 'end')
+      .attr('fill', '#B794F4')
+      .attr('font-family', 'JetBrains Mono, monospace')
+      .attr('font-size', '10px')
+      .text('Fortified Neuroplastic Reserve Threshold (85/100)');
+
+    // Y-Axis
+    const yAxis = d3
+      .axisLeft(yScale)
+      .tickValues(yTicks)
+      .tickFormat((d) => `${d}`)
+      .tickSize(0);
+
+    const yAxisGroup = g.append('g').call(yAxis);
+    yAxisGroup.select('.domain').remove();
+    yAxisGroup
+      .selectAll('text')
+      .attr('fill', '#A3B8B0')
+      .attr('font-family', 'JetBrains Mono, monospace')
+      .attr('font-size', '11px')
+      .attr('dx', '-6px');
+
+    // X-Axis (Now, M1..M6)
+    const xAxis = d3.axisBottom(xScale).tickSize(0);
+    const xAxisGroup = g
+      .append('g')
+      .attr('transform', `translate(0,${innerHeight})`)
+      .call(xAxis);
+
+    xAxisGroup.select('.domain').attr('stroke', '#233D32');
+    xAxisGroup
+      .selectAll('text')
+      .attr('fill', '#D5E2DC')
+      .attr('font-family', 'JetBrains Mono, monospace')
+      .attr('font-size', '11px')
+      .attr('dy', '16px');
+
+    // Shaded Area under User's Projected Cognitive Reserve Curve
+    const projAreaGenerator = d3
+      .area<NeuroProjectionMonthPoint>()
+      .x((d) => xScale(d.monthLabel) ?? 0)
+      .y0(innerHeight)
+      .y1((d) => yScale(d.projectedReserveIndex))
+      .curve(d3.curveMonotoneX);
+
+    g.append('path')
+      .datum(points)
+      .attr('data-testid', 'neuro-projection-d3-area-path')
+      .attr('fill', 'url(#neuroProjectionAreaGradient)')
+      .attr('d', projAreaGenerator);
+
+    // 1. Untrained Baseline Reference Line (dashed slate)
+    const untrainedLine = d3
+      .line<NeuroProjectionMonthPoint>()
+      .x((d) => xScale(d.monthLabel) ?? 0)
+      .y((d) => yScale(d.untrainedBaselineIndex))
+      .curve(d3.curveMonotoneX);
+
+    g.append('path')
+      .datum(points)
+      .attr('data-testid', 'neuro-projection-untrained-line')
+      .attr('fill', 'none')
+      .attr('stroke', '#526B61')
+      .attr('stroke-width', 1.5)
+      .attr('stroke-dasharray', '4,4')
+      .attr('d', untrainedLine);
+
+    // 2. 100% Optimal Habit Potential Ceiling Line (dashed gold)
+    const optimalLine = d3
+      .line<NeuroProjectionMonthPoint>()
+      .x((d) => xScale(d.monthLabel) ?? 0)
+      .y((d) => yScale(d.optimalHabitReserveIndex))
+      .curve(d3.curveMonotoneX);
+
+    g.append('path')
+      .datum(points)
+      .attr('data-testid', 'neuro-projection-optimal-line')
+      .attr('fill', 'none')
+      .attr('stroke', '#F2B84B')
+      .attr('stroke-width', 1.75)
+      .attr('stroke-dasharray', '6,4')
+      .attr('opacity', 0.85)
+      .attr('d', optimalLine);
+
+    // 3. User's Projected 6-Month Cognitive Reserve Line
+    const projectedLine = d3
+      .line<NeuroProjectionMonthPoint>()
+      .x((d) => xScale(d.monthLabel) ?? 0)
+      .y((d) => yScale(d.projectedReserveIndex))
+      .curve(d3.curveMonotoneX);
+
+    g.append('path')
+      .datum(points)
+      .attr('data-testid', 'neuro-projection-d3-line-path')
+      .attr('fill', 'none')
+      .attr('stroke', '#4FD1C5')
+      .attr('stroke-width', 3)
+      .attr('stroke-linecap', 'round')
+      .attr('d', projectedLine);
+
+    // In-Chart 6-Month Cognitive Reserve Projection Callout Badge (Bottom-Right Plot Area)
+    const projBadge = g
+      .append('g')
+      .attr('data-testid', 'neuro-projection-d3-growth-badge')
+      .attr('transform', `translate(${Math.max(10, innerWidth - 364)}, ${innerHeight - 28})`);
+
+    projBadge
+      .append('rect')
+      .attr('width', 354)
+      .attr('height', 22)
+      .attr('rx', 6)
+      .attr('fill', 'rgba(20, 27, 45, 0.92)')
+      .attr('stroke', '#B794F4')
+      .attr('stroke-width', 1);
+
+    projBadge
+      .append('text')
+      .attr('x', 10)
+      .attr('y', 14.5)
+      .attr('fill', '#E9D8FD')
+      .attr('font-family', 'JetBrains Mono, monospace')
+      .attr('font-size', '10px')
+      .attr('font-weight', '700')
+      .text(
+        `▲ +${neuroProjection.netSixMonthReserveGain} pts 6-Mo Reserve (${neuroProjection.baselineReserveIndex} → ${neuroProjection.monthSixProjectedReserveIndex}/100) · +${neuroProjection.projectedHippocampalVolumeGainPct}% BDNF Vol`
+      );
+
+    // Interactive Monthly Projection Nodes (Now, M1..M6)
+    const monthNodes = g
+      .selectAll('.neuro-projection-node')
+      .data(points)
+      .enter()
+      .append('g')
+      .attr('class', 'neuro-projection-node')
+      .attr('data-testid', (d) => `neuro-projection-node-${d.monthIndex}`)
+      .attr('data-month-label', (d) => d.monthLabel)
+      .attr('data-projected-reserve', (d) => String(d.projectedReserveIndex))
+      .attr(
+        'transform',
+        (d) => `translate(${xScale(d.monthLabel) ?? 0},${yScale(d.projectedReserveIndex)})`
+      )
+      .style('cursor', 'pointer')
+      .on('mouseenter', (_, d) => setHoveredProjectionMonthIndex(d.monthIndex))
+      .on('click', (_, d) => setHoveredProjectionMonthIndex(d.monthIndex));
+
+    monthNodes
+      .append('circle')
+      .attr('r', 9)
+      .attr('fill', (d) =>
+        d.projectedReserveIndex >= 85
+          ? 'rgba(183, 148, 244, 0.26)'
+          : 'rgba(79, 209, 197, 0.18)'
+      );
+
+    monthNodes
+      .append('circle')
+      .attr('r', 5)
+      .attr('fill', (d) => (d.projectedReserveIndex >= 85 ? '#B794F4' : '#4FD1C5'))
+      .attr('stroke', '#091510')
+      .attr('stroke-width', 2);
+
+    monthNodes
+      .append('text')
+      .attr('y', -11)
+      .attr('text-anchor', 'middle')
+      .attr('fill', '#F4EFE6')
+      .attr('font-family', 'JetBrains Mono, monospace')
+      .attr('font-size', '10px')
+      .attr('font-weight', '700')
+      .text((d) => `${d.projectedReserveIndex}`);
+  }, [isOpen, neuroProjection]);
+
   if (!isOpen) return null;
 
   const protocols = Object.values(CLINICAL_PROTOCOLS);
   const activeInspect = hoveredSession || sessions[sessions.length - 1] || null;
+  const activeProjectionInspect =
+    (hoveredProjectionMonthIndex !== null
+      ? neuroProjection.points.find((p) => p.monthIndex === hoveredProjectionMonthIndex)
+      : undefined) ||
+    neuroProjection.points[neuroProjection.points.length - 1] ||
+    null;
 
   const handleExportDtxTelemetry = () => {
     const payload = {
@@ -578,6 +879,158 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
               </div>
             </div>
           )}
+        </section>
+
+        {/* 1B. D3.js 'Neuro-Projection Graph' — 6-Month Cognitive Reserve Growth Trajectory */}
+        <section
+          aria-labelledby="neuro-projection-heading"
+          data-testid="clinical-codex-neuro-projection-chart"
+          data-baseline-reserve={neuroProjection.baselineReserveIndex}
+          data-month-six-reserve={neuroProjection.monthSixProjectedReserveIndex}
+          data-net-reserve-gain={neuroProjection.netSixMonthReserveGain}
+          data-habit-adherence-pct={neuroProjection.habitAdherencePct}
+          className="mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#2C4C3E] space-y-4"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-mono uppercase tracking-wider text-[#B794F4]">
+                  6-Month Longitudinal Forecast · Practice &amp; Habit Adherence Model
+                </span>
+                <span
+                  data-testid="neuro-projection-tier-badge"
+                  className="px-2 py-0.5 rounded bg-[#1A1633] text-[#E9D8FD] border border-[#B794F4]/50 text-[10px] font-mono font-semibold tabular-nums"
+                >
+                  ✦ {neuroProjection.trajectoryTierLabel} (+{neuroProjection.netSixMonthReserveGain} pts in 6 Mos)
+                </span>
+              </div>
+              <h3
+                id="neuro-projection-heading"
+                className="text-lg font-display font-semibold text-[#F4EFE6] mt-0.5"
+              >
+                Neuro-Projection Graph: 6-Month Cognitive Reserve Growth (D3.js Visualization)
+              </h3>
+              <p className="text-xs text-[#A3B8B0] mt-0.5">
+                Forecasts your 24-week Cognitive Reserve Index, anterior hippocampal BDNF volume gain, and UFOV speed protection based on your historical sessions and daily habit adherence.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              data-testid="toggle-optimal-projection-btn"
+              aria-pressed={simulateOptimalHabits}
+              onClick={() => setSimulateOptimalHabits((prev) => !prev)}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-mono font-semibold border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                simulateOptimalHabits
+                  ? 'bg-[#201A3A] text-[#F2B84B] border-[#F2B84B]'
+                  : 'bg-[#152E24] hover:bg-[#1E3F32] text-[#4FD1C5] border-[#2C4C3E]'
+              }`}
+            >
+              {simulateOptimalHabits
+                ? '★ Showing 100% Habit Mastery Ceiling'
+                : 'Preview 100% Habit Adherence'}
+            </button>
+          </div>
+
+          {/* 4 Tabular-Nums 6-Month Cognitive Reserve Projection KPIs */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+            <div className="p-3 rounded-lg bg-[#10231C] border border-[#1E3A2F]">
+              <div className="text-[10px] font-mono uppercase text-[#A3B8B0]">
+                BASELINE → 6-MO RESERVE
+              </div>
+              <div
+                data-testid="neuro-projection-kpi-reserve"
+                className="text-xl font-mono font-bold text-[#4FD1C5] tabular-nums"
+              >
+                {neuroProjection.baselineReserveIndex} → {neuroProjection.monthSixProjectedReserveIndex}
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg bg-[#10231C] border border-[#1E3A2F]">
+              <div className="text-[10px] font-mono uppercase text-[#A3B8B0]">
+                HABIT ADHERENCE SCORE
+              </div>
+              <div
+                data-testid="neuro-projection-kpi-adherence"
+                className="text-xl font-mono font-bold text-[#F2B84B] tabular-nums"
+              >
+                {neuroProjection.habitAdherencePct}%
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg bg-[#10231C] border border-[#1E3A2F]">
+              <div className="text-[10px] font-mono uppercase text-[#A3B8B0]">
+                6-MO HIPPOCAMPAL BDNF
+              </div>
+              <div
+                data-testid="neuro-projection-kpi-bdnf"
+                className="text-xl font-mono font-bold text-[#B794F4] tabular-nums"
+              >
+                +{neuroProjection.projectedHippocampalVolumeGainPct}%
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg bg-[#10231C] border border-[#1E3A2F]">
+              <div className="text-[10px] font-mono uppercase text-[#A3B8B0]">
+                UFOV SPEED PROTECTION
+              </div>
+              <div
+                data-testid="neuro-projection-kpi-ufov"
+                className="text-xl font-mono font-bold text-[#68D391] tabular-nums"
+              >
+                +{neuroProjection.projectedDementiaRiskReductionPct}%
+              </div>
+            </div>
+          </div>
+
+          {/* D3 Responsive SVG 6-Month Neuro-Projection Graph */}
+          <div className="w-full overflow-x-auto pt-1">
+            <svg
+              ref={projectionSvgRef}
+              data-testid="neuro-projection-d3-svg"
+              viewBox="0 0 760 260"
+              role="img"
+              aria-label="D3 Neuro-Projection Graph visualizing projected 6-month cognitive reserve growth from Now through Month 6"
+              className="w-full h-auto min-w-[540px] select-none"
+            />
+          </div>
+
+          {/* Legend & Interactive Month Inspector Footer */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[#1E3A2F] text-xs font-mono text-[#A3B8B0] tabular-nums">
+            <div className="flex flex-wrap items-center gap-4">
+              <span className="inline-flex items-center gap-1.5 text-[#4FD1C5]">
+                <span className="w-3 h-0.5 bg-[#4FD1C5] inline-block" />
+                <span>Projected Reserve ({neuroProjection.habitAdherencePct}% Adherence)</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5 text-[#F2B84B]">
+                <span className="w-3 h-0.5 bg-[#F2B84B] inline-block" />
+                <span>100% Habit Ceiling ({neuroProjection.monthSixOptimalReserveIndex}/100)</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5 text-[#526B61]">
+                <span className="w-3 h-0.5 bg-[#526B61] inline-block" />
+                <span>Untrained Baseline</span>
+              </span>
+            </div>
+
+            {activeProjectionInspect && (
+              <div data-testid="neuro-projection-month-inspector" className="text-[#D5E2DC]">
+                <strong className="text-[#F4EFE6]">
+                  {activeProjectionInspect.fullMonthTitle}:
+                </strong>{' '}
+                <span className="text-[#4FD1C5] font-semibold">
+                  {activeProjectionInspect.projectedReserveIndex}/100 Reserve
+                </span>
+                {' · '}
+                <span className="text-[#B794F4]">
+                  +{activeProjectionInspect.hippocampalBdnfGainPct}% BDNF Vol
+                </span>
+                {' · '}
+                <span className="text-[#68D391]">
+                  +{activeProjectionInspect.ufovSpeedProtectionPct}% UFOV Protection
+                </span>
+              </div>
+            )}
+          </div>
         </section>
 
         {/* 2. 4-Domain Cognitive Reserve & Neuroplasticity Profile */}

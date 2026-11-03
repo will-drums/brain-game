@@ -45,8 +45,61 @@ import {
   computeAdaptiveDifficultyScaling,
   computeLocalNBackSuccessRate,
   computeTreeFloweringState,
+  computeSixMonthNeuroProjection,
   type ChimeSymbol,
 } from './rules';
+
+test('computeSixMonthNeuroProjection generates a 7-point (Now..M6) cognitive reserve growth trajectory scaled by historical practice sessions and habit adherence', () => {
+  const lowAdherence = computeSixMonthNeuroProjection({
+    hrvHistory: DEFAULT_HRV_HISTORY_SEED,
+    totalTreesGrafted: 2,
+    peakRejuvenationScore: 1100,
+    currentStreakDays: 1,
+    completedHabitIds: [],
+    nsdrCompleted: false,
+    cognitiveReframingCompleted: false,
+  });
+
+  const highAdherence = computeSixMonthNeuroProjection({
+    hrvHistory: DEFAULT_HRV_HISTORY_SEED,
+    totalTreesGrafted: 2,
+    peakRejuvenationScore: 1100,
+    currentStreakDays: 5,
+    completedHabitIds: [
+      'polyphenol_bdnf_diet',
+      'omega3_phospholipid_membrane',
+      'glymphatic_slow_wave_sleep',
+      'circadian_cortisol_anchor',
+    ],
+    nsdrCompleted: true,
+    cognitiveReframingCompleted: true,
+  });
+
+  assert.equal(lowAdherence.points.length, 7);
+  assert.deepEqual(
+    lowAdherence.points.map((p) => p.monthLabel),
+    ['Now', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6']
+  );
+  // Monotonic growth from Now to M6
+  for (let i = 1; i < lowAdherence.points.length; i++) {
+    assert.ok(
+      lowAdherence.points[i].projectedReserveIndex >=
+        lowAdherence.points[i - 1].projectedReserveIndex
+    );
+  }
+  // Higher habit adherence & streak produces higher 6-month cognitive reserve gain & hippocampal BDNF volume gain
+  assert.ok(highAdherence.habitAdherencePct > lowAdherence.habitAdherencePct);
+  assert.ok(highAdherence.netSixMonthReserveGain > lowAdherence.netSixMonthReserveGain);
+  assert.ok(
+    highAdherence.monthSixProjectedReserveIndex >
+      lowAdherence.monthSixProjectedReserveIndex
+  );
+  assert.ok(
+    highAdherence.projectedHippocampalVolumeGainPct >
+      lowAdherence.projectedHippocampalVolumeGainPct
+  );
+  assert.equal(highAdherence.trajectoryTierLabel, 'Accelerated Synaptogenesis');
+});
 
 test('computeTreeFloweringState produces staggered particle-based flowering waves and incrementally grows bioluminescent tendrils based on local N-Back success rate', () => {
   // Baseline when 0 attempts: 0.75 (75%)

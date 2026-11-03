@@ -2226,6 +2226,206 @@ export function computeTreeFloweringState(params: {
   };
 }
 
+/**
+ * 6-Month 'Neuro-Projection Graph' Cognitive Reserve Forecasting Engine
+ * Models the user's projected 6-month cognitive reserve trajectory (Now, M1..M6)
+ * based on historical HRV practice sessions, hippocampal trees grafted, daily streak,
+ * and daily habit adherence (Neuro-Nutrition/Sleep + NSDR + Cognitive Reframing).
+ */
+export interface NeuroProjectionMonthPoint {
+  monthIndex: number; // 0 .. 6
+  monthLabel: string; // 'Now', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6'
+  fullMonthTitle: string;
+  projectedReserveIndex: number; // 40 .. 100 (user trajectory)
+  optimalHabitReserveIndex: number; // 40 .. 100 (upper ceiling with 100% habit adherence)
+  untrainedBaselineIndex: number; // 40 .. 100 (flat/slight decline without training)
+  hippocampalBdnfGainPct: number; // 0.0 .. +2.8% (Erickson et al., PNAS benchmark)
+  ufovSpeedProtectionPct: number; // 0 .. 29% (Ball et al., JAMA ACTIVE benchmark)
+  clinicalMilestoneNote: string;
+}
+
+export interface SixMonthNeuroProjectionSummary {
+  baselineReserveIndex: number;
+  monthThreeProjectedReserveIndex: number;
+  monthSixProjectedReserveIndex: number;
+  monthSixOptimalReserveIndex: number;
+  netSixMonthReserveGain: number;
+  habitAdherencePct: number; // 0 .. 100
+  practiceConsistencyScore: number; // 0 .. 100
+  projectedHippocampalVolumeGainPct: number; // e.g. +2.1%
+  projectedDementiaRiskReductionPct: number; // e.g. 26%
+  trajectoryTierLabel:
+    | 'Accelerated Synaptogenesis'
+    | 'Steady Neuroplastic Growth'
+    | 'Foundational Reserve Building';
+  points: NeuroProjectionMonthPoint[];
+}
+
+const MONTH_MILESTONE_NOTES: readonly string[] = [
+  'Baseline Cognitive Reserve calibrated from current 4-domain performance & vagal tone.',
+  'Month 1 (+4 Wks): Early autonomic baroreflex stabilization & prefrontal N-Back encoding gains.',
+  'Month 2 (+8 Wks): UFOV divided-attention visual speed expansion & dendritic spine budding.',
+  'Month 3 (+12 Wks): Consolidating hippocampal BDNF synaptogenesis & glymphatic sleep clearance.',
+  'Month 4 (+16 Wks): Sustained vagal-prefrontal coupling & resilient executive working memory.',
+  'Month 5 (+20 Wks): Structural anterior hippocampal volume preservation (Erickson et al., PNAS).',
+  'Month 6 (+24 Wks): Long-term cognitive reserve fortification & ACTIVE-benchmark processing speed.',
+];
+
+export function computeSixMonthNeuroProjection(params: {
+  hrvHistory?: readonly HrvSessionRecord[] | null;
+  totalTreesGrafted: number;
+  peakRejuvenationScore: number;
+  currentStreakDays: number;
+  completedHabitIds?: readonly string[];
+  nsdrCompleted?: boolean;
+  cognitiveReframingCompleted?: boolean;
+  simulateOptimalHabits?: boolean;
+}): SixMonthNeuroProjectionSummary {
+  const history =
+    params.hrvHistory && params.hrvHistory.length > 0
+      ? params.hrvHistory
+      : DEFAULT_HRV_HISTORY_SEED;
+  const hrvSummary = computeHrvTrendSummary(history);
+  const safeTrees = Math.max(0, Math.floor(Number(params.totalTreesGrafted) || 0));
+  const safePeakScore = Math.max(0, Math.floor(Number(params.peakRejuvenationScore) || 0));
+  const safeStreak = Math.max(1, Math.floor(Number(params.currentStreakDays) || 1));
+
+  const domainProfile = computeCognitiveDomainProfile({
+    totalTreesGrafted: safeTrees,
+    peakRejuvenationScore: safePeakScore,
+    averageHrvCoherence: hrvSummary.averageCoherence,
+    currentStreakDays: safeStreak,
+  });
+
+  const baselineReserveIndex = Math.max(42, Math.min(94, domainProfile.compositeReserveIndex));
+
+  // Compute Habit Adherence (0..100%) from 4 Neuro-Nutrition/Sleep habits + 2 Daily Mind-Body exercises (NSDR & Reframing)
+  const completedLifestyleCount = params.simulateOptimalHabits
+    ? NEURO_NUTRITION_SLEEP_TIPS.length
+    : Math.min(
+        NEURO_NUTRITION_SLEEP_TIPS.length,
+        Array.isArray(params.completedHabitIds) ? params.completedHabitIds.length : 0
+      );
+  const completedMindBodyCount = params.simulateOptimalHabits
+    ? 2
+    : (params.nsdrCompleted ? 1 : 0) + (params.cognitiveReframingCompleted ? 1 : 0);
+
+  const totalHabitsCompleted = completedLifestyleCount + completedMindBodyCount; // 0 .. 6
+  const totalHabitsPossible = NEURO_NUTRITION_SLEEP_TIPS.length + 2; // 6
+  const rawHabitRatio = totalHabitsCompleted / totalHabitsPossible;
+  const streakHabitBonus = Math.min(0.15, (safeStreak - 1) * 0.025);
+  const habitAdherencePct = Math.max(
+    15,
+    Math.min(100, Math.round((rawHabitRatio * 0.85 + streakHabitBonus + 0.1) * 100))
+  );
+
+  // Compute Historical Practice Consistency Score (0..100%) from session count, HRV trend, and grafted trees
+  const sessionDepthFactor = Math.min(1, history.length / 10);
+  const coherenceFactor = Math.max(0.3, Math.min(1, hrvSummary.averageCoherence / 90));
+  const treeMasteryFactor = Math.min(1, (safeTrees + 2) / 14);
+  const streakFactor = Math.min(1, safeStreak / 7);
+  const practiceConsistencyScore = Math.max(
+    35,
+    Math.min(
+      100,
+      Math.round(
+        (sessionDepthFactor * 0.3 +
+          coherenceFactor * 0.35 +
+          treeMasteryFactor * 0.2 +
+          streakFactor * 0.15) *
+          100
+      )
+    )
+  );
+
+  // Total 6-month growth potential scales with practice consistency & habit adherence
+  const remainingHeadroom = Math.max(6, 99 - baselineReserveIndex);
+  const userGrowthRate =
+    0.32 + (practiceConsistencyScore / 100) * 0.28 + (habitAdherencePct / 100) * 0.28;
+  const optimalGrowthRate = 0.32 + Math.max(0.78, practiceConsistencyScore / 100) * 0.28 + 0.28;
+
+  const targetTotalGain = Math.min(
+    remainingHeadroom,
+    Math.max(5, Math.round(remainingHeadroom * Math.min(0.92, userGrowthRate)))
+  );
+  const optimalTotalGain = Math.min(
+    remainingHeadroom,
+    Math.max(targetTotalGain, Math.round(remainingHeadroom * Math.min(0.96, optimalGrowthRate)))
+  );
+
+  const normDenom = 1 - Math.exp(-0.42 * 6);
+  const points: NeuroProjectionMonthPoint[] = [];
+
+  for (let m = 0; m <= 6; m++) {
+    const curveFactor = m === 0 ? 0 : (1 - Math.exp(-0.42 * m)) / normDenom;
+    const projectedReserveIndex = Math.min(
+      99,
+      Math.round(baselineReserveIndex + targetTotalGain * curveFactor)
+    );
+    const optimalHabitReserveIndex = Math.min(
+      99,
+      Math.round(baselineReserveIndex + optimalTotalGain * curveFactor)
+    );
+    const untrainedBaselineIndex = Math.max(
+      40,
+      Math.round(baselineReserveIndex - m * 0.5)
+    );
+
+    // Erickson et al. (PNAS, 2011): ~2.0% anterior hippocampal volume gain over longitudinal intervention
+    const maxBdnfVolumeGain =
+      1.1 + (practiceConsistencyScore / 100) * 0.8 + (habitAdherencePct / 100) * 0.7;
+    const hippocampalBdnfGainPct =
+      Math.round(maxBdnfVolumeGain * curveFactor * 100) / 100;
+
+    // Ball et al. (JAMA, 2002 / 2017): up to 29% protective UFOV processing speed benefit
+    const maxUfovProtection =
+      14 + (practiceConsistencyScore / 100) * 8 + (habitAdherencePct / 100) * 7;
+    const ufovSpeedProtectionPct = Math.min(
+      29,
+      Math.round(maxUfovProtection * curveFactor)
+    );
+
+    points.push({
+      monthIndex: m,
+      monthLabel: m === 0 ? 'Now' : `M${m}`,
+      fullMonthTitle: m === 0 ? 'Baseline (Today)' : `Month ${m} (+${m * 4} Weeks)`,
+      projectedReserveIndex,
+      optimalHabitReserveIndex,
+      untrainedBaselineIndex,
+      hippocampalBdnfGainPct,
+      ufovSpeedProtectionPct,
+      clinicalMilestoneNote: MONTH_MILESTONE_NOTES[m] || MONTH_MILESTONE_NOTES[6],
+    });
+  }
+
+  const monthThreePoint = points[3];
+  const monthSixPoint = points[6];
+  const netSixMonthReserveGain =
+    monthSixPoint.projectedReserveIndex - baselineReserveIndex;
+
+  const trajectoryTierLabel =
+    habitAdherencePct >= 78 && practiceConsistencyScore >= 70
+      ? 'Accelerated Synaptogenesis'
+      : habitAdherencePct >= 50
+      ? 'Steady Neuroplastic Growth'
+      : 'Foundational Reserve Building';
+
+  return {
+    baselineReserveIndex,
+    monthThreeProjectedReserveIndex: monthThreePoint.projectedReserveIndex,
+    monthSixProjectedReserveIndex: monthSixPoint.projectedReserveIndex,
+    monthSixOptimalReserveIndex: monthSixPoint.optimalHabitReserveIndex,
+    netSixMonthReserveGain,
+    habitAdherencePct,
+    practiceConsistencyScore,
+    projectedHippocampalVolumeGainPct: monthSixPoint.hippocampalBdnfGainPct,
+    projectedDementiaRiskReductionPct: monthSixPoint.ufovSpeedProtectionPct,
+    trajectoryTierLabel,
+    points,
+  };
+}
+
+
 
 
 
