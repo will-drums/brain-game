@@ -1608,15 +1608,30 @@ export function stepCognitivePulseWave(
  * saturating the entire canvas with bioluminescence and slowly rotating the camera.
  */
 export const SANCTUARY_BLOOM_STORAGE_KEY = 'sylvan_synapse_completed_stages_v1';
+export const SANCTUARY_BLOOM_INTENSITY_STORAGE_KEY = 'sylvan_synapse_bloom_intensity_v1';
+export const DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT = 100;
+
+export function clampSanctuaryBloomIntensityPct(
+  rawValue: unknown,
+  fallbackPct: number = DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT
+): number {
+  const num = typeof rawValue === 'number' ? rawValue : Number(rawValue);
+  if (!Number.isFinite(num)) {
+    return Math.max(0, Math.min(100, Math.round(fallbackPct)));
+  }
+  return Math.max(0, Math.min(100, Math.round(num)));
+}
 
 export interface SanctuaryBloomState {
   isTriggered: boolean;
   completedStagesCount: number;
   totalStages: number;
+  userIntensityPct: number; // 0 .. 100
   cameraRotationRad: number;
   cameraRotationDeg: number;
   bioluminescenceSaturation: number; // 0 .. 1.0
   bloomIntensityAlpha: number; // 0 .. 0.65
+  coronaRayAlpha: number; // 0 .. 0.22
   chromaticAuroraShift: number; // 0 .. 1.0
   statusBadgeText: string;
 }
@@ -1625,6 +1640,7 @@ export function computeSanctuaryBloomEffect(params: {
   completedStagesCount: number;
   totalStages?: number;
   isBloomManuallyActive?: boolean;
+  intensityPct?: number;
   elapsedSec: number;
 }): SanctuaryBloomState {
   const totalStages = Math.max(1, params.totalStages ?? SANCTUARY_STAGES.length);
@@ -1632,6 +1648,11 @@ export function computeSanctuaryBloomEffect(params: {
     0,
     Math.min(totalStages, Math.round(params.completedStagesCount || 0))
   );
+  const userIntensityPct = clampSanctuaryBloomIntensityPct(
+    params.intensityPct,
+    DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT
+  );
+  const intensityScale = userIntensityPct / 100;
   const isTriggered =
     completedStagesCount >= totalStages || Boolean(params.isBloomManuallyActive);
 
@@ -1640,10 +1661,12 @@ export function computeSanctuaryBloomEffect(params: {
       isTriggered: false,
       completedStagesCount,
       totalStages,
+      userIntensityPct,
       cameraRotationRad: 0,
       cameraRotationDeg: 0,
       bioluminescenceSaturation: 0,
       bloomIntensityAlpha: 0,
+      coronaRayAlpha: 0,
       chromaticAuroraShift: 0,
       statusBadgeText: `Sanctuary Stages Completed: ${completedStagesCount}/${totalStages}`,
     };
@@ -1653,9 +1676,10 @@ export function computeSanctuaryBloomEffect(params: {
   // Slow, meditative orbital camera rotation (~0.085 rad/sec = ~4.87 deg/sec)
   const cameraRotationRad = (safeElapsed * 0.085) % (Math.PI * 2);
   const cameraRotationDeg = Math.round(((cameraRotationRad * 180) / Math.PI) * 10) / 10;
-  const bioluminescenceSaturation = 1.0;
+  const bioluminescenceSaturation = Math.round(intensityScale * 1000) / 1000;
   const bloomIntensityAlpha =
-    Math.round((0.46 + 0.12 * Math.sin(safeElapsed * 1.35)) * 1000) / 1000;
+    Math.round((0.46 + 0.12 * Math.sin(safeElapsed * 1.35)) * intensityScale * 1000) / 1000;
+  const coronaRayAlpha = Math.round(0.22 * intensityScale * 1000) / 1000;
   const chromaticAuroraShift =
     Math.round((0.5 + 0.5 * Math.sin(safeElapsed * 0.65)) * 1000) / 1000;
 
@@ -1663,14 +1687,17 @@ export function computeSanctuaryBloomEffect(params: {
     isTriggered: true,
     completedStagesCount: Math.max(completedStagesCount, totalStages),
     totalStages,
+    userIntensityPct,
     cameraRotationRad,
     cameraRotationDeg,
     bioluminescenceSaturation,
     bloomIntensityAlpha,
+    coronaRayAlpha,
     chromaticAuroraShift,
-    statusBadgeText: `SANCTUARY BLOOM ACTIVE · ${totalStages}/${totalStages} STAGES COMPLETED`,
+    statusBadgeText: `SANCTUARY BLOOM ACTIVE · ${userIntensityPct}% BIOLUM · ${totalStages}/${totalStages} STAGES`,
   };
 }
+
 
 
 

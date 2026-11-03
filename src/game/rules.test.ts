@@ -36,12 +36,17 @@ import {
   toggleDailyHabitExercise,
   createCognitivePulseConfig,
   stepCognitivePulseWave,
+  clampSanctuaryBloomIntensityPct,
   computeSanctuaryBloomEffect,
   type ChimeSymbol,
 } from './rules';
 
-test('computeSanctuaryBloomEffect triggers full-canvas bioluminescence saturation and slow camera rotation when all 4 stages are completed', () => {
+test('computeSanctuaryBloomEffect triggers full-canvas bioluminescence saturation and slow camera rotation when all 4 stages are completed and scales with user intensityPct', () => {
   assert.equal(SANCTUARY_STAGES.length, 4);
+  assert.equal(clampSanctuaryBloomIntensityPct(65), 65);
+  assert.equal(clampSanctuaryBloomIntensityPct(-20), 0);
+  assert.equal(clampSanctuaryBloomIntensityPct(145), 100);
+  assert.equal(clampSanctuaryBloomIntensityPct(Number.NaN, 80), 80);
 
   const partial = computeSanctuaryBloomEffect({
     completedStagesCount: 2,
@@ -55,15 +60,29 @@ test('computeSanctuaryBloomEffect triggers full-canvas bioluminescence saturatio
   const fullMastery = computeSanctuaryBloomEffect({
     completedStagesCount: 4,
     elapsedSec: 12.0,
+    intensityPct: 100,
   });
   assert.equal(fullMastery.isTriggered, true);
   assert.equal(fullMastery.completedStagesCount, 4);
   assert.equal(fullMastery.totalStages, 4);
+  assert.equal(fullMastery.userIntensityPct, 100);
   assert.equal(fullMastery.bioluminescenceSaturation, 1.0);
   assert.ok(fullMastery.cameraRotationRad > 0.9 && fullMastery.cameraRotationRad < 1.2);
   assert.ok(fullMastery.cameraRotationDeg > 50);
   assert.ok(fullMastery.bloomIntensityAlpha >= 0.34 && fullMastery.bloomIntensityAlpha <= 0.6);
+  assert.equal(fullMastery.coronaRayAlpha, 0.22);
   assert.ok(fullMastery.statusBadgeText.includes('SANCTUARY BLOOM ACTIVE'));
+
+  const halfIntensity = computeSanctuaryBloomEffect({
+    completedStagesCount: 4,
+    elapsedSec: 12.0,
+    intensityPct: 50,
+  });
+  assert.equal(halfIntensity.userIntensityPct, 50);
+  assert.equal(halfIntensity.bioluminescenceSaturation, 0.5);
+  assert.equal(halfIntensity.coronaRayAlpha, 0.11);
+  assert.ok(Math.abs(halfIntensity.bloomIntensityAlpha - fullMastery.bloomIntensityAlpha * 0.5) < 0.003);
+  assert.ok(halfIntensity.statusBadgeText.includes('50% BIOLUM'));
 });
 
 test('getDailyHabitClinicalTooltip provides peer-reviewed neuroscientific tooltip explanations for NSDR and Cognitive Reframing', () => {

@@ -61,6 +61,7 @@ export interface HudSnapshot {
   sanctuaryBloomActive?: boolean;
   sanctuaryBloomRotationDeg?: number;
   sanctuaryBloomSaturation?: number;
+  sanctuaryBloomIntensityPct?: number;
 }
 
 interface SanctuaryCanvasProps {
@@ -83,6 +84,7 @@ interface SanctuaryCanvasProps {
   isZenMode?: boolean;
   completedStagesCount?: number;
   isSanctuaryBloomActive?: boolean;
+  sanctuaryBloomIntensityPct?: number;
 }
 
 interface NeuralTree {
@@ -179,6 +181,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
   isZenMode = false,
   completedStagesCount = 0,
   isSanctuaryBloomActive = false,
+  sanctuaryBloomIntensityPct = 100,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -200,6 +203,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
     isZenMode,
     completedStagesCount,
     isSanctuaryBloomActive,
+    sanctuaryBloomIntensityPct,
   });
 
   useEffect(() => {
@@ -219,6 +223,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       isZenMode,
       completedStagesCount,
       isSanctuaryBloomActive,
+      sanctuaryBloomIntensityPct,
     };
   }, [
     gameState,
@@ -236,6 +241,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
     isZenMode,
     completedStagesCount,
     isSanctuaryBloomActive,
+    sanctuaryBloomIntensityPct,
   ]);
 
   // Ref for signals from HUD buttons
@@ -1659,11 +1665,13 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         completedStagesCount: stateRef.current.completedStagesCount ?? 0,
         totalStages: SANCTUARY_STAGES.length,
         isBloomManuallyActive: stateRef.current.isSanctuaryBloomActive,
+        intensityPct: stateRef.current.sanctuaryBloomIntensityPct ?? 100,
         elapsedSec: stageElapsedSec,
       });
       currentCameraRotationRad = bloomEffect.cameraRotationRad;
       canvas.dataset.sanctuaryBloom = bloomEffect.isTriggered ? 'active' : 'inactive';
       canvas.dataset.cameraRotationDeg = String(bloomEffect.cameraRotationDeg);
+      canvas.dataset.bloomIntensityPct = String(bloomEffect.userIntensityPct);
 
       ctx.save();
       ctx.scale(currentDpr, currentDpr);
@@ -2221,25 +2229,27 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         ctx.fillRect(0, 0, viewWidth, viewHeight);
 
         // Layer 2: Rotating Celestial Bioluminescent Corona Rays
-        ctx.translate(cx, cy);
-        ctx.rotate(-bloomEffect.cameraRotationRad * 1.35);
-        const rayCount = 12;
-        for (let r = 0; r < rayCount; r++) {
-          const rayAngle = (Math.PI * 2 * r) / rayCount;
-          ctx.save();
-          ctx.rotate(rayAngle);
-          const rayGrad = ctx.createLinearGradient(0, 0, maxDim, 0);
-          rayGrad.addColorStop(0, 'rgba(79, 209, 197, 0.22)');
-          rayGrad.addColorStop(0.5, 'rgba(104, 211, 145, 0.09)');
-          rayGrad.addColorStop(1, 'rgba(9, 21, 16, 0)');
-          ctx.fillStyle = rayGrad;
-          ctx.beginPath();
-          ctx.moveTo(0, 0);
-          ctx.lineTo(maxDim, -42);
-          ctx.lineTo(maxDim, 42);
-          ctx.closePath();
-          ctx.fill();
-          ctx.restore();
+        if (bloomEffect.coronaRayAlpha > 0) {
+          ctx.translate(cx, cy);
+          ctx.rotate(-bloomEffect.cameraRotationRad * 1.35);
+          const rayCount = 12;
+          for (let r = 0; r < rayCount; r++) {
+            const rayAngle = (Math.PI * 2 * r) / rayCount;
+            ctx.save();
+            ctx.rotate(rayAngle);
+            const rayGrad = ctx.createLinearGradient(0, 0, maxDim, 0);
+            rayGrad.addColorStop(0, `rgba(79, 209, 197, ${bloomEffect.coronaRayAlpha.toFixed(3)})`);
+            rayGrad.addColorStop(0.5, `rgba(104, 211, 145, ${(bloomEffect.coronaRayAlpha * 0.41).toFixed(3)})`);
+            rayGrad.addColorStop(1, 'rgba(9, 21, 16, 0)');
+            ctx.fillStyle = rayGrad;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(maxDim, -42);
+            ctx.lineTo(maxDim, 42);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+          }
         }
 
         ctx.restore();
@@ -2434,6 +2444,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
           sanctuaryBloomActive: bloomEffect.isTriggered,
           sanctuaryBloomRotationDeg: bloomEffect.cameraRotationDeg,
           sanctuaryBloomSaturation: bloomEffect.bioluminescenceSaturation,
+          sanctuaryBloomIntensityPct: bloomEffect.userIntensityPct,
         });
       }
     };

@@ -23,6 +23,9 @@ import {
   computeZenModeHudState,
   DAILY_HABIT_TRACKER_STORAGE_KEY,
   SANCTUARY_BLOOM_STORAGE_KEY,
+  SANCTUARY_BLOOM_INTENSITY_STORAGE_KEY,
+  DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT,
+  clampSanctuaryBloomIntensityPct,
   syncDailyHabitTrackerWithStreak,
   toggleDailyHabitExercise,
   type DailyHabitExerciseId,
@@ -153,6 +156,30 @@ export default function App() {
       }
     }
     return false;
+  });
+  const [sanctuaryBloomIntensityPct, setSanctuaryBloomIntensityPct] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const rawDirect = window.localStorage.getItem(SANCTUARY_BLOOM_INTENSITY_STORAGE_KEY);
+        if (rawDirect !== null && rawDirect !== '') {
+          return clampSanctuaryBloomIntensityPct(Number(rawDirect), DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT);
+        }
+        const rawObj = window.localStorage.getItem(SANCTUARY_BLOOM_STORAGE_KEY);
+        if (rawObj) {
+          const parsed = JSON.parse(rawObj);
+          if (typeof parsed?.bloomIntensityPct === 'number') {
+            return clampSanctuaryBloomIntensityPct(parsed.bloomIntensityPct, DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT);
+          }
+        }
+        window.localStorage.setItem(
+          SANCTUARY_BLOOM_INTENSITY_STORAGE_KEY,
+          String(DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT)
+        );
+      } catch {
+        // Ignore storage errors
+      }
+    }
+    return DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT;
   });
   const [activeProtocol, setActiveProtocol] = useState<ProtocolId>('ufov_forage');
   const [isMuted, setIsMuted] = useState<boolean>(false);
@@ -722,7 +749,10 @@ export default function App() {
           try {
             window.localStorage.setItem(
               SANCTUARY_BLOOM_STORAGE_KEY,
-              JSON.stringify({ completedStagesCount: SANCTUARY_STAGES.length })
+              JSON.stringify({
+                completedStagesCount: SANCTUARY_STAGES.length,
+                bloomIntensityPct: sanctuaryBloomIntensityPct,
+              })
             );
           } catch {
             // Ignore storage errors
@@ -731,6 +761,28 @@ export default function App() {
       }
       return next;
     });
+  };
+
+  const handleChangeBloomIntensity = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const nextPct = clampSanctuaryBloomIntensityPct(
+      Number(e.target.value),
+      DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT
+    );
+    setSanctuaryBloomIntensityPct(nextPct);
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(SANCTUARY_BLOOM_INTENSITY_STORAGE_KEY, String(nextPct));
+        window.localStorage.setItem(
+          SANCTUARY_BLOOM_STORAGE_KEY,
+          JSON.stringify({
+            completedStagesCount,
+            bloomIntensityPct: nextPct,
+          })
+        );
+      } catch {
+        // Ignore storage errors
+      }
+    }
   };
 
   // Bind [Z] keyboard shortcut during active play to toggle Zen Mode, and [B] for Sanctuary Bloom
@@ -805,6 +857,7 @@ export default function App() {
         isZenMode={isZenMode}
         completedStagesCount={completedStagesCount}
         isSanctuaryBloomActive={isSanctuaryBloomActive}
+        sanctuaryBloomIntensityPct={sanctuaryBloomIntensityPct}
       />
 
       {/* 2. TITLE SCREEN OVERLAY (30%-40% negative space left column over live world camera pan) */}
@@ -1258,7 +1311,7 @@ export default function App() {
                     <span>SANCTUARY BLOOM · 4/4</span>
                   </div>
                   <div className="text-xs font-mono font-bold text-[#4FD1C5] tabular-nums hud-text-stroke mt-0.5">
-                    100% BIOLUM · ORBIT {Math.round(hud.sanctuaryBloomRotationDeg ?? 0)}°
+                    {sanctuaryBloomIntensityPct}% BIOLUM · ORBIT {Math.round(hud.sanctuaryBloomRotationDeg ?? 0)}°
                   </div>
                 </div>
               )}
@@ -1330,7 +1383,7 @@ export default function App() {
                 {/* Sanctuary Atmosphere Switcher (Forest / Rain / Meadow) */}
                 <div
                   data-testid="hud-atmosphere-selector"
-                  className="hidden sm:flex items-center gap-1 p-0.5 rounded-lg bg-[#0D1F18] border border-[#233D32]"
+                  className="hidden 2xl:flex items-center gap-1 p-0.5 rounded-lg bg-[#0D1F18] border border-[#233D32]"
                   title={`Sanctuary Atmosphere: ${activeAtmosphere.label} — ${activeAtmosphere.subtitle}`}
                 >
                   {SANCTUARY_ATMOSPHERES.map((atm) => {
@@ -1379,27 +1432,67 @@ export default function App() {
                   <span>{isZenMode ? 'Zen: ON' : 'Zen [Z]'}</span>
                 </button>
 
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  data-testid="toggle-sanctuary-bloom-btn"
-                  aria-pressed={isSanctuaryBloomActive}
-                  aria-label="Toggle 4-Stage Sanctuary Bloom Post-Processing & Orbital Camera [B]"
-                  onClick={handleToggleSanctuaryBloom}
-                  className={`px-2.5 h-9 flex items-center gap-1.5 rounded-lg text-[10px] font-mono font-semibold border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                {/* Sanctuary Bloom Toggle + Bioluminescence Intensity Slider Control */}
+                <div
+                  data-testid="hud-sanctuary-bloom-section"
+                  className={`flex items-center gap-2 px-2 h-9 rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
                     isSanctuaryBloomActive
-                      ? 'bg-[#201A3A] text-[#B794F4] border-[#B794F4] shadow-md'
-                      : 'bg-[#132A21] text-[#A3B8B0] hover:text-[#F4EFE6] border-[#2C4C3E]'
+                      ? 'bg-[#201A3A] border-[#B794F4] shadow-md'
+                      : 'bg-[#132A21] border-[#2C4C3E]'
                   }`}
-                  title="Sanctuary Bloom [B] — 4-Stage Full-Canvas Bioluminescence Saturation & Slow Orbital Camera Rotation"
                 >
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      isSanctuaryBloomActive ? 'bg-[#B794F4]' : 'bg-[#526B61]'
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    data-testid="toggle-sanctuary-bloom-btn"
+                    aria-pressed={isSanctuaryBloomActive}
+                    aria-label="Toggle 4-Stage Sanctuary Bloom Post-Processing & Orbital Camera [B]"
+                    onClick={handleToggleSanctuaryBloom}
+                    className={`flex items-center gap-1.5 text-[10px] font-mono font-semibold transition-colors cursor-pointer ${
+                      isSanctuaryBloomActive
+                        ? 'text-[#B794F4]'
+                        : 'text-[#A3B8B0] hover:text-[#F4EFE6]'
                     }`}
-                  />
-                  <span>{isSanctuaryBloomActive ? 'Bloom: ON' : 'Bloom [B]'}</span>
-                </button>
+                    title="Sanctuary Bloom [B] — 4-Stage Full-Canvas Bioluminescence Saturation & Slow Orbital Camera Rotation"
+                  >
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        isSanctuaryBloomActive ? 'bg-[#B794F4]' : 'bg-[#526B61]'
+                      }`}
+                    />
+                    <span>{isSanctuaryBloomActive ? 'Bloom: ON' : 'Bloom [B]'}</span>
+                  </button>
+
+                  <div
+                    className="flex items-center gap-1.5 pl-2 border-l border-[#2C4C3E]"
+                    title={`Sanctuary Bloom Bioluminescence Intensity: ${sanctuaryBloomIntensityPct}% (Persisted in localStorage)`}
+                  >
+                    <label
+                      htmlFor="sanctuary-bloom-intensity-slider"
+                      className="sr-only"
+                    >
+                      Sanctuary Bloom Bioluminescence Intensity
+                    </label>
+                    <input
+                      id="sanctuary-bloom-intensity-slider"
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={sanctuaryBloomIntensityPct}
+                      onChange={handleChangeBloomIntensity}
+                      data-testid="sanctuary-bloom-intensity-slider"
+                      aria-label="Sanctuary Bloom Bioluminescence Intensity"
+                      className="w-14 h-1.5 accent-[#B794F4] bg-[#0B1914] rounded-lg cursor-pointer"
+                    />
+                    <span
+                      data-testid="sanctuary-bloom-intensity-value"
+                      className="text-[10px] font-mono font-semibold text-[#4FD1C5] tabular-nums w-7 text-right"
+                    >
+                      {sanctuaryBloomIntensityPct}%
+                    </span>
+                  </div>
+                </div>
 
                 <button
                   type="button"
