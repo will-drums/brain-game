@@ -43,8 +43,86 @@ import {
   computeRunningFiveSessionHrvAverage,
   createInitialChimeHistoryForNBack,
   computeAdaptiveDifficultyScaling,
+  computeLocalNBackSuccessRate,
+  computeTreeFloweringState,
   type ChimeSymbol,
 } from './rules';
+
+test('computeTreeFloweringState produces staggered particle-based flowering waves and incrementally grows bioluminescent tendrils based on local N-Back success rate', () => {
+  // Baseline when 0 attempts: 0.75 (75%)
+  assert.equal(computeLocalNBackSuccessRate(0, 0), 0.75);
+  // Clamped floor at 0.25 (25%) when accuracy is very low
+  assert.equal(computeLocalNBackSuccessRate(0, 5), 0.25);
+  // Exact accuracy when 3/4 (75%) or 4/4 (100%)
+  assert.equal(computeLocalNBackSuccessRate(3, 4), 0.75);
+  assert.equal(computeLocalNBackSuccessRate(4, 4), 1.0);
+
+  // Dormant tree does not flower or grow tendrils
+  const dormant = computeTreeFloweringState({
+    isGrafted: false,
+    treeOrderIndex: 0,
+    elapsedSinceGraftSec: 2.0,
+    nBackHits: 3,
+    nBackAttempts: 3,
+  });
+  assert.equal(dormant.isFlowering, false);
+  assert.equal(dormant.tendrilCount, 0);
+  assert.equal(dormant.tendrils.length, 0);
+
+  // Staggered timing: Tree index 2 has staggerDelaySec = 0.52s
+  const staggeredEarly = computeTreeFloweringState({
+    isGrafted: true,
+    treeOrderIndex: 2,
+    elapsedSinceGraftSec: 0.35, // before 0.52s stagger delay completes
+    nBackHits: 2,
+    nBackAttempts: 2,
+  });
+  assert.equal(staggeredEarly.staggerDelaySec, 0.52);
+  assert.equal(staggeredEarly.floweringProgress, 0);
+  assert.equal(staggeredEarly.staggeredParticleBurstTarget, 1);
+
+  // Incremental tendril growth based on local N-Back success rate:
+  // Low N-Back success rate (1/4 = 25%) -> 6 tendrils
+  const lowNBackTree = computeTreeFloweringState({
+    isGrafted: true,
+    treeOrderIndex: 0,
+    elapsedSinceGraftSec: 2.2,
+    nBackHits: 1,
+    nBackAttempts: 4,
+    isSanctuaryBloomActive: false,
+    bloomIntensityPct: 100,
+  });
+  // High N-Back success rate (4/4 = 100%) -> 12 tendrils (or 14 with Sanctuary Bloom active)
+  const highNBackTree = computeTreeFloweringState({
+    isGrafted: true,
+    treeOrderIndex: 0,
+    elapsedSinceGraftSec: 2.2,
+    nBackHits: 4,
+    nBackAttempts: 4,
+    isSanctuaryBloomActive: false,
+    bloomIntensityPct: 100,
+  });
+  const bloomBoostedTree = computeTreeFloweringState({
+    isGrafted: true,
+    treeOrderIndex: 0,
+    elapsedSinceGraftSec: 2.2,
+    nBackHits: 4,
+    nBackAttempts: 4,
+    isSanctuaryBloomActive: true,
+    bloomIntensityPct: 100,
+  });
+
+  assert.equal(lowNBackTree.localNBackSuccessPct, 25);
+  assert.equal(lowNBackTree.tendrilCount, 6);
+  assert.equal(highNBackTree.localNBackSuccessPct, 100);
+  assert.equal(highNBackTree.tendrilCount, 12);
+  assert.equal(bloomBoostedTree.tendrilCount, 14);
+  assert.ok(highNBackTree.maxTendrilReachPx > lowNBackTree.maxTendrilReachPx);
+  assert.ok(bloomBoostedTree.maxTendrilReachPx > highNBackTree.maxTendrilReachPx);
+  assert.ok(highNBackTree.tendrilLuminanceAlpha > lowNBackTree.tendrilLuminanceAlpha);
+  assert.equal(highNBackTree.staggeredParticleBurstTarget, 3);
+  assert.ok(highNBackTree.tendrils.some((t) => t.hasSecondaryFork));
+});
 
 test('computeAdaptiveDifficultyScaling dynamically adjusts N-Back difficulty and UFOV window timing from the running 5-session HRV coherence average', () => {
   // Default 10-session seed last 5 scores: [73, 79, 84, 88, 92] -> avg = 83%

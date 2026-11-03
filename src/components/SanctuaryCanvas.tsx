@@ -13,6 +13,8 @@ import {
   computeSanctuaryBloomEffect,
   computeAdaptiveDifficultyScaling,
   createInitialChimeHistoryForNBack,
+  computeLocalNBackSuccessRate,
+  computeTreeFloweringState,
   SANCTUARY_STAGES,
   CHIME_SYMBOLS,
   type HrvSessionRecord,
@@ -68,6 +70,9 @@ export interface HudSnapshot {
   runningFiveSessionHrvAvg?: number;
   adaptiveScalingTierLabel?: string;
   hrvUfovAdjustmentMs?: number;
+  localNBackSuccessPct?: number;
+  treeTendrilCount?: number;
+  floweringTreesCount?: number;
 }
 
 interface SanctuaryCanvasProps {
@@ -101,6 +106,9 @@ interface NeuralTree {
   y: number;
   grafted: boolean;
   graftAnim: number; // 0..1
+  graftOrderIndex: number; // 0, 1, 2, 3... order in which the tree was grafted
+  elapsedSinceGraftSec: number; // seconds elapsed for staggered flowering cascade
+  staggerBurstsFired: number; // 0..3 staggered particle waves emitted
   canopyPhase: number;
   connectedToId: number | null;
 }
@@ -669,6 +677,9 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         y: pos.y,
         grafted: false,
         graftAnim: 0,
+        graftOrderIndex: idx,
+        elapsedSinceGraftSec: 0,
+        staggerBurstsFired: 0,
         canopyPhase: idx * 1.1,
         connectedToId: 0, // Connects to central Heart-Tree (0, -40)
       }));
@@ -974,7 +985,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       }
     };
 
-    const triggerDendriteGraft = () => {
+    const triggerDendriteGraft = (allowRemoteGraft = false) => {
       const stage = SANCTUARY_STAGES[stateRef.current.stageIndex] || SANCTUARY_STAGES[0];
       // Find nearest ungrafted tree
       let nearestTree: NeuralTree | null = null;
@@ -991,10 +1002,16 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       if (!nearestTree) return;
 
       if (nearestDist > 165) {
-        statusBannerText = `Move closer to a Dormant Neural Tree to graft a BDNF Synapse Bridge!`;
-        statusBannerTimer = 2.8;
-        soundEngine.playLightNote(330, 0.15);
-        return;
+        if (allowRemoteGraft && player.nectar >= stage.nectarCostPerTree) {
+          // Smoothly guide player to the tree when triggered from HUD button
+          player.x = nearestTree.x * 0.72;
+          player.y = nearestTree.y * 0.72;
+        } else {
+          statusBannerText = `Move closer to a Dormant Neural Tree to graft a BDNF Synapse Bridge!`;
+          statusBannerTimer = 2.8;
+          soundEngine.playLightNote(330, 0.15);
+          return;
+        }
       }
 
       if (player.nectar < stage.nectarCostPerTree) {
@@ -1004,10 +1021,13 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         return;
       }
 
-      // Perform BDNF Synaptogenesis Graft!
+      // Perform BDNF Synaptogenesis Graft & Staggered Flowering Sequence!
       player.nectar -= stage.nectarCostPerTree;
       nearestTree.grafted = true;
       nearestTree.graftAnim = 0.01;
+      nearestTree.graftOrderIndex = treesGrafted;
+      nearestTree.elapsedSinceGraftSec = 0.02;
+      nearestTree.staggerBurstsFired = 1;
       treesGrafted += 1;
       consecutiveCognitiveHits += 1;
       hitstopTimer = 0.065;
@@ -1015,15 +1035,30 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       player.scaleX = 0.82;
       player.scaleY = 1.24;
       soundEngine.playHarmonicChord('graft');
-      spawnParticles(nearestTree.x, nearestTree.y, 28, 3, 90, 260, 3.5, 7.5, 0.95);
+
+      const initFlowerState = computeTreeFloweringState({
+        isGrafted: true,
+        treeOrderIndex: nearestTree.graftOrderIndex,
+        elapsedSinceGraftSec: 1.8,
+        nBackHits,
+        nBackAttempts,
+        isSanctuaryBloomActive:
+          (stateRef.current.completedStagesCount ?? 0) >= SANCTUARY_STAGES.length ||
+          Boolean(stateRef.current.isSanctuaryBloomActive),
+        bloomIntensityPct: stateRef.current.sanctuaryBloomIntensityPct ?? 100,
+      });
+
+      // Wave 1 flowering particle burst (lavender + cyan + gold petals)
+      spawnParticles(nearestTree.x, nearestTree.y, 22, 3, 90, 260, 3.5, 7.5, 0.95);
+      spawnParticles(nearestTree.x, nearestTree.y, 14, 1, 60, 190, 2.5, 6.0, 0.85);
       spawnFloatingCallout(
         nearestTree.x,
         nearestTree.y,
-        `✦ BDNF SYNAPSE GRAFTED (${treesGrafted}/${stage.targetTreesGrafted})`,
+        `✦ FLOWERING +${initFlowerState.tendrilCount} TENDRILS (${initFlowerState.localNBackSuccessPct}% N-BACK)`,
         '#B794F4'
       );
-      statusBannerText = `Hippocampal Dendrite Grafted (${treesGrafted}/${stage.targetTreesGrafted})! Neural Pathway Illuminated`;
-      statusBannerTimer = 4.0;
+      statusBannerText = `Hippocampal Tree Grafted (${treesGrafted}/${stage.targetTreesGrafted})! Flowering ${initFlowerState.tendrilCount} Bioluminescent Tendrils (${initFlowerState.localNBackSuccessPct}% N-Back)`;
+      statusBannerTimer = 4.2;
 
       // Notify parent so lifetime Cognitive Milestone progress increments immediately
       if (!stateRef.current.isDemoMode) {
@@ -1199,7 +1234,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         if (currentGameState === 'playing') {
           if (act === 'pulse') triggerLanternPulseAndForage();
           if (act === 'chime') triggerNBackEchoChime();
-          if (act === 'graft') triggerDendriteGraft();
+          if (act === 'graft') triggerDendriteGraft(true);
         }
       }
 
@@ -1568,11 +1603,49 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
             }
           }
 
-          // Update Neural Trees graft animation
+          // Update Neural Trees graft animation & Staggered Particle-Based Flowering Waves
           for (const tree of trees) {
             tree.canopyPhase += simDt * 1.4;
             if (tree.grafted && tree.graftAnim < 1) {
               tree.graftAnim = Math.min(1, tree.graftAnim + simDt * 1.8);
+            }
+            const isFloweringEligible = tree.grafted || isBloomForceActive;
+            if (isFloweringEligible) {
+              tree.elapsedSinceGraftSec += simDt;
+              const fState = computeTreeFloweringState({
+                isGrafted: true,
+                treeOrderIndex: tree.grafted ? tree.graftOrderIndex : tree.id - 1,
+                elapsedSinceGraftSec: tree.elapsedSinceGraftSec,
+                nBackHits,
+                nBackAttempts,
+                isSanctuaryBloomActive: isBloomForceActive,
+                bloomIntensityPct: stateRef.current.sanctuaryBloomIntensityPct ?? 100,
+              });
+
+              // Fire staggered flowering particle burst waves (Waves 2 and 3 after staggerDelaySec)
+              while (tree.staggerBurstsFired < fState.staggeredParticleBurstTarget) {
+                tree.staggerBurstsFired += 1;
+                const waveColorIdx = tree.staggerBurstsFired === 2 ? 1 : 0; // Cyan wave 2, Gold wave 3
+                for (let t = 0; t < fState.tendrils.length; t += 2) {
+                  const tendril = fState.tendrils[t];
+                  const tx = tree.x + Math.cos(tendril.baseAngleRad) * (26 + tendril.reachPx * 0.85);
+                  const ty = tree.y + Math.sin(tendril.baseAngleRad) * (26 + tendril.reachPx * 0.85);
+                  spawnParticles(tx, ty, 3, waveColorIdx, 28, 95, 2.2, 4.8, 0.78);
+                }
+              }
+
+              // Continuous gentle bioluminescent pollen shimmer from flowering tendril tips
+              if (fState.floweringProgress > 0.35 && Math.random() < simDt * (2.2 + fState.localNBackSuccessRate * 3.5)) {
+                const pick = fState.tendrils[Math.floor(Math.random() * fState.tendrils.length)];
+                if (pick) {
+                  const px = tree.x + Math.cos(pick.baseAngleRad) * (28 + pick.reachPx);
+                  const py = tree.y + Math.sin(pick.baseAngleRad) * (28 + pick.reachPx);
+                  spawnParticles(px, py, 1, pick.index % 4, 12, 38, 1.8, 3.6, 0.65);
+                }
+              }
+            } else {
+              tree.elapsedSinceGraftSec = 0;
+              tree.staggerBurstsFired = 0;
             }
           }
 
@@ -1859,19 +1932,127 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       ctx.stroke();
       ctx.restore();
 
-      // 3. Render Neural Trees (Dormant vs Grafted Bioluminescent Canopy with Milestone Flora Colors)
+      // 3. Render Neural Trees (Dormant vs Grafted Bioluminescent Canopy + Staggered Particle Flowering & N-Back Tendrils)
+      let activeFloweringTreesCount = 0;
+      const liveLocalNBackSuccessRate = computeLocalNBackSuccessRate(nBackHits, nBackAttempts);
+      const representativeFlowerState = computeTreeFloweringState({
+        isGrafted: true,
+        treeOrderIndex: 0,
+        elapsedSinceGraftSec: 2.5,
+        nBackHits,
+        nBackAttempts,
+        isSanctuaryBloomActive: bloomEffect.isTriggered,
+        bloomIntensityPct: bloomEffect.userIntensityPct,
+      });
+
       for (const tree of trees) {
         ctx.save();
         ctx.translate(tree.x, tree.y);
         const sway = Math.sin(tree.canopyPhase) * 3;
+        const isTreeFloweringActive = tree.grafted || bloomEffect.isTriggered;
+        const flowerState = computeTreeFloweringState({
+          isGrafted: isTreeFloweringActive,
+          treeOrderIndex: tree.grafted ? tree.graftOrderIndex : tree.id - 1,
+          elapsedSinceGraftSec: Math.max(tree.elapsedSinceGraftSec, bloomEffect.isTriggered ? stageElapsedSec : 0),
+          nBackHits,
+          nBackAttempts,
+          isSanctuaryBloomActive: bloomEffect.isTriggered,
+          bloomIntensityPct: bloomEffect.userIntensityPct,
+        });
+
+        if (flowerState.isFlowering) {
+          activeFloweringTreesCount += 1;
+
+          // Render Incremental Bioluminescent Tendrils & Staggered Flowering Blossoms (scaled by Local N-Back Success Rate)
+          for (const tendril of flowerState.tendrils) {
+            if (tendril.reachPx <= 2) continue;
+            const waveOffset = Math.sin(tree.canopyPhase * 1.35 + tendril.index * 0.9) * 0.14;
+            const startAngle = tendril.baseAngleRad;
+            const endAngle = tendril.baseAngleRad + tendril.curvatureRad + waveOffset;
+            const startR = 26;
+            const endR = 28 + tendril.reachPx;
+            const midR = (startR + endR) * 0.54;
+
+            const sx = sway + Math.cos(startAngle) * startR;
+            const sy = Math.sin(startAngle) * startR;
+            const cx1 = sway + Math.cos(startAngle + tendril.curvatureRad * 0.45) * midR;
+            const cy1 = Math.sin(startAngle + tendril.curvatureRad * 0.45) * midR;
+            const ex = sway + Math.cos(endAngle) * endR;
+            const ey = Math.sin(endAngle) * endR;
+
+            // Outer Bioluminescent Tendril Halo
+            ctx.save();
+            ctx.globalAlpha = flowerState.tendrilLuminanceAlpha * 0.42;
+            ctx.strokeStyle = tendril.tipColorHex;
+            ctx.lineWidth = 5.5;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(sx, sy);
+            ctx.quadraticCurveTo(cx1, cy1, ex, ey);
+            ctx.stroke();
+
+            // Inner Luminous Synaptic Tendril Core
+            ctx.globalAlpha = flowerState.tendrilLuminanceAlpha;
+            ctx.strokeStyle = aesthetic.myceliumBridgeHex;
+            ctx.lineWidth = 2.1;
+            ctx.beginPath();
+            ctx.moveTo(sx, sy);
+            ctx.quadraticCurveTo(cx1, cy1, ex, ey);
+            ctx.stroke();
+
+            // Secondary Bifurcating Tendril Fork (unlocked when N-Back success rate >= 70%)
+            if (tendril.hasSecondaryFork && tendril.reachPx > 18) {
+              const forkAngle = endAngle - tendril.curvatureRad * 1.15;
+              const fx = cx1 + Math.cos(forkAngle) * (tendril.reachPx * 0.46);
+              const fy = cy1 + Math.sin(forkAngle) * (tendril.reachPx * 0.46);
+              ctx.lineWidth = 1.5;
+              ctx.strokeStyle = tendril.tipColorHex;
+              ctx.beginPath();
+              ctx.moveTo(cx1, cy1);
+              ctx.lineTo(fx, fy);
+              ctx.stroke();
+
+              ctx.fillStyle = '#FFFDF9';
+              ctx.beginPath();
+              ctx.arc(fx, fy, 2.4 * tendril.blossomScale, 0, Math.PI * 2);
+              ctx.fill();
+            }
+
+            // Staggered Multi-Petal Synaptic Blossom at Tendril Tip
+            if (tendril.blossomScale > 0.1) {
+              const petalCount = flowerState.blossomPetalCount;
+              const petalDist = 4.2 * tendril.blossomScale;
+              const petalRadius = 2.4 * tendril.blossomScale;
+              ctx.fillStyle = tendril.tipColorHex;
+              for (let p = 0; p < petalCount; p++) {
+                const pa = endAngle + (Math.PI * 2 * p) / petalCount + tree.canopyPhase * 0.4;
+                ctx.beginPath();
+                ctx.arc(
+                  ex + Math.cos(pa) * petalDist,
+                  ey + Math.sin(pa) * petalDist,
+                  petalRadius,
+                  0,
+                  Math.PI * 2
+                );
+                ctx.fill();
+              }
+              // Starlight Nectar Core
+              ctx.fillStyle = '#FFFDF9';
+              ctx.beginPath();
+              ctx.arc(ex, ey, 2.2 * tendril.blossomScale, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.restore();
+          }
+        }
 
         if (tree.grafted) {
-          const glow = ctx.createRadialGradient(0, 0, 8, 0, 0, 95);
+          const glow = ctx.createRadialGradient(0, 0, 8, 0, 0, 108);
           glow.addColorStop(0, aesthetic.canopyGlowRgba);
           glow.addColorStop(1, 'rgba(104, 211, 145, 0)');
           ctx.fillStyle = glow;
           ctx.beginPath();
-          ctx.arc(0, 0, 95, 0, Math.PI * 2);
+          ctx.arc(0, 0, 108, 0, Math.PI * 2);
           ctx.fill();
 
           // Lush Restored Canopy with Milestone Aesthetic Palette
@@ -1887,13 +2068,28 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
           ctx.beginPath();
           ctx.arc(sway - 6, -6, 12, 0, Math.PI * 2);
           ctx.fill();
+
+          // Diegetic Readout of N-Back Bioluminescent Tendril Count on Grafted Tree
+          const labelText = `✦ ${flowerState.tendrilCount} TENDRILS · ${flowerState.localNBackSuccessPct}% N-BACK`;
+          ctx.font = '700 10px "JetBrains Mono", monospace';
+          ctx.textAlign = 'center';
+          ctx.strokeStyle = '#091510';
+          ctx.lineWidth = 3.5;
+          ctx.strokeText(labelText, sway, 46);
+          ctx.fillStyle = '#E6FFFA';
+          ctx.fillText(labelText, sway, 46);
         } else {
           // Dormant Neural Tree awaiting BDNF Graft
           const distToPlayer = Math.hypot(tree.x - player.x, tree.y - player.y);
           const canAfford = player.nectar >= stage.nectarCostPerTree;
 
           ctx.fillStyle = '#1E2824';
-          ctx.strokeStyle = canAfford && distToPlayer < 165 ? '#B794F4' : '#4A5568';
+          ctx.strokeStyle =
+            bloomEffect.isTriggered
+              ? '#4FD1C5'
+              : canAfford && distToPlayer < 165
+              ? '#B794F4'
+              : '#4A5568';
           ctx.lineWidth = canAfford && distToPlayer < 165 ? 3 : 2;
           ctx.beginPath();
           ctx.arc(0, 0, 28, 0, Math.PI * 2);
@@ -1909,10 +2105,22 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
               0,
               -38
             );
+          } else if (bloomEffect.isTriggered) {
+            const bloomLabel = `✦ ${flowerState.tendrilCount} TENDRILS · ${flowerState.localNBackSuccessPct}% N-BACK`;
+            ctx.font = '700 10px "JetBrains Mono", monospace';
+            ctx.textAlign = 'center';
+            ctx.strokeStyle = '#091510';
+            ctx.lineWidth = 3.5;
+            ctx.strokeText(bloomLabel, 0, 44);
+            ctx.fillStyle = '#E9D8FD';
+            ctx.fillText(bloomLabel, 0, 44);
           }
         }
         ctx.restore();
       }
+      canvas.dataset.localNbackSuccessPct = String(Math.round(liveLocalNBackSuccessRate * 100));
+      canvas.dataset.treeTendrilCount = String(representativeFlowerState.tendrilCount);
+      canvas.dataset.floweringTreesCount = String(activeFloweringTreesCount);
 
       // 4. Render Dew-Blooms & UFOV Sun-Dew Shrines
       for (const bloom of blooms) {
@@ -2515,6 +2723,9 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
           runningFiveSessionHrvAvg: renderAdaptiveScaling.runningFiveSessionHrvAvg,
           adaptiveScalingTierLabel: renderAdaptiveScaling.tierLabel,
           hrvUfovAdjustmentMs: renderAdaptiveScaling.hrvUfovAdjustmentMs,
+          localNBackSuccessPct: Math.round(liveLocalNBackSuccessRate * 100),
+          treeTendrilCount: representativeFlowerState.tendrilCount,
+          floweringTreesCount: activeFloweringTreesCount,
         });
       }
     };

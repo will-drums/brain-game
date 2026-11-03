@@ -2041,6 +2041,192 @@ export function computeAdaptiveDifficultyScaling(params: {
   };
 }
 
+/**
+ * Sanctuary Bloom Enhancement: Staggered Particle-Based Tree 'Flowering' Animation
+ * & N-Back Success-Rate Bioluminescent Tendril Growth Engine.
+ *
+ * Each grafted tree undergoes a staggered, multi-wave particle flowering sequence
+ * and incrementally grows bioluminescent dendritic tendrils whose count, reach,
+ * branching, and blossom luminance scale with the local N-Back working-memory success rate.
+ */
+export function computeLocalNBackSuccessRate(
+  nBackHits: number,
+  nBackAttempts: number,
+  defaultBaselineRate = 0.75
+): number {
+  const safeAttempts = Math.max(0, Math.floor(Number(nBackAttempts) || 0));
+  const safeHits = Math.max(0, Math.min(safeAttempts, Math.floor(Number(nBackHits) || 0)));
+  if (safeAttempts === 0) {
+    return Math.max(0.25, Math.min(1, Math.round(defaultBaselineRate * 100) / 100));
+  }
+  const rawRate = safeHits / safeAttempts;
+  return Math.max(0.25, Math.min(1, Math.round(rawRate * 100) / 100));
+}
+
+export interface TreeFloweringTendrilSpec {
+  index: number;
+  baseAngleRad: number;
+  reachPx: number;
+  curvatureRad: number;
+  hasSecondaryFork: boolean;
+  blossomScale: number; // 0.0 .. 1.25
+  tipColorHex: string;
+}
+
+export interface TreeFloweringState {
+  isFlowering: boolean;
+  treeOrderIndex: number;
+  staggerDelaySec: number;
+  effectiveFlowerAgeSec: number;
+  floweringProgress: number; // 0.0 .. 1.0 (smooth ease-out after staggerDelaySec)
+  localNBackSuccessRate: number; // 0.25 .. 1.0
+  localNBackSuccessPct: number; // 25 .. 100
+  tendrilCount: number; // 6 .. 14 tendrils based on N-Back success rate & Sanctuary Bloom
+  maxTendrilReachPx: number; // 36 .. 92 px
+  tendrilLuminanceAlpha: number; // 0.32 .. 0.96
+  blossomPetalCount: number; // 5 or 6
+  staggeredParticleBurstTarget: number; // 1 .. 3 particle burst waves triggered so far
+  particleCountPerWave: number; // 10 .. 24 particles per staggered flowering wave
+  tendrils: TreeFloweringTendrilSpec[];
+}
+
+const FLOWERING_TIP_PALETTE = ['#4FD1C5', '#F2B84B', '#B794F4', '#68D391', '#F6E05E', '#76E4F7'];
+
+export function computeTreeFloweringState(params: {
+  isGrafted: boolean;
+  treeOrderIndex: number;
+  elapsedSinceGraftSec: number;
+  nBackHits: number;
+  nBackAttempts: number;
+  localNBackSuccessRateOverride?: number | null;
+  isSanctuaryBloomActive?: boolean;
+  bloomIntensityPct?: number;
+}): TreeFloweringState {
+  const treeOrderIndex = Math.max(0, Math.floor(Number(params.treeOrderIndex) || 0));
+  // Stagger each tree's flowering cascade by 0.26s per graft index so trees bloom in a rhythmic wave
+  const staggerDelaySec = Math.round(treeOrderIndex * 0.26 * 100) / 100;
+
+  const hasRateOverride =
+    typeof params.localNBackSuccessRateOverride === 'number' &&
+    Number.isFinite(params.localNBackSuccessRateOverride);
+  const localNBackSuccessRate = hasRateOverride
+    ? Math.max(0.25, Math.min(1, Math.round(params.localNBackSuccessRateOverride! * 100) / 100))
+    : computeLocalNBackSuccessRate(params.nBackHits, params.nBackAttempts);
+  const localNBackSuccessPct = Math.round(localNBackSuccessRate * 100);
+
+  const userIntensityPct = clampSanctuaryBloomIntensityPct(
+    params.bloomIntensityPct,
+    DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT
+  );
+  const bloomScale = Math.max(0.35, userIntensityPct / 100);
+  const bloomBonus = params.isSanctuaryBloomActive ? 1 : 0;
+
+  if (!params.isGrafted) {
+    return {
+      isFlowering: false,
+      treeOrderIndex,
+      staggerDelaySec,
+      effectiveFlowerAgeSec: 0,
+      floweringProgress: 0,
+      localNBackSuccessRate,
+      localNBackSuccessPct,
+      tendrilCount: 0,
+      maxTendrilReachPx: 0,
+      tendrilLuminanceAlpha: 0,
+      blossomPetalCount: 5,
+      staggeredParticleBurstTarget: 0,
+      particleCountPerWave: 0,
+      tendrils: [],
+    };
+  }
+
+  const rawElapsed = Math.max(0, Number(params.elapsedSinceGraftSec) || 0);
+  const effectiveFlowerAgeSec = Math.max(0, rawElapsed - staggerDelaySec);
+  const rawLinearProgress = Math.min(1, effectiveFlowerAgeSec / 1.65);
+  // Cubic ease-out for organic botanical unfurling
+  const floweringProgress =
+    Math.round((1 - Math.pow(1 - rawLinearProgress, 3)) * 1000) / 1000;
+
+  // Tendril count scales directly with local N-Back success rate (4 base + up to 8 from N-Back accuracy + 2 when Sanctuary Bloom is active)
+  const tendrilCount = Math.max(
+    5,
+    Math.min(
+      14,
+      Math.round(4 + localNBackSuccessRate * 8 + bloomBonus * 2)
+    )
+  );
+
+  const baseReach = 34 + localNBackSuccessRate * 38 + bloomBonus * 14;
+  const maxTendrilReachPx =
+    Math.round(baseReach * (0.25 + 0.75 * floweringProgress) * (0.7 + 0.3 * bloomScale) * 10) / 10;
+
+  const tendrilLuminanceAlpha =
+    Math.round(
+      Math.min(
+        0.96,
+        (0.32 + localNBackSuccessRate * 0.48 + bloomBonus * 0.14) *
+          floweringProgress *
+          bloomScale
+      ) * 1000
+    ) / 1000;
+
+  // Staggered particle burst waves: Wave 1 on graft, Wave 2 after staggerDelaySec + 0.18s, Wave 3 at full blossom unfurl
+  let staggeredParticleBurstTarget = 1;
+  if (effectiveFlowerAgeSec >= 0.95) {
+    staggeredParticleBurstTarget = 3;
+  } else if (effectiveFlowerAgeSec >= 0.18) {
+    staggeredParticleBurstTarget = 2;
+  }
+
+  const particleCountPerWave = Math.round(
+    (10 + localNBackSuccessRate * 10 + bloomBonus * 4) * (0.6 + 0.4 * bloomScale)
+  );
+
+  const tendrils: TreeFloweringTendrilSpec[] = [];
+  for (let i = 0; i < tendrilCount; i++) {
+    // Stagger each individual tendril slightly around the crown
+    const tendrilStagger = Math.max(0, Math.min(1, (floweringProgress * 1.25) - (i / tendrilCount) * 0.25));
+    const baseAngleRad =
+      (Math.PI * 2 * i) / tendrilCount + (treeOrderIndex % 2 === 0 ? 0.18 : -0.18);
+    const lengthVariation = 0.84 + ((i * 7 + treeOrderIndex * 3) % 5) * 0.08;
+    const reachPx = Math.round(maxTendrilReachPx * lengthVariation * tendrilStagger * 10) / 10;
+    const curvatureRad = (i % 2 === 0 ? 1 : -1) * (0.28 + (i % 3) * 0.09);
+    const hasSecondaryFork = localNBackSuccessRate >= 0.7 && i % 2 === 0;
+    const blossomScale =
+      Math.round(tendrilStagger * (0.75 + localNBackSuccessRate * 0.45) * 100) / 100;
+    const tipColorHex =
+      FLOWERING_TIP_PALETTE[(i + treeOrderIndex) % FLOWERING_TIP_PALETTE.length];
+
+    tendrils.push({
+      index: i,
+      baseAngleRad,
+      reachPx,
+      curvatureRad,
+      hasSecondaryFork,
+      blossomScale,
+      tipColorHex,
+    });
+  }
+
+  return {
+    isFlowering: floweringProgress > 0,
+    treeOrderIndex,
+    staggerDelaySec,
+    effectiveFlowerAgeSec: Math.round(effectiveFlowerAgeSec * 100) / 100,
+    floweringProgress,
+    localNBackSuccessRate,
+    localNBackSuccessPct,
+    tendrilCount,
+    maxTendrilReachPx,
+    tendrilLuminanceAlpha,
+    blossomPetalCount: localNBackSuccessRate >= 0.85 ? 6 : 5,
+    staggeredParticleBurstTarget,
+    particleCountPerWave,
+    tendrils,
+  };
+}
+
+
 
 
 

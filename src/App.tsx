@@ -1298,9 +1298,9 @@ export default function App() {
               {/* Calm Vitality Pips (3 readable states: Full, Damaged, Hollow) */}
               <div className="whitespace-nowrap">
                 <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
-                  CALM VITALITY
+                  VITALITY
                 </div>
-                <div className="flex items-center gap-1 mt-1" aria-label={`Calm Vitality: ${hud.calmVitality} of ${hud.maxVitality}`}>
+                <div className="flex items-center gap-0.5 mt-1" aria-label={`Calm Vitality: ${hud.calmVitality} of ${hud.maxVitality}`}>
                   {Array.from({ length: hud.maxVitality }).map((_, i) => {
                     const isFull = i < hud.calmVitality;
                     const isCracked = i === hud.calmVitality && hud.calmVitality < hud.maxVitality;
@@ -1308,7 +1308,7 @@ export default function App() {
                       <svg
                         key={i}
                         viewBox="0 0 24 24"
-                        className="w-4 h-4"
+                        className="w-3.5 h-3.5"
                         aria-hidden="true"
                       >
                         <path
@@ -1333,29 +1333,44 @@ export default function App() {
 
               {/* BDNF Nectar Counter (Hidden in Zen Mode) */}
               {zenHud.showNectar && (
-                <div data-testid="hud-nectar" className="pl-2.5 border-l border-[#233D32] whitespace-nowrap">
+                <div data-testid="hud-nectar" className="pl-2 border-l border-[#233D32] whitespace-nowrap">
                   <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
-                    BDNF NECTAR
+                    NECTAR
                   </div>
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-xl font-mono font-bold text-[#F2B84B] tabular-nums hud-text-stroke">
+                  <div className="flex items-baseline gap-0.5">
+                    <span className="text-lg font-mono font-bold text-[#F2B84B] tabular-nums hud-text-stroke">
                       {Math.round(hud.nectar)}
                     </span>
-                    <span className="text-[11px] font-mono text-[#A3B8B0] tabular-nums">
+                    <span className="text-[10px] font-mono text-[#A3B8B0] tabular-nums">
                       /{hud.nectarCostPerTree}
                     </span>
                   </div>
                 </div>
               )}
 
-              {/* Hippocampal Trees Grafted (Hidden in Zen Mode) */}
+              {/* Hippocampal Trees Grafted + Staggered Flowering Tendrils (Hidden in Zen Mode) */}
               {zenHud.showTreesGrafted && (
-                <div data-testid="hud-trees-grafted" className="pl-2.5 border-l border-[#233D32] whitespace-nowrap">
-                  <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
-                    TREES GRAFTED
+                <div
+                  data-testid="hud-trees-grafted"
+                  data-tree-tendril-count={hud.treeTendrilCount ?? 10}
+                  data-local-nback-success-pct={hud.localNBackSuccessPct ?? 75}
+                  data-flowering-trees-count={hud.floweringTreesCount ?? hud.treesGrafted}
+                  className="pl-2 border-l border-[#233D32] whitespace-nowrap"
+                  title={`Hippocampal Trees Grafted: ${hud.treesGrafted}/${hud.targetTrees} · Flowering Tendrils per Tree: ${hud.treeTendrilCount ?? 10} (${hud.localNBackSuccessPct ?? 75}% N-Back Success Rate)`}
+                >
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0] flex items-center gap-1">
+                    <span>TREES</span>
+                    {(hud.treesGrafted > 0 || isSanctuaryBloomActive || hud.sanctuaryBloomActive) && (
+                      <span
+                        data-testid="hud-tendril-count-pill"
+                        className="px-1 py-0.2 rounded bg-[#1E1636] text-[#B794F4] text-[9px] border border-[#B794F4]/40 tabular-nums"
+                      >
+                        {hud.treeTendrilCount ?? 10}✦
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-baseline gap-1">
-                    <span className="text-xl font-mono font-bold text-[#B794F4] tabular-nums hud-text-stroke">
+                    <span className="text-lg font-mono font-bold text-[#B794F4] tabular-nums hud-text-stroke">
                       {hud.treesGrafted}/{hud.targetTrees}
                     </span>
                   </div>
@@ -1366,12 +1381,12 @@ export default function App() {
               {zenHud.showRejuvenation && (
                 <div
                   data-testid="hud-rejuvenation"
-                  className="pl-2.5 border-l border-[#233D32] whitespace-nowrap hidden 2xl:block"
+                  className="pl-2 border-l border-[#233D32] whitespace-nowrap hidden 2xl:block"
                 >
                   <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
                     REJUVENATION
                   </div>
-                  <div className="text-xl font-mono font-bold text-[#4FD1C5] tabular-nums hud-text-stroke">
+                  <div className="text-lg font-mono font-bold text-[#4FD1C5] tabular-nums hud-text-stroke">
                     {Math.round(hud.rejuvenationScore)}
                   </div>
                 </div>
@@ -1387,7 +1402,7 @@ export default function App() {
                   onClick={triggerManualFlowPulseSurge}
                   role="button"
                   tabIndex={-1}
-                  className="relative pl-2.5 pr-2 py-0.5 border-l border-[#233D32] hidden lg:block whitespace-nowrap rounded-r-xl transition-transform duration-150 cursor-pointer"
+                  className="relative pl-2 pr-1.5 py-0.5 border-l border-[#233D32] hidden lg:block whitespace-nowrap rounded-r-xl transition-transform duration-150 cursor-pointer"
                   style={{
                     transform: `scale(${flowPulseState.scaleFactor})`,
                     boxShadow:
@@ -1425,15 +1440,15 @@ export default function App() {
                             : undefined,
                       }}
                     />
-                    <span>SYNAPTIC FLOW</span>
+                    <span>FLOW</span>
                     <span className="px-1 py-0.2 rounded bg-[#142D23] text-[#68D391] text-[9px] border border-[#2C4C3E] tabular-nums">
                       {hud.adaptiveUfovWindowMs}ms
                     </span>
                   </div>
-                  <div className="flex items-baseline gap-1.5">
+                  <div className="flex items-baseline gap-1">
                     <span
                       data-testid="hud-flow-multiplier-value"
-                      className="text-xl font-mono font-bold tabular-nums hud-text-stroke"
+                      className="text-lg font-mono font-bold tabular-nums hud-text-stroke"
                       style={{ color: flowPulseState.accentHex }}
                     >
                       {flowPulseState.flowMultiplier.toFixed(2)}x
@@ -1441,9 +1456,9 @@ export default function App() {
                     {flowPulseState.isPulsing && (
                       <span
                         data-testid="hud-cognitive-flow-pulse-badge"
-                        className="px-1.5 py-0.5 rounded bg-[#1A4231] text-[#68D391] border border-[#68D391]/60 text-[9px] font-mono font-bold tabular-nums"
+                        className="px-1 py-0.5 rounded bg-[#1A4231] text-[#68D391] border border-[#68D391]/60 text-[9px] font-mono font-bold tabular-nums"
                       >
-                        +{flowPulseState.multiplierDelta.toFixed(2)}x PULSE
+                        +{flowPulseState.multiplierDelta.toFixed(2)}x
                       </span>
                     )}
                   </div>
@@ -1454,15 +1469,17 @@ export default function App() {
               {(isSanctuaryBloomActive || hud.sanctuaryBloomActive) && (
                 <div
                   data-testid="sanctuary-bloom-badge"
-                  className="pl-2.5 border-l border-[#233D32] whitespace-nowrap shrink-0"
-                  title="All 4 Sanctuary Stages Completed — Full-Canvas Bioluminescence Saturation & Orbital Camera Rotation Active"
+                  data-tree-tendril-count={hud.treeTendrilCount ?? 12}
+                  data-local-nback-success-pct={hud.localNBackSuccessPct ?? 75}
+                  className="pl-2 border-l border-[#233D32] whitespace-nowrap shrink-0"
+                  title={`Sanctuary Bloom Active — ${hud.treeTendrilCount ?? 12} Flowering Tendrils (${hud.localNBackSuccessPct ?? 75}% N-Back Success Rate) · ${sanctuaryBloomIntensityPct}% Bioluminescence`}
                 >
                   <div className="text-[10px] font-mono uppercase tracking-wider text-[#B794F4] flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#4FD1C5] shrink-0" />
-                    <span>SANCTUARY BLOOM · 4/4</span>
+                    <span>BLOOM · {hud.treeTendrilCount ?? 12}✦</span>
                   </div>
-                  <div className="text-xs font-mono font-bold text-[#4FD1C5] tabular-nums hud-text-stroke mt-0.5">
-                    {sanctuaryBloomIntensityPct}% BIOLUM · ORBIT {Math.round(hud.sanctuaryBloomRotationDeg ?? 0)}°
+                  <div className="text-[10px] font-mono font-bold text-[#4FD1C5] tabular-nums hud-text-stroke mt-0.5">
+                    {hud.localNBackSuccessPct ?? 75}% N-BACK
                   </div>
                 </div>
               )}
@@ -1932,6 +1949,7 @@ export default function App() {
                         key={pid}
                         type="button"
                         tabIndex={-1}
+                        data-testid={`protocol-btn-${pid}`}
                         onClick={(e) => {
                           e.currentTarget.blur();
                           setActiveProtocol(pid);
