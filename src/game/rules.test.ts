@@ -46,8 +46,70 @@ import {
   computeLocalNBackSuccessRate,
   computeTreeFloweringState,
   computeSixMonthNeuroProjection,
+  DEFAULT_WEEKLY_COGNITIVE_GOALS,
+  sanitizeWeeklyCognitiveGoalsConfig,
+  computeWeeklyCognitiveGoalsProgress,
   type ChimeSymbol,
 } from './rules';
+
+test('computeWeeklyCognitiveGoalsProgress evaluates personal weekly N-Back accuracy and UFOV speed goals and progress bars', () => {
+  const sanitized = sanitizeWeeklyCognitiveGoalsConfig({
+    targetNBackAccuracyPct: 120,
+    targetUfovSpeedMs: 180,
+    weeklyPracticeBoostSessions: -3,
+  });
+  assert.equal(sanitized.targetNBackAccuracyPct, 98);
+  assert.equal(sanitized.targetUfovSpeedMs, 260);
+  assert.equal(sanitized.weeklyPracticeBoostSessions, 0);
+
+  // Baseline evaluation with default goals (85% N-Back, 420ms UFOV)
+  const baseline = computeWeeklyCognitiveGoalsProgress({
+    goalsConfig: DEFAULT_WEEKLY_COGNITIVE_GOALS,
+    totalTreesGrafted: 4,
+    peakRejuvenationScore: 1420,
+    averageHrvCoherence: 79,
+    currentStreakDays: 1,
+  });
+  assert.equal(baseline.nBackGoal.targetAccuracyPct, 85);
+  assert.equal(baseline.ufovGoal.targetSpeedMs, 420);
+  assert.ok(baseline.nBackGoal.progressPct > 0 && baseline.nBackGoal.progressPct <= 100);
+  assert.ok(baseline.ufovGoal.progressPct > 0 && baseline.ufovGoal.progressPct <= 100);
+
+  // Lowering N-Back target to 75% and raising UFOV target window to 480ms marks both goals achieved (100% progress)
+  const achieved = computeWeeklyCognitiveGoalsProgress({
+    goalsConfig: {
+      targetNBackAccuracyPct: 75,
+      targetUfovSpeedMs: 480,
+      weeklyPracticeBoostSessions: 0,
+    },
+    totalTreesGrafted: 4,
+    peakRejuvenationScore: 1420,
+    averageHrvCoherence: 79,
+    currentStreakDays: 1,
+  });
+  assert.equal(achieved.nBackGoal.isGoalMet, true);
+  assert.equal(achieved.nBackGoal.progressPct, 100);
+  assert.equal(achieved.ufovGoal.isGoalMet, true);
+  assert.equal(achieved.ufovGoal.progressPct, 100);
+  assert.equal(achieved.goalsMetCount, 2);
+  assert.equal(achieved.overallCompletionPct, 100);
+
+  // Logging weekly practice boost drills improves both N-Back accuracy and UFOV speed toward stricter targets
+  const boosted = computeWeeklyCognitiveGoalsProgress({
+    goalsConfig: {
+      targetNBackAccuracyPct: 85,
+      targetUfovSpeedMs: 420,
+      weeklyPracticeBoostSessions: 3,
+    },
+    totalTreesGrafted: 4,
+    peakRejuvenationScore: 1420,
+    averageHrvCoherence: 79,
+    currentStreakDays: 1,
+  });
+  assert.ok(boosted.nBackGoal.currentAccuracyPct > baseline.nBackGoal.currentAccuracyPct);
+  assert.ok(boosted.ufovGoal.currentSpeedMs < baseline.ufovGoal.currentSpeedMs);
+  assert.equal(boosted.goalsMetCount, 2);
+});
 
 test('computeSixMonthNeuroProjection generates a 7-point (Now..M6) cognitive reserve growth trajectory scaled by historical practice sessions and habit adherence', () => {
   const lowAdherence = computeSixMonthNeuroProjection({

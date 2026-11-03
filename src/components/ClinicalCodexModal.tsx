@@ -13,6 +13,11 @@ import {
   getDailyHabitClinicalTooltip,
   DEFAULT_NEURAL_LOGS_SEED,
   computeSixMonthNeuroProjection,
+  WEEKLY_COGNITIVE_GOALS_STORAGE_KEY,
+  DEFAULT_WEEKLY_COGNITIVE_GOALS,
+  sanitizeWeeklyCognitiveGoalsConfig,
+  computeWeeklyCognitiveGoalsProgress,
+  type WeeklyCognitiveGoalsConfig,
   type NeuroProjectionMonthPoint,
   type DailyHabitExerciseId,
   type DailyHabitTrackerState,
@@ -80,6 +85,45 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
     cognitiveReframingCompleted: false,
   });
 
+  // Personal Weekly Cognitive Goals (N-Back Accuracy % & UFOV Speed ms) persisted in localStorage
+  const [weeklyGoalsConfig, setWeeklyGoalsConfig] = useState<WeeklyCognitiveGoalsConfig>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = window.localStorage.getItem(WEEKLY_COGNITIVE_GOALS_STORAGE_KEY);
+        if (stored) {
+          return sanitizeWeeklyCognitiveGoalsConfig(
+            JSON.parse(stored) as Partial<WeeklyCognitiveGoalsConfig>
+          );
+        }
+      } catch {
+        // Fallback to default goals if storage read fails
+      }
+    }
+    return DEFAULT_WEEKLY_COGNITIVE_GOALS;
+  });
+
+  const updateWeeklyGoalsConfig = (
+    updater: (prev: WeeklyCognitiveGoalsConfig) => Partial<WeeklyCognitiveGoalsConfig>
+  ) => {
+    setWeeklyGoalsConfig((prev) => {
+      const next = sanitizeWeeklyCognitiveGoalsConfig({
+        ...prev,
+        ...updater(prev),
+      });
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(
+            WEEKLY_COGNITIVE_GOALS_STORAGE_KEY,
+            JSON.stringify(next)
+          );
+        } catch {
+          // Ignore storage write errors
+        }
+      }
+      return next;
+    });
+  };
+
   const activeNsdrCompleted = dailyHabitTracker
     ? dailyHabitTracker.nsdrCompleted
     : localTrackerFallback.nsdrCompleted;
@@ -140,6 +184,23 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
   });
   const filteredLifestyleTips = filterNeuroNutritionTips(lifestyleCategory);
   const neuroSynergy = computeNeuroSynergyBonus(completedHabitIds);
+  const goalsProgress = React.useMemo(
+    () =>
+      computeWeeklyCognitiveGoalsProgress({
+        goalsConfig: weeklyGoalsConfig,
+        totalTreesGrafted,
+        peakRejuvenationScore,
+        averageHrvCoherence: trendSummary.averageCoherence,
+        currentStreakDays: syncedStreakDisplay,
+      }),
+    [
+      weeklyGoalsConfig,
+      totalTreesGrafted,
+      peakRejuvenationScore,
+      trendSummary.averageCoherence,
+      syncedStreakDisplay,
+    ]
+  );
   const neuroProjection = React.useMemo(
     () =>
       computeSixMonthNeuroProjection({
@@ -705,6 +766,7 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
         neuroLifestyleSynergyMultiplier: neuroSynergy.bonusNectarMultiplier,
       },
       cognitiveDomains: domainProfile.domains,
+      weeklyCognitiveGoals: goalsProgress,
       neuroNutritionAndSleepProtocols: NEURO_NUTRITION_SLEEP_TIPS.map((t) => ({
         id: t.id,
         category: t.category,
@@ -1095,6 +1157,361 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
                 </div>
               </div>
             ))}
+          </div>
+        </section>
+
+        {/* 2B. PERSONAL WEEKLY COGNITIVE GOALS (N-Back Accuracy & UFOV Speed + Progress Bars) */}
+        <section
+          aria-labelledby="cognitive-goals-heading"
+          data-testid="clinical-codex-cognitive-goals"
+          data-goals-met-count={goalsProgress.goalsMetCount}
+          data-overall-goal-completion-pct={goalsProgress.overallCompletionPct}
+          data-nback-target-pct={goalsProgress.nBackGoal.targetAccuracyPct}
+          data-nback-progress-pct={goalsProgress.nBackGoal.progressPct}
+          data-ufov-target-ms={goalsProgress.ufovGoal.targetSpeedMs}
+          data-ufov-progress-pct={goalsProgress.ufovGoal.progressPct}
+          className="mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#233D32] space-y-4"
+        >
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[#A3B8B0]">
+                <span className="uppercase tracking-wider text-[#4FD1C5]">
+                  Personal Weekly Targets · Psychometric Calibration
+                </span>
+                <span aria-hidden="true">·</span>
+                <span
+                  data-testid="cognitive-goals-summary-status"
+                  className="text-[#F2B84B] font-semibold tabular-nums"
+                >
+                  {goalsProgress.weeklySummaryBadge}
+                </span>
+              </div>
+              <h3
+                id="cognitive-goals-heading"
+                className="text-lg font-display font-semibold text-[#F4EFE6] mt-0.5"
+              >
+                Cognitive Goals: Weekly N-Back Accuracy &amp; UFOV Speed
+              </h3>
+              <p className="text-xs text-[#A3B8B0] mt-0.5">
+                Set personal weekly targets for N-Back working memory accuracy and UFOV peripheral processing speed. Progress bars update automatically and persist across sessions.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                data-testid="cognitive-goals-log-drill-btn"
+                onClick={() =>
+                  updateWeeklyGoalsConfig((prev) => ({
+                    weeklyPracticeBoostSessions: Math.min(
+                      14,
+                      prev.weeklyPracticeBoostSessions + 1
+                    ),
+                  }))
+                }
+                className="px-3.5 py-2 rounded-lg bg-[#152E24] hover:bg-[#1E3F32] text-[#68D391] border border-[#2C4C3E] text-xs font-mono font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                +1 Weekly Drill ({goalsProgress.config.weeklyPracticeBoostSessions} Logged)
+              </button>
+              <button
+                type="button"
+                data-testid="cognitive-goals-reset-btn"
+                onClick={() =>
+                  updateWeeklyGoalsConfig(() => DEFAULT_WEEKLY_COGNITIVE_GOALS)
+                }
+                className="px-3 py-2 rounded-lg bg-[#10231C] hover:bg-[#173228] text-[#A3B8B0] hover:text-[#F4EFE6] border border-[#1E3A2F] text-xs font-mono transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                Reset Targets
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-1">
+            {/* Goal Card 1: Weekly N-Back Working Memory Accuracy (%) */}
+            <div
+              data-testid="cognitive-goal-card-nback"
+              className="p-4 rounded-xl bg-[#10231C] border border-[#1E3A2F] space-y-3"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-[#F4EFE6]">
+                    {goalsProgress.nBackGoal.title}
+                  </div>
+                  <div className="text-xs font-mono text-[#A3B8B0] mt-0.5 whitespace-nowrap">
+                    Current:{' '}
+                    <span
+                      data-testid="nback-goal-current-value"
+                      className="text-[#F4EFE6] font-semibold tabular-nums"
+                    >
+                      {goalsProgress.nBackGoal.currentAccuracyPct}%
+                    </span>
+                    {' · '}
+                    Target:{' '}
+                    <span
+                      data-testid="nback-goal-target-value"
+                      className="text-[#4FD1C5] font-semibold tabular-nums"
+                    >
+                      {goalsProgress.nBackGoal.targetAccuracyPct}%
+                    </span>
+                  </div>
+                </div>
+
+                <div className="text-right font-mono shrink-0">
+                  <div
+                    data-testid="nback-goal-progress-label"
+                    className="text-xl font-bold text-[#4FD1C5] tabular-nums"
+                  >
+                    {goalsProgress.nBackGoal.progressPct}%
+                  </div>
+                  <div
+                    data-testid="nback-goal-status-label"
+                    className={`text-[11px] font-semibold whitespace-nowrap ${
+                      goalsProgress.nBackGoal.isGoalMet
+                        ? 'text-[#68D391]'
+                        : 'text-[#F2B84B]'
+                    }`}
+                  >
+                    {goalsProgress.nBackGoal.statusLabel}
+                  </div>
+                </div>
+              </div>
+
+              {/* N-Back Accuracy Progress Bar */}
+              <div className="space-y-1.5">
+                <div
+                  role="progressbar"
+                  aria-label="Weekly N-Back accuracy goal progress"
+                  aria-valuenow={goalsProgress.nBackGoal.progressPct}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  data-testid="cognitive-goal-nback-progress-bar"
+                  className="w-full h-3 rounded-full bg-[#091510] overflow-hidden border border-[#1E3A2F]"
+                >
+                  <div
+                    data-testid="cognitive-goal-nback-progress-fill"
+                    className="h-full rounded-full transition-transform duration-150 origin-left"
+                    style={{
+                      width: `${goalsProgress.nBackGoal.progressPct}%`,
+                      backgroundColor: goalsProgress.nBackGoal.isGoalMet
+                        ? '#68D391'
+                        : '#4FD1C5',
+                    }}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-2 text-[11px] font-mono text-[#A3B8B0] tabular-nums whitespace-nowrap">
+                  <span data-testid="nback-goal-delta-text">
+                    {goalsProgress.nBackGoal.deltaSummaryText}
+                  </span>
+                  <span>Range: 65–98%</span>
+                </div>
+              </div>
+
+              {/* Interactive Weekly N-Back Target Slider & Quick Presets */}
+              <div className="pt-2 border-t border-[#1E3A2F] space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <label
+                    htmlFor="nback-goal-target-slider"
+                    className="text-xs font-mono text-[#D5E2DC]"
+                  >
+                    Adjust Weekly N-Back Target (%)
+                  </label>
+                  <span className="text-xs font-mono font-bold text-[#4FD1C5] tabular-nums">
+                    {goalsProgress.nBackGoal.targetAccuracyPct}%
+                  </span>
+                </div>
+                <input
+                  id="nback-goal-target-slider"
+                  data-testid="nback-goal-target-slider"
+                  type="range"
+                  min={65}
+                  max={98}
+                  step={1}
+                  value={goalsProgress.nBackGoal.targetAccuracyPct}
+                  onChange={(e) =>
+                    updateWeeklyGoalsConfig(() => ({
+                      targetNBackAccuracyPct: Number(e.target.value),
+                    }))
+                  }
+                  className="w-full accent-[#4FD1C5] cursor-pointer"
+                />
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[
+                    { pct: 75, label: '75% Base' },
+                    { pct: 85, label: '85% Goal' },
+                    { pct: 92, label: '92% High' },
+                    { pct: 96, label: '96% Apex' },
+                  ].map((preset) => {
+                    const isSelected =
+                      goalsProgress.nBackGoal.targetAccuracyPct === preset.pct;
+                    return (
+                      <button
+                        key={preset.pct}
+                        type="button"
+                        data-testid={`nback-preset-${preset.pct}`}
+                        onClick={() =>
+                          updateWeeklyGoalsConfig(() => ({
+                            targetNBackAccuracyPct: preset.pct,
+                          }))
+                        }
+                        className={`px-1.5 py-1 rounded-md text-[10px] font-mono font-semibold border transition-colors whitespace-nowrap shrink-0 text-center cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#173A38] text-[#4FD1C5] border-[#4FD1C5]'
+                            : 'bg-[#0B1914] text-[#A3B8B0] border-[#1E3A2F] hover:text-[#F4EFE6]'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-[#A3B8B0] leading-relaxed">
+                  {goalsProgress.nBackGoal.clinicalBenchmarkNote}
+                </p>
+              </div>
+            </div>
+
+            {/* Goal Card 2: Weekly UFOV Visual Processing Speed (ms) */}
+            <div
+              data-testid="cognitive-goal-card-ufov"
+              className="p-4 rounded-xl bg-[#10231C] border border-[#1E3A2F] space-y-3"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-[#F4EFE6]">
+                    {goalsProgress.ufovGoal.title}
+                  </div>
+                  <div className="text-xs font-mono text-[#A3B8B0] mt-0.5 whitespace-nowrap">
+                    Current:{' '}
+                    <span
+                      data-testid="ufov-goal-current-value"
+                      className="text-[#F4EFE6] font-semibold tabular-nums"
+                    >
+                      {goalsProgress.ufovGoal.currentSpeedMs}ms
+                    </span>
+                    {' · '}
+                    Target:{' '}
+                    <span
+                      data-testid="ufov-goal-target-value"
+                      className="text-[#F2B84B] font-semibold tabular-nums"
+                    >
+                      ≤{goalsProgress.ufovGoal.targetSpeedMs}ms
+                    </span>
+                  </div>
+                </div>
+
+                <div className="text-right font-mono shrink-0">
+                  <div
+                    data-testid="ufov-goal-progress-label"
+                    className="text-xl font-bold text-[#F2B84B] tabular-nums"
+                  >
+                    {goalsProgress.ufovGoal.progressPct}%
+                  </div>
+                  <div
+                    data-testid="ufov-goal-status-label"
+                    className={`text-[11px] font-semibold whitespace-nowrap ${
+                      goalsProgress.ufovGoal.isGoalMet
+                        ? 'text-[#68D391]'
+                        : 'text-[#F2B84B]'
+                    }`}
+                  >
+                    {goalsProgress.ufovGoal.statusLabel}
+                  </div>
+                </div>
+              </div>
+
+              {/* UFOV Speed Progress Bar */}
+              <div className="space-y-1.5">
+                <div
+                  role="progressbar"
+                  aria-label="Weekly UFOV visual processing speed goal progress"
+                  aria-valuenow={goalsProgress.ufovGoal.progressPct}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  data-testid="cognitive-goal-ufov-progress-bar"
+                  className="w-full h-3 rounded-full bg-[#091510] overflow-hidden border border-[#1E3A2F]"
+                >
+                  <div
+                    data-testid="cognitive-goal-ufov-progress-fill"
+                    className="h-full rounded-full transition-transform duration-150 origin-left"
+                    style={{
+                      width: `${goalsProgress.ufovGoal.progressPct}%`,
+                      backgroundColor: goalsProgress.ufovGoal.isGoalMet
+                        ? '#68D391'
+                        : '#F2B84B',
+                    }}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-2 text-[11px] font-mono text-[#A3B8B0] tabular-nums whitespace-nowrap">
+                  <span data-testid="ufov-goal-delta-text">
+                    {goalsProgress.ufovGoal.deltaSummaryText}
+                  </span>
+                  <span>Range: 260–620ms</span>
+                </div>
+              </div>
+
+              {/* Interactive Weekly UFOV Speed Target Slider & Quick Presets */}
+              <div className="pt-2 border-t border-[#1E3A2F] space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <label
+                    htmlFor="ufov-goal-target-slider"
+                    className="text-xs font-mono text-[#D5E2DC]"
+                  >
+                    Adjust Weekly UFOV Speed Target (ms)
+                  </label>
+                  <span className="text-xs font-mono font-bold text-[#F2B84B] tabular-nums">
+                    ≤{goalsProgress.ufovGoal.targetSpeedMs}ms
+                  </span>
+                </div>
+                <input
+                  id="ufov-goal-target-slider"
+                  data-testid="ufov-goal-target-slider"
+                  type="range"
+                  min={260}
+                  max={620}
+                  step={10}
+                  value={goalsProgress.ufovGoal.targetSpeedMs}
+                  onChange={(e) =>
+                    updateWeeklyGoalsConfig(() => ({
+                      targetUfovSpeedMs: Number(e.target.value),
+                    }))
+                  }
+                  className="w-full accent-[#F2B84B] cursor-pointer"
+                />
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[
+                    { ms: 520, label: '520ms Base' },
+                    { ms: 420, label: '420ms Goal' },
+                    { ms: 360, label: '360ms Fast' },
+                    { ms: 300, label: '300ms Peak' },
+                  ].map((preset) => {
+                    const isSelected =
+                      goalsProgress.ufovGoal.targetSpeedMs === preset.ms;
+                    return (
+                      <button
+                        key={preset.ms}
+                        type="button"
+                        data-testid={`ufov-preset-${preset.ms}`}
+                        onClick={() =>
+                          updateWeeklyGoalsConfig(() => ({
+                            targetUfovSpeedMs: preset.ms,
+                          }))
+                        }
+                        className={`px-1.5 py-1 rounded-md text-[10px] font-mono font-semibold border transition-colors whitespace-nowrap shrink-0 text-center cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#2C2412] text-[#F2B84B] border-[#F2B84B]'
+                            : 'bg-[#0B1914] text-[#A3B8B0] border-[#1E3A2F] hover:text-[#F4EFE6]'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-[#A3B8B0] leading-relaxed">
+                  {goalsProgress.ufovGoal.clinicalBenchmarkNote}
+                </p>
+              </div>
+            </div>
           </div>
         </section>
 
