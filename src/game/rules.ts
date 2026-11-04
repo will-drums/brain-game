@@ -3661,6 +3661,216 @@ export function computeBloomSliderTooltipState(params: {
   };
 }
 
+/**
+ * 7-Day Weekly Habit Compliance (NSDR & Cognitive Reframing Trend)
+ * Powers the Recharts Weekly Habit Compliance visualization in the Clinical Codex Modal.
+ */
+export interface PriorDayHabitRecord {
+  shortDayLabel: string;
+  dateOffsetLabel: string;
+  nsdrCompleted: boolean;
+  cognitiveReframingCompleted: boolean;
+}
+
+export interface WeeklyHabitComplianceDayPoint {
+  dayIndex: number; // 1..7
+  shortDayLabel: string; // e.g. 'Mon', 'Tue', ..., 'Today'
+  dateOffsetLabel: string; // '-6d'..'Today'
+  nsdrSessions: number; // 0 or 1
+  cognitiveReframingSessions: number; // 0 or 1
+  nsdrMinutes: number; // 0 or 20
+  cognitiveReframingMinutes: number; // 0 or 5
+  totalRestorativeMinutes: number; // 0, 5, 20, or 25
+  totalSessions: number; // 0, 1, or 2
+  dailyCompliancePct: number; // 0, 50, or 100
+  rollingComplianceTrendPct: number; // 0..100 rolling trend across the 7-day window
+  dualSynergyCompleted: boolean;
+  isToday: boolean;
+}
+
+export interface WeeklyHabitComplianceSummary {
+  days: WeeklyHabitComplianceDayPoint[];
+  totalNsdrSessions: number;
+  totalCognitiveReframingSessions: number;
+  totalCombinedSessions: number;
+  maxPossibleSessions: number; // 14 (2 habits * 7 days)
+  totalRestorativeMinutes: number;
+  nsdrWeeklyCompliancePct: number; // 0..100
+  cognitiveReframingWeeklyCompliancePct: number; // 0..100
+  overallWeeklyCompliancePct: number; // 0..100
+  dualSynergyDaysCount: number; // 0..7
+  trendDeltaPct: number; // Second-half vs first-half compliance delta
+  trendDirection: 'ascending' | 'steady' | 'recovering';
+  trendHeadline: string;
+  clinicalInterpretation: string;
+}
+
+export const DEFAULT_PRIOR_SIX_DAYS_HABIT_HISTORY: readonly PriorDayHabitRecord[] = [
+  {
+    shortDayLabel: 'Day 1',
+    dateOffsetLabel: '-6d',
+    nsdrCompleted: true,
+    cognitiveReframingCompleted: false,
+  },
+  {
+    shortDayLabel: 'Day 2',
+    dateOffsetLabel: '-5d',
+    nsdrCompleted: true,
+    cognitiveReframingCompleted: true,
+  },
+  {
+    shortDayLabel: 'Day 3',
+    dateOffsetLabel: '-4d',
+    nsdrCompleted: false,
+    cognitiveReframingCompleted: true,
+  },
+  {
+    shortDayLabel: 'Day 4',
+    dateOffsetLabel: '-3d',
+    nsdrCompleted: true,
+    cognitiveReframingCompleted: true,
+  },
+  {
+    shortDayLabel: 'Day 5',
+    dateOffsetLabel: '-2d',
+    nsdrCompleted: true,
+    cognitiveReframingCompleted: false,
+  },
+  {
+    shortDayLabel: 'Day 6',
+    dateOffsetLabel: '-1d',
+    nsdrCompleted: true,
+    cognitiveReframingCompleted: true,
+  },
+];
+
+export function computeWeeklyHabitCompliance(params: {
+  todayNsdrCompleted: boolean;
+  todayCognitiveReframingCompleted: boolean;
+  priorSixDays?: readonly PriorDayHabitRecord[];
+}): WeeklyHabitComplianceSummary {
+  const baseSix =
+    params.priorSixDays && params.priorSixDays.length === 6
+      ? params.priorSixDays
+      : DEFAULT_PRIOR_SIX_DAYS_HABIT_HISTORY;
+
+  const rawRecords: Array<PriorDayHabitRecord & { isToday: boolean }> = [
+    ...baseSix.map((item) => ({
+      shortDayLabel: item.shortDayLabel,
+      dateOffsetLabel: item.dateOffsetLabel,
+      nsdrCompleted: Boolean(item.nsdrCompleted),
+      cognitiveReframingCompleted: Boolean(item.cognitiveReframingCompleted),
+      isToday: false,
+    })),
+    {
+      shortDayLabel: 'Today',
+      dateOffsetLabel: 'Today',
+      nsdrCompleted: Boolean(params.todayNsdrCompleted),
+      cognitiveReframingCompleted: Boolean(params.todayCognitiveReframingCompleted),
+      isToday: true,
+    },
+  ];
+
+  const days: WeeklyHabitComplianceDayPoint[] = rawRecords.map((rec, idx) => {
+    const nsdrSessions = rec.nsdrCompleted ? 1 : 0;
+    const cognitiveReframingSessions = rec.cognitiveReframingCompleted ? 1 : 0;
+    const nsdrMinutes = nsdrSessions * 20;
+    const cognitiveReframingMinutes = cognitiveReframingSessions * 5;
+    const totalSessions = nsdrSessions + cognitiveReframingSessions;
+    const dailyCompliancePct = Math.round((totalSessions / 2) * 100);
+
+    // Compute a 3-day trailing rolling compliance trend percentage (inclusive of current day)
+    const windowStart = Math.max(0, idx - 2);
+    const windowSlice = rawRecords.slice(windowStart, idx + 1);
+    const windowDailyAvg =
+      windowSlice.reduce((sum, w) => {
+        const wTotal = (w.nsdrCompleted ? 1 : 0) + (w.cognitiveReframingCompleted ? 1 : 0);
+        return sum + (wTotal / 2) * 100;
+      }, 0) / windowSlice.length;
+
+    return {
+      dayIndex: idx + 1,
+      shortDayLabel: rec.shortDayLabel,
+      dateOffsetLabel: rec.dateOffsetLabel,
+      nsdrSessions,
+      cognitiveReframingSessions,
+      nsdrMinutes,
+      cognitiveReframingMinutes,
+      totalRestorativeMinutes: nsdrMinutes + cognitiveReframingMinutes,
+      totalSessions,
+      dailyCompliancePct,
+      rollingComplianceTrendPct: Math.round(windowDailyAvg),
+      dualSynergyCompleted: nsdrSessions === 1 && cognitiveReframingSessions === 1,
+      isToday: rec.isToday,
+    };
+  });
+
+  const totalNsdrSessions = days.reduce((acc, d) => acc + d.nsdrSessions, 0);
+  const totalCognitiveReframingSessions = days.reduce(
+    (acc, d) => acc + d.cognitiveReframingSessions,
+    0
+  );
+  const totalCombinedSessions = totalNsdrSessions + totalCognitiveReframingSessions;
+  const maxPossibleSessions = 14;
+  const totalRestorativeMinutes = days.reduce(
+    (acc, d) => acc + d.totalRestorativeMinutes,
+    0
+  );
+
+  const nsdrWeeklyCompliancePct = Math.round((totalNsdrSessions / 7) * 100);
+  const cognitiveReframingWeeklyCompliancePct = Math.round(
+    (totalCognitiveReframingSessions / 7) * 100
+  );
+  const overallWeeklyCompliancePct = Math.round(
+    (totalCombinedSessions / maxPossibleSessions) * 100
+  );
+  const dualSynergyDaysCount = days.filter((d) => d.dualSynergyCompleted).length;
+
+  // Compare first 3 days average compliance vs last 4 days average compliance
+  const firstHalfAvg =
+    days.slice(0, 3).reduce((acc, d) => acc + d.dailyCompliancePct, 0) / 3;
+  const secondHalfAvg =
+    days.slice(3, 7).reduce((acc, d) => acc + d.dailyCompliancePct, 0) / 4;
+  const trendDeltaPct = Math.round(secondHalfAvg - firstHalfAvg);
+
+  let trendDirection: WeeklyHabitComplianceSummary['trendDirection'] = 'steady';
+  if (trendDeltaPct >= 8) {
+    trendDirection = 'ascending';
+  } else if (trendDeltaPct <= -8) {
+    trendDirection = 'recovering';
+  }
+
+  const trendHeadline =
+    trendDirection === 'ascending'
+      ? `Ascending 7-Day Adherence (+${trendDeltaPct}% vs. early week)`
+      : trendDirection === 'steady'
+      ? `Steady Restorative Cadence (${overallWeeklyCompliancePct}% weekly compliance)`
+      : `Rebuilding Habit Cadence (${overallWeeklyCompliancePct}% weekly compliance)`;
+
+  const clinicalInterpretation =
+    dualSynergyDaysCount >= 4
+      ? `${dualSynergyDaysCount}/7 Dual-Synergy Days achieved: pairing 20m NSDR striatal dopamine restoration with 5m prefrontal cognitive reappraisal maximizes hippocampal BDNF consolidation.`
+      : `Log both 20m NSDR and 5m Cognitive Reframing today to elevate your 7-day dual-habit synergy (${dualSynergyDaysCount}/7 days completed).`;
+
+  return {
+    days,
+    totalNsdrSessions,
+    totalCognitiveReframingSessions,
+    totalCombinedSessions,
+    maxPossibleSessions,
+    totalRestorativeMinutes,
+    nsdrWeeklyCompliancePct,
+    cognitiveReframingWeeklyCompliancePct,
+    overallWeeklyCompliancePct,
+    dualSynergyDaysCount,
+    trendDeltaPct,
+    trendDirection,
+    trendHeadline,
+    clinicalInterpretation,
+  };
+}
+
+
 
 
 

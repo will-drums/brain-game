@@ -1,6 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
 import {
+  ResponsiveContainer,
+  ComposedChart,
+  Bar,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+} from 'recharts';
+import {
   CLINICAL_PROTOCOLS,
   HRV_HISTORY_STORAGE_KEY,
   DEFAULT_HRV_HISTORY_SEED,
@@ -19,6 +29,9 @@ import {
   computeWeeklyCognitiveGoalsProgress,
   CLINICAL_CODEX_EXIT_DURATION_MS,
   computeCodexModalAnimationState,
+  DEFAULT_PRIOR_SIX_DAYS_HABIT_HISTORY,
+  computeWeeklyHabitCompliance,
+  type PriorDayHabitRecord,
   type CodexModalTransitionPhase,
   type WeeklyCognitiveGoalsConfig,
   type NeuroProjectionMonthPoint,
@@ -185,6 +198,20 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
       }));
     }
   };
+
+  // 7-Day Weekly Habit Compliance state (prior 6 days seed + live Day 7 synced with today's NSDR & Cognitive Reframing)
+  const [priorSixDaysHistory] = useState<readonly PriorDayHabitRecord[]>(
+    DEFAULT_PRIOR_SIX_DAYS_HABIT_HISTORY
+  );
+  const weeklyCompliance = React.useMemo(
+    () =>
+      computeWeeklyHabitCompliance({
+        todayNsdrCompleted: activeNsdrCompleted,
+        todayCognitiveReframingCompleted: activeReframingCompleted,
+        priorSixDays: priorSixDaysHistory,
+      }),
+    [activeNsdrCompleted, activeReframingCompleted, priorSixDaysHistory]
+  );
 
   // Synchronize last 10 sessions from hrvHistory prop and HRV_HISTORY_STORAGE_KEY
   const resolvedHistory = React.useMemo(() => {
@@ -1704,6 +1731,332 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
                 </div>
               );
             })}
+          </div>
+
+          {/* WEEKLY HABIT COMPLIANCE CHART (RECHARTS 7-DAY NSDR & COGNITIVE REFRAMING TREND) */}
+          <div
+            data-testid="weekly-habit-compliance-section"
+            className="mt-4 pt-4 border-t border-[#233D32] space-y-4"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <span className="text-[11px] font-mono uppercase tracking-wider text-[#4FD1C5]">
+                  7-Day Restorative Adherence Analytics · Recharts Telemetry
+                </span>
+                <h4 className="text-base font-display font-semibold text-[#F4EFE6]">
+                  Weekly Habit Compliance — NSDR &amp; Cognitive Reframing (Last 7 Days)
+                </h4>
+                <p className="text-xs text-[#A3B8B0] mt-0.5">
+                  Tracks daily completion of 20m Non-Sleep Deep Rest (NSDR) and 5m Daily Cognitive Reframing across the past 7 days alongside your rolling compliance trajectory.
+                </p>
+              </div>
+
+              <div
+                data-testid="weekly-compliance-trend-badge"
+                className="px-3.5 py-2 rounded-xl bg-[#10231C] border border-[#2C4C3E] font-mono text-right shrink-0"
+              >
+                <div className="text-[10px] uppercase tracking-wider text-[#A3B8B0]">
+                  7-DAY COMPLIANCE TRAJECTORY
+                </div>
+                <div className="flex items-center justify-end gap-2 mt-0.5">
+                  <span
+                    data-testid="weekly-overall-compliance-pct"
+                    className="text-sm font-bold text-[#68D391] tabular-nums"
+                  >
+                    {weeklyCompliance.overallWeeklyCompliancePct}% Weekly Compliance
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-[#163428] text-[#F2B84B] text-[11px] font-semibold border border-[#F2B84B]/40 tabular-nums">
+                    {weeklyCompliance.totalCombinedSessions}/{weeklyCompliance.maxPossibleSessions} Sessions
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* 4 Summary KPI Cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div
+                data-testid="weekly-kpi-nsdr"
+                className="p-3 rounded-xl bg-[#10231C] border border-[#1E3A2F] space-y-1"
+              >
+                <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
+                  <span>20m NSDR Sessions</span>
+                  <span className="w-2 h-2 rounded-full bg-[#4FD1C5]" />
+                </div>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span
+                    data-testid="weekly-nsdr-compliance-pct"
+                    className="text-lg font-mono font-bold text-[#4FD1C5] tabular-nums"
+                  >
+                    {weeklyCompliance.nsdrWeeklyCompliancePct}%
+                  </span>
+                  <span className="text-[11px] font-mono text-[#D5E2DC] tabular-nums">
+                    {weeklyCompliance.totalNsdrSessions}/7d · {weeklyCompliance.totalNsdrSessions * 20}m
+                  </span>
+                </div>
+              </div>
+
+              <div
+                data-testid="weekly-kpi-reframing"
+                className="p-3 rounded-xl bg-[#10231C] border border-[#1E3A2F] space-y-1"
+              >
+                <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
+                  <span>5m Reframing</span>
+                  <span className="w-2 h-2 rounded-full bg-[#B794F4]" />
+                </div>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span
+                    data-testid="weekly-reframing-compliance-pct"
+                    className="text-lg font-mono font-bold text-[#B794F4] tabular-nums"
+                  >
+                    {weeklyCompliance.cognitiveReframingWeeklyCompliancePct}%
+                  </span>
+                  <span className="text-[11px] font-mono text-[#D5E2DC] tabular-nums">
+                    {weeklyCompliance.totalCognitiveReframingSessions}/7d · {weeklyCompliance.totalCognitiveReframingSessions * 5}m
+                  </span>
+                </div>
+              </div>
+
+              <div
+                data-testid="weekly-kpi-synergy"
+                className="p-3 rounded-xl bg-[#10231C] border border-[#1E3A2F] space-y-1"
+              >
+                <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
+                  <span>Dual-Habit Synergy</span>
+                  <span className="w-2 h-2 rounded-full bg-[#68D391]" />
+                </div>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span
+                    data-testid="weekly-dual-synergy-days"
+                    className="text-lg font-mono font-bold text-[#68D391] tabular-nums"
+                  >
+                    {weeklyCompliance.dualSynergyDaysCount}/7 Days
+                  </span>
+                  <span className="text-[11px] font-mono text-[#D5E2DC] tabular-nums">
+                    Both Logged
+                  </span>
+                </div>
+              </div>
+
+              <div
+                data-testid="weekly-kpi-minutes"
+                className="p-3 rounded-xl bg-[#10231C] border border-[#1E3A2F] space-y-1"
+              >
+                <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
+                  <span>Restorative Volume</span>
+                  <span className="w-2 h-2 rounded-full bg-[#F2B84B]" />
+                </div>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span
+                    data-testid="weekly-total-minutes"
+                    className="text-lg font-mono font-bold text-[#F2B84B] tabular-nums"
+                  >
+                    {weeklyCompliance.totalRestorativeMinutes}m
+                  </span>
+                  <span className="text-[11px] font-mono text-[#D5E2DC] tabular-nums">
+                    7-Day Total
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Recharts 7-Day ComposedChart Container */}
+            <div
+              data-testid="weekly-habit-compliance-chart"
+              className="p-4 rounded-xl bg-[#091510] border border-[#1E3A2F] space-y-3"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-4 text-[11px] font-mono">
+                  <span className="inline-flex items-center gap-1.5 text-[#4FD1C5]">
+                    <span className="w-2.5 h-2.5 rounded-xs bg-[#4FD1C5] inline-block" />
+                    20m NSDR Session (0–1/day)
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 text-[#B794F4]">
+                    <span className="w-2.5 h-2.5 rounded-xs bg-[#B794F4] inline-block" />
+                    5m Cognitive Reframing (0–1/day)
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 text-[#F2B84B]">
+                    <span className="w-3 h-0.5 bg-[#F2B84B] inline-block" />
+                    Rolling 3-Day Compliance Trend (%)
+                  </span>
+                </div>
+
+                {/* Quick Today Sync Controls */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
+                    Today (Day 7):
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="weekly-chart-toggle-today-nsdr"
+                    onClick={() => handleExerciseToggleClick('nsdr_protocol')}
+                    className={`px-2.5 py-1 rounded-md text-[10px] font-mono font-semibold transition-colors cursor-pointer border ${
+                      activeNsdrCompleted
+                        ? 'bg-[#173A38] text-[#4FD1C5] border-[#4FD1C5]'
+                        : 'bg-[#10231C] text-[#A3B8B0] border-[#233D32] hover:text-[#F4EFE6]'
+                    }`}
+                  >
+                    {activeNsdrCompleted ? '✓ NSDR Logged' : '+ Log Today NSDR'}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="weekly-chart-toggle-today-reframing"
+                    onClick={() => handleExerciseToggleClick('cognitive_reframing')}
+                    className={`px-2.5 py-1 rounded-md text-[10px] font-mono font-semibold transition-colors cursor-pointer border ${
+                      activeReframingCompleted
+                        ? 'bg-[#261E3A] text-[#B794F4] border-[#B794F4]'
+                        : 'bg-[#10231C] text-[#A3B8B0] border-[#233D32] hover:text-[#F4EFE6]'
+                    }`}
+                  >
+                    {activeReframingCompleted ? '✓ Reframing Logged' : '+ Log Today Reframing'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="w-full h-[240px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart
+                    data={weeklyCompliance.days}
+                    margin={{ top: 12, right: 16, left: 0, bottom: 4 }}
+                  >
+                    <CartesianGrid
+                      stroke="#1E3A2F"
+                      strokeDasharray="3 3"
+                      vertical={false}
+                    />
+                    <XAxis
+                      dataKey="shortDayLabel"
+                      stroke="#A3B8B0"
+                      tick={{ fill: '#D5E2DC', fontSize: 11, fontFamily: 'monospace' }}
+                      tickLine={{ stroke: '#1E3A2F' }}
+                      axisLine={{ stroke: '#233D32' }}
+                    />
+                    <YAxis
+                      yAxisId="sessions"
+                      domain={[0, 1.25]}
+                      ticks={[0, 1]}
+                      tickFormatter={(val: number) => `${val} sess`}
+                      stroke="#4FD1C5"
+                      tick={{ fill: '#A3B8B0', fontSize: 10, fontFamily: 'monospace' }}
+                      tickLine={false}
+                      axisLine={{ stroke: '#233D32' }}
+                      width={52}
+                    />
+                    <YAxis
+                      yAxisId="pct"
+                      orientation="right"
+                      domain={[0, 100]}
+                      ticks={[0, 50, 100]}
+                      tickFormatter={(val: number) => `${val}%`}
+                      stroke="#F2B84B"
+                      tick={{ fill: '#F2B84B', fontSize: 10, fontFamily: 'monospace' }}
+                      tickLine={false}
+                      axisLine={{ stroke: '#233D32' }}
+                      width={44}
+                    />
+                    <RechartsTooltip
+                      content={({ active, payload }) => {
+                        if (!active || !payload || payload.length === 0) {
+                          return null;
+                        }
+                        const dayPoint = payload[0]?.payload as
+                          | (typeof weeklyCompliance.days)[number]
+                          | undefined;
+                        if (!dayPoint) return null;
+                        return (
+                          <div
+                            data-testid="weekly-compliance-chart-tooltip"
+                            className="p-3 rounded-xl bg-[#07120E]/95 border border-[#4FD1C5]/60 shadow-xl font-mono text-xs space-y-1.5"
+                          >
+                            <div className="flex items-center justify-between gap-4 border-b border-[#1E3A2F] pb-1">
+                              <span className="font-bold text-[#F4EFE6]">
+                                {dayPoint.shortDayLabel} ({dayPoint.dateOffsetLabel})
+                              </span>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#10231C] text-[#68D391] tabular-nums">
+                                {dayPoint.dailyCompliancePct}% Daily
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-4 text-[#4FD1C5] tabular-nums">
+                              <span>20m NSDR Protocol:</span>
+                              <span className="font-semibold">
+                                {dayPoint.nsdrSessions === 1
+                                  ? '✓ 1 Session (20m)'
+                                  : '0 Sessions (0m)'}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-4 text-[#B794F4] tabular-nums">
+                              <span>5m Cognitive Reframing:</span>
+                              <span className="font-semibold">
+                                {dayPoint.cognitiveReframingSessions === 1
+                                  ? '✓ 1 Session (5m)'
+                                  : '0 Sessions (0m)'}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-4 text-[#F2B84B] pt-1 border-t border-[#1E3A2F] tabular-nums">
+                              <span>3-Day Rolling Trend:</span>
+                              <span className="font-bold">
+                                {dayPoint.rollingComplianceTrendPct}%
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      }}
+                    />
+                    <Bar
+                      yAxisId="sessions"
+                      dataKey="nsdrSessions"
+                      name="20m NSDR Session"
+                      fill="#4FD1C5"
+                      radius={[4, 4, 0, 0]}
+                      barSize={20}
+                      isAnimationActive={false}
+                    />
+                    <Bar
+                      yAxisId="sessions"
+                      dataKey="cognitiveReframingSessions"
+                      name="5m Cognitive Reframing"
+                      fill="#B794F4"
+                      radius={[4, 4, 0, 0]}
+                      barSize={20}
+                      isAnimationActive={false}
+                    />
+                    <Line
+                      yAxisId="pct"
+                      type="monotone"
+                      dataKey="rollingComplianceTrendPct"
+                      name="Rolling Compliance Trend (%)"
+                      stroke="#F2B84B"
+                      strokeWidth={2.5}
+                      dot={{
+                        r: 4,
+                        fill: '#F2B84B',
+                        stroke: '#091510',
+                        strokeWidth: 1.5,
+                      }}
+                      activeDot={{
+                        r: 6,
+                        fill: '#68D391',
+                        stroke: '#091510',
+                        strokeWidth: 2,
+                      }}
+                      isAnimationActive={false}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* 7-Day Daily Status Matrix Strip & Clinical Interpretation */}
+              <div className="pt-2 border-t border-[#1E3A2F] flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
+                <span
+                  data-testid="weekly-compliance-clinical-note"
+                  className="text-[#D5E2DC]"
+                >
+                  {weeklyCompliance.clinicalInterpretation}
+                </span>
+                <span className="text-[#F2B84B] tabular-nums shrink-0">
+                  {weeklyCompliance.trendHeadline}
+                </span>
+              </div>
+            </div>
           </div>
 
           {/* DAILY RESTORATIVE HABIT TRACKER: NON-SLEEP DEEP REST (NSDR) & DAILY COGNITIVE REFRAMING (SYNCED WITH DAILY STREAK) */}

@@ -66,8 +66,57 @@ import {
   evaluateGentleHabitNotification,
   computeCognitiveBloomImpactBreakdown,
   computeBloomSliderTooltipState,
+  DEFAULT_PRIOR_SIX_DAYS_HABIT_HISTORY,
+  computeWeeklyHabitCompliance,
   type ChimeSymbol,
 } from './rules';
+
+test('computeWeeklyHabitCompliance builds 7-day NSDR and Cognitive Reframing compliance series and syncs Day 7 with today state', () => {
+  assert.equal(DEFAULT_PRIOR_SIX_DAYS_HABIT_HISTORY.length, 6);
+
+  // Baseline when neither habit is logged today yet
+  const unloggedToday = computeWeeklyHabitCompliance({
+    todayNsdrCompleted: false,
+    todayCognitiveReframingCompleted: false,
+  });
+
+  assert.equal(unloggedToday.days.length, 7);
+  assert.equal(unloggedToday.days[6].isToday, true);
+  assert.equal(unloggedToday.days[6].shortDayLabel, 'Today');
+  assert.equal(unloggedToday.days[6].nsdrSessions, 0);
+  assert.equal(unloggedToday.days[6].cognitiveReframingSessions, 0);
+  assert.equal(unloggedToday.days[6].dailyCompliancePct, 0);
+  assert.equal(unloggedToday.totalNsdrSessions, 5);
+  assert.equal(unloggedToday.totalCognitiveReframingSessions, 4);
+  assert.equal(unloggedToday.totalCombinedSessions, 9);
+  assert.equal(unloggedToday.overallWeeklyCompliancePct, Math.round((9 / 14) * 100));
+  assert.equal(unloggedToday.dualSynergyDaysCount, 3);
+
+  // When both NSDR and Cognitive Reframing are logged today
+  const bothLoggedToday = computeWeeklyHabitCompliance({
+    todayNsdrCompleted: true,
+    todayCognitiveReframingCompleted: true,
+  });
+
+  assert.equal(bothLoggedToday.days[6].nsdrSessions, 1);
+  assert.equal(bothLoggedToday.days[6].cognitiveReframingSessions, 1);
+  assert.equal(bothLoggedToday.days[6].nsdrMinutes, 20);
+  assert.equal(bothLoggedToday.days[6].cognitiveReframingMinutes, 5);
+  assert.equal(bothLoggedToday.days[6].totalRestorativeMinutes, 25);
+  assert.equal(bothLoggedToday.days[6].dailyCompliancePct, 100);
+  assert.equal(bothLoggedToday.days[6].dualSynergyCompleted, true);
+  assert.equal(bothLoggedToday.totalNsdrSessions, 6);
+  assert.equal(bothLoggedToday.totalCognitiveReframingSessions, 5);
+  assert.equal(bothLoggedToday.totalCombinedSessions, 11);
+  assert.equal(bothLoggedToday.nsdrWeeklyCompliancePct, Math.round((6 / 7) * 100));
+  assert.equal(
+    bothLoggedToday.cognitiveReframingWeeklyCompliancePct,
+    Math.round((5 / 7) * 100)
+  );
+  assert.equal(bothLoggedToday.overallWeeklyCompliancePct, Math.round((11 / 14) * 100));
+  assert.equal(bothLoggedToday.dualSynergyDaysCount, 4);
+  assert.ok(bothLoggedToday.clinicalInterpretation.includes('4/7 Dual-Synergy Days'));
+});
 
 test('computeBloomSliderTooltipState formats Intensity: X% tooltip and tracks hover, drag, and focus states', () => {
   const idle = computeBloomSliderTooltipState({
