@@ -88,8 +88,53 @@ import {
   computeHabitCompletionHeatmap30Days,
   DEFAULT_30_DAY_BLOOM_INTENSITY_SEED,
   computeSanctuaryBloomIntensityTrend30Days,
+  HUD_VITALITY_NECTAR_PULSE_DURATION_MS,
+  evaluateHudVitalityNectarPulse,
   type ChimeSymbol,
 } from './rules';
+
+test('evaluateHudVitalityNectarPulse triggers CSS keyframe pulse classes when matching an N-Back chime or crafting a new tree', () => {
+  assert.equal(HUD_VITALITY_NECTAR_PULSE_DURATION_MS, 680);
+
+  // Idle state when neither N-Back hits nor trees grafted increased
+  const idleEval = evaluateHudVitalityNectarPulse({
+    prevNBackHits: 2,
+    currentNBackHits: 2,
+    prevTreesGrafted: 1,
+    currentTreesGrafted: 1,
+  });
+  assert.equal(idleEval.isPulsing, false);
+  assert.equal(idleEval.shouldStartNewPulse, false);
+  assert.equal(idleEval.triggerSource, 'none');
+  assert.equal(idleEval.vitalityPulseClassName, '');
+  assert.equal(idleEval.nectarPulseClassName, '');
+
+  // Triggered by N-Back chime match
+  const nbackEval = evaluateHudVitalityNectarPulse({
+    prevNBackHits: 2,
+    currentNBackHits: 3,
+    prevTreesGrafted: 1,
+    currentTreesGrafted: 1,
+  });
+  assert.equal(nbackEval.isPulsing, true);
+  assert.equal(nbackEval.shouldStartNewPulse, true);
+  assert.equal(nbackEval.triggerSource, 'nback_match');
+  assert.equal(nbackEval.vitalityPulseClassName, 'hud-vitality-keyframe-pulse');
+  assert.equal(nbackEval.nectarPulseClassName, 'hud-nectar-keyframe-pulse');
+
+  // Triggered by crafting/grafting a new tree
+  const treeEval = evaluateHudVitalityNectarPulse({
+    prevNBackHits: 3,
+    currentNBackHits: 3,
+    prevTreesGrafted: 1,
+    currentTreesGrafted: 2,
+  });
+  assert.equal(treeEval.isPulsing, true);
+  assert.equal(treeEval.shouldStartNewPulse, true);
+  assert.equal(treeEval.triggerSource, 'tree_grafted');
+  assert.equal(treeEval.vitalityPulseClassName, 'hud-vitality-keyframe-pulse');
+  assert.equal(treeEval.nectarPulseClassName, 'hud-nectar-keyframe-pulse');
+});
 
 test('stepSanctuaryBloomIntensityTransition smoothly interpolates Sanctuary Bloom intensity when selecting a preset or adjusting the slider', () => {
   assert.equal(SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_SEC, 0.45);

@@ -49,6 +49,7 @@ export interface HudSnapshot {
   nectarCostPerTree: number;
   treesGrafted: number;
   targetTrees: number;
+  nBackHits?: number;
   stageIndex: number;
   stageName: string;
   nBackLevel: number;
@@ -106,6 +107,7 @@ interface SanctuaryCanvasProps {
   isOverlayModalOpen?: boolean;
   activeMilestoneId?: CognitiveMilestoneId;
   onTreeGrafted?: () => void;
+  onNBackMatch?: () => void;
   isDemoMode?: boolean;
   demoStepSignal?: { step: number; seq: number } | null;
   atmosphereId?: SanctuaryAtmosphereId;
@@ -210,6 +212,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
   isOverlayModalOpen = false,
   activeMilestoneId = 'sapling_awakening',
   onTreeGrafted,
+  onNBackMatch,
   isDemoMode = false,
   demoStepSignal = null,
   atmosphereId = 'forest',
@@ -237,6 +240,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
     isOverlayModalOpen,
     activeMilestoneId,
     onTreeGrafted,
+    onNBackMatch,
     isDemoMode,
     atmosphereId,
     isZenMode,
@@ -261,6 +265,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       isOverlayModalOpen,
       activeMilestoneId,
       onTreeGrafted,
+      onNBackMatch,
       isDemoMode,
       atmosphereId,
       isZenMode,
@@ -283,6 +288,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
     isOverlayModalOpen,
     activeMilestoneId,
     onTreeGrafted,
+    onNBackMatch,
     isDemoMode,
     atmosphereId,
     isZenMode,
@@ -979,6 +985,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         chimeMatchClaimedThisBeat = true;
         nBackHits += 1;
         consecutiveCognitiveHits += 1;
+        stateRef.current.onNBackMatch?.();
         const flowState = computeAdaptiveFlowState({
           consecutiveCognitiveHits,
           coherenceSeconds,
@@ -2898,6 +2905,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
           nectarCostPerTree: stage.nectarCostPerTree,
           treesGrafted,
           targetTrees: stage.targetTreesGrafted,
+          nBackHits,
           stageIndex: stateRef.current.stageIndex,
           stageName: stage.name,
           nBackLevel: renderAdaptiveScaling.effectiveNBackLevel,

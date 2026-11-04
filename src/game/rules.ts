@@ -5642,3 +5642,75 @@ export function computeSanctuaryBloomIntensityTrend30Days(params?: {
     clinicalCorrelationNote,
   };
 }
+
+/**
+ * Subtle CSS Keyframe Pulse Evaluation for 'Nectar' and 'Vitality' HUD Elements
+ * Triggered when the user successfully matches an N-Back chime or grafts/crafts a new tree.
+ */
+export const HUD_VITALITY_NECTAR_PULSE_DURATION_MS = 680;
+
+export type HudPulseTriggerSource = 'nback_match' | 'tree_grafted' | 'none';
+
+export interface HudVitalityNectarPulseEval {
+  isPulsing: boolean;
+  shouldStartNewPulse: boolean;
+  triggerSource: HudPulseTriggerSource;
+  vitalityPulseClassName: string;
+  nectarPulseClassName: string;
+  pulseDurationMs: number;
+  vitalityAccentHex: string;
+  nectarAccentHex: string;
+  statusDescription: string;
+}
+
+export function evaluateHudVitalityNectarPulse(params: {
+  prevNBackHits: number;
+  currentNBackHits: number;
+  prevTreesGrafted: number;
+  currentTreesGrafted: number;
+  isPulseWindowActive?: boolean;
+  activeTriggerSource?: HudPulseTriggerSource;
+}): HudVitalityNectarPulseEval {
+  const prevHits = Math.max(0, Math.floor(params.prevNBackHits || 0));
+  const currHits = Math.max(0, Math.floor(params.currentNBackHits || 0));
+  const prevTrees = Math.max(0, Math.floor(params.prevTreesGrafted || 0));
+  const currTrees = Math.max(0, Math.floor(params.currentTreesGrafted || 0));
+
+  const nBackMatchedNow = currHits > prevHits;
+  const treeGraftedNow = currTrees > prevTrees;
+  const shouldStartNewPulse = nBackMatchedNow || treeGraftedNow;
+
+  let resolvedSource: HudPulseTriggerSource = 'none';
+  if (treeGraftedNow) {
+    resolvedSource = 'tree_grafted';
+  } else if (nBackMatchedNow) {
+    resolvedSource = 'nback_match';
+  } else if (params.isPulseWindowActive && params.activeTriggerSource && params.activeTriggerSource !== 'none') {
+    resolvedSource = params.activeTriggerSource;
+  }
+
+  const isPulsing = shouldStartNewPulse || Boolean(params.isPulseWindowActive && resolvedSource !== 'none');
+
+  const vitalityAccentHex =
+    resolvedSource === 'tree_grafted' ? '#B794F4' : '#68D391';
+  const nectarAccentHex =
+    resolvedSource === 'tree_grafted' ? '#4FD1C5' : '#F2B84B';
+
+  return {
+    isPulsing,
+    shouldStartNewPulse,
+    triggerSource: isPulsing ? resolvedSource : 'none',
+    vitalityPulseClassName: isPulsing ? 'hud-vitality-keyframe-pulse' : '',
+    nectarPulseClassName: isPulsing ? 'hud-nectar-keyframe-pulse' : '',
+    pulseDurationMs: HUD_VITALITY_NECTAR_PULSE_DURATION_MS,
+    vitalityAccentHex,
+    nectarAccentHex,
+    statusDescription:
+      resolvedSource === 'tree_grafted'
+        ? 'Tree Crafted · BDNF Synapse Pulse'
+        : resolvedSource === 'nback_match'
+        ? 'N-Back Chime Matched · Prefrontal Pulse'
+        : 'Steady HUD Telemetry',
+  };
+}
+

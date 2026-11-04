@@ -56,6 +56,9 @@ import {
   evaluateGentleHabitNotification,
   computeCognitiveBloomImpactBreakdown,
   computeBloomSliderTooltipState,
+  HUD_VITALITY_NECTAR_PULSE_DURATION_MS,
+  evaluateHudVitalityNectarPulse,
+  type HudPulseTriggerSource,
   type GentleNotificationConfig,
   type SanctuaryBloomPresetId,
   type CognitiveRhythmSyncConfig,
@@ -581,7 +584,53 @@ export default function App() {
     });
   }, [zenModeStreak.longestZenStreak, zenModeStreak.totalZenDaysLogged]);
 
+  // HUD Vitality & Nectar Subtle CSS Keyframe Pulse on N-Back Match or Tree Craft
+  const [hudVitalityNectarPulse, setHudVitalityNectarPulse] = useState<{
+    active: boolean;
+    triggerSource: HudPulseTriggerSource;
+    pulseSeq: number;
+  }>({
+    active: false,
+    triggerSource: 'none',
+    pulseSeq: 0,
+  });
+  const hudPulseTimeoutRef = useRef<number | null>(null);
+
+  const triggerHudVitalityNectarPulse = useCallback(
+    (source: Exclude<HudPulseTriggerSource, 'none'>) => {
+      if (hudPulseTimeoutRef.current !== null) {
+        window.clearTimeout(hudPulseTimeoutRef.current);
+      }
+      setHudVitalityNectarPulse((prev) => ({
+        active: true,
+        triggerSource: source,
+        pulseSeq: prev.pulseSeq + 1,
+      }));
+      hudPulseTimeoutRef.current = window.setTimeout(() => {
+        setHudVitalityNectarPulse((prev) => ({
+          ...prev,
+          active: false,
+        }));
+        hudPulseTimeoutRef.current = null;
+      }, HUD_VITALITY_NECTAR_PULSE_DURATION_MS);
+    },
+    []
+  );
+
+  useEffect(() => {
+    return () => {
+      if (hudPulseTimeoutRef.current !== null) {
+        window.clearTimeout(hudPulseTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleNBackMatched = useCallback(() => {
+    triggerHudVitalityNectarPulse('nback_match');
+  }, [triggerHudVitalityNectarPulse]);
+
   const handleTreeGraftedIncrement = useCallback(() => {
+    triggerHudVitalityNectarPulse('tree_grafted');
     setLifetimeProgress((prev) => {
       const nextTrees = prev.totalTreesGrafted + 1;
       const prevEval = evaluateCognitiveMilestones(prev);
@@ -610,7 +659,7 @@ export default function App() {
       }
       return updated;
     });
-  }, []);
+  }, [triggerHudVitalityNectarPulse]);
 
   // Daily Streak Counter persisted in localStorage
   const [dailyStreak, setDailyStreak] = useState<DailyStreakState>(() => {
@@ -1062,6 +1111,47 @@ export default function App() {
     pulseDurationMs: 1400,
   });
 
+  // Also detect N-Back matches or crafted trees via HUD snapshot delta (e.g. during Demo Mode or keyboard actions)
+  const prevHudNBackHitsRef = useRef<number>(0);
+  const prevHudTreesGraftedRef = useRef<number>(0);
+
+  useEffect(() => {
+    const prevHits = prevHudNBackHitsRef.current;
+    const currHits = hud.nBackHits ?? 0;
+    const prevTrees = prevHudTreesGraftedRef.current;
+    const currTrees = hud.treesGrafted ?? 0;
+    if (currHits > prevHits || currTrees > prevTrees) {
+      const evalDelta = evaluateHudVitalityNectarPulse({
+        prevNBackHits: prevHits,
+        currentNBackHits: currHits,
+        prevTreesGrafted: prevTrees,
+        currentTreesGrafted: currTrees,
+        isPulseWindowActive: hudVitalityNectarPulse.active,
+        activeTriggerSource: hudVitalityNectarPulse.triggerSource,
+      });
+      if (evalDelta.shouldStartNewPulse && evalDelta.triggerSource !== 'none') {
+        triggerHudVitalityNectarPulse(evalDelta.triggerSource);
+      }
+    }
+    prevHudNBackHitsRef.current = currHits;
+    prevHudTreesGraftedRef.current = currTrees;
+  }, [
+    hud.nBackHits,
+    hud.treesGrafted,
+    hudVitalityNectarPulse.active,
+    hudVitalityNectarPulse.triggerSource,
+    triggerHudVitalityNectarPulse,
+  ]);
+
+  const hudVitalityNectarPulseEval = evaluateHudVitalityNectarPulse({
+    prevNBackHits: 0,
+    currentNBackHits: 0,
+    prevTreesGrafted: 0,
+    currentTreesGrafted: 0,
+    isPulseWindowActive: hudVitalityNectarPulse.active,
+    activeTriggerSource: hudVitalityNectarPulse.triggerSource,
+  });
+
   // 5-Session HRV Coherence Adaptive Difficulty Scaling (Maintains Optimal Flow State)
   const [runningFiveSessionHrvAvgOverride, setRunningFiveSessionHrvAvgOverride] = useState<number | null>(null);
   const liveFiveSessionHrvAvg = computeRunningFiveSessionHrvAverage(hrvHistory).runningFiveSessionAvg;
@@ -1484,6 +1574,7 @@ export default function App() {
         isOverlayModalOpen={isCodexOpen}
         activeMilestoneId={lifetimeProgress.selectedMilestoneId}
         onTreeGrafted={handleTreeGraftedIncrement}
+        onNBackMatch={handleNBackMatched}
         isDemoMode={isDemoMode}
         demoStepSignal={demoStepSignal}
         atmosphereId={atmosphereId}
@@ -1921,8 +2012,17 @@ export default function App() {
             <div className="flex flex-wrap 2xl:flex-nowrap items-start justify-between gap-2">
               {/* Top-Left Perimeter Cluster: Calm Vitality Pips, BDNF Nectar & Grafted Trees */}
               <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-2xl bg-[#091510]/88 border border-[#233D32] shadow-xl pointer-events-auto shrink-0">
-              {/* Calm Vitality Pips (3 readable states: Full, Damaged, Hollow) */}
-              <div className="whitespace-nowrap">
+              {/* Calm Vitality Pips (3 readable states: Full, Damaged, Hollow) + CSS Keyframe Pulse */}
+              <div
+                key={`vitality-pulse-${hudVitalityNectarPulse.pulseSeq}`}
+                data-testid="hud-vitality"
+                data-pulse-active={hudVitalityNectarPulseEval.isPulsing ? 'true' : 'false'}
+                data-pulse-trigger={hudVitalityNectarPulseEval.triggerSource}
+                data-pulse-seq={hudVitalityNectarPulse.pulseSeq}
+                onClick={() => triggerHudVitalityNectarPulse('nback_match')}
+                className={`px-1.5 py-0.5 rounded-lg whitespace-nowrap cursor-pointer ${hudVitalityNectarPulseEval.vitalityPulseClassName}`}
+                title="Calm Vitality Pips — Pulses on N-Back Chime Match (+1 Vitality) or Neural Tree Graft"
+              >
                 <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
                   VITALITY
                 </div>
@@ -1957,9 +2057,18 @@ export default function App() {
                 </div>
               </div>
 
-              {/* BDNF Nectar Counter (Hidden in Zen Mode) */}
+              {/* BDNF Nectar Counter (Hidden in Zen Mode) + CSS Keyframe Pulse */}
               {zenHud.showNectar && (
-                <div data-testid="hud-nectar" className="pl-2 border-l border-[#233D32] whitespace-nowrap">
+                <div
+                  key={`nectar-pulse-${hudVitalityNectarPulse.pulseSeq}`}
+                  data-testid="hud-nectar"
+                  data-pulse-active={hudVitalityNectarPulseEval.isPulsing ? 'true' : 'false'}
+                  data-pulse-trigger={hudVitalityNectarPulseEval.triggerSource}
+                  data-pulse-seq={hudVitalityNectarPulse.pulseSeq}
+                  onClick={() => triggerHudVitalityNectarPulse('tree_grafted')}
+                  className={`pl-2 pr-1.5 py-0.5 rounded-r-lg border-l border-[#233D32] whitespace-nowrap cursor-pointer ${hudVitalityNectarPulseEval.nectarPulseClassName}`}
+                  title="BDNF Nectar — Pulses on N-Back Chime Match (+Nectar) or Neural Tree Graft (-Cost)"
+                >
                   <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
                     NECTAR
                   </div>
