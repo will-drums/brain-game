@@ -77,8 +77,94 @@ import {
   stepSanctuaryBloomCrossfade,
   DEFAULT_30_DAY_VAGAL_BASELINE_SCORES,
   computeVagalToneTrend30Days,
+  DEFAULT_PRIOR_23_DAYS_HABIT_SEED,
+  resolveHabitHeatmapTileVisuals,
+  computeHabitCompletionHeatmap30Days,
   type ChimeSymbol,
 } from './rules';
+
+test('computeHabitCompletionHeatmap30Days builds 30 color-coded day tiles for NSDR and Cognitive Reframing compliance and syncs Today', () => {
+  assert.equal(DEFAULT_PRIOR_23_DAYS_HABIT_SEED.length, 23);
+
+  // Verify color-coded visuals for all 4 combined states
+  const bothVisual = resolveHabitHeatmapTileVisuals({
+    nsdrCompleted: true,
+    cognitiveReframingCompleted: true,
+    filterMode: 'combined',
+  });
+  assert.equal(bothVisual.status, 'both_completed');
+  assert.equal(bothVisual.tileBorderHex, '#68D391');
+  assert.equal(bothVisual.tileBadgeText, '2/2');
+
+  const nsdrVisual = resolveHabitHeatmapTileVisuals({
+    nsdrCompleted: true,
+    cognitiveReframingCompleted: false,
+    filterMode: 'combined',
+  });
+  assert.equal(nsdrVisual.status, 'nsdr_only');
+  assert.equal(nsdrVisual.tileBorderHex, '#4FD1C5');
+  assert.equal(nsdrVisual.tileBadgeText, 'NSDR');
+
+  const reframingVisual = resolveHabitHeatmapTileVisuals({
+    nsdrCompleted: false,
+    cognitiveReframingCompleted: true,
+    filterMode: 'combined',
+  });
+  assert.equal(reframingVisual.status, 'reframing_only');
+  assert.equal(reframingVisual.tileBorderHex, '#B794F4');
+  assert.equal(reframingVisual.tileBadgeText, 'CBT');
+
+  const restVisual = resolveHabitHeatmapTileVisuals({
+    nsdrCompleted: false,
+    cognitiveReframingCompleted: false,
+    filterMode: 'combined',
+  });
+  assert.equal(restVisual.status, 'rest_day');
+  assert.equal(restVisual.tileBorderHex, '#1E352B');
+  assert.equal(restVisual.tileBadgeText, '0/2');
+
+  // Compute full 30-day heatmap when Today has neither logged yet
+  const heatmapRestToday = computeHabitCompletionHeatmap30Days({
+    todayNsdrCompleted: false,
+    todayCognitiveReframingCompleted: false,
+    referenceDateIso: '2026-11-04',
+  });
+
+  assert.equal(heatmapRestToday.days.length, 30);
+  assert.equal(heatmapRestToday.days[0].dayIndex, 1);
+  assert.equal(heatmapRestToday.days[0].dayOffset, -29);
+  assert.equal(heatmapRestToday.days[0].dateIso, '2026-10-06');
+  assert.equal(heatmapRestToday.days[0].shortDateLabel, 'Oct 06');
+  assert.equal(heatmapRestToday.days[29].dayIndex, 30);
+  assert.equal(heatmapRestToday.days[29].dateIso, '2026-11-04');
+  assert.equal(heatmapRestToday.days[29].isToday, true);
+  assert.equal(heatmapRestToday.days[29].status, 'rest_day');
+  assert.equal(
+    heatmapRestToday.dualSynergyDaysCount +
+      heatmapRestToday.nsdrOnlyDaysCount +
+      heatmapRestToday.reframingOnlyDaysCount +
+      heatmapRestToday.restDaysCount,
+    30
+  );
+
+  // Completing both NSDR and Cognitive Reframing today updates Day 30 to 'both_completed' and increases Dual Synergy count by 1
+  const heatmapBothToday = computeHabitCompletionHeatmap30Days({
+    todayNsdrCompleted: true,
+    todayCognitiveReframingCompleted: true,
+    referenceDateIso: '2026-11-04',
+  });
+  assert.equal(heatmapBothToday.days[29].status, 'both_completed');
+  assert.equal(heatmapBothToday.days[29].compliancePct, 100);
+  assert.equal(heatmapBothToday.days[29].restorativeMinutes, 25);
+  assert.equal(
+    heatmapBothToday.dualSynergyDaysCount,
+    heatmapRestToday.dualSynergyDaysCount + 1
+  );
+  assert.equal(
+    heatmapBothToday.totalRestorativeMinutes30d,
+    heatmapRestToday.totalRestorativeMinutes30d + 25
+  );
+});
 
 test('computeVagalToneTrend30Days aggregates 30-day daily Vagal Coherence scores, 7-day rolling parasympathetic average, and resonant days from HRV history', () => {
   assert.equal(DEFAULT_30_DAY_VAGAL_BASELINE_SCORES.length, 30);

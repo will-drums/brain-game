@@ -39,6 +39,9 @@ import {
   clampHabitDurationGoalMinutes,
   sanitizeDailyHabitDurationGoalsConfig,
   computeDailyHabitDurationProgress,
+  computeHabitCompletionHeatmap30Days,
+  type HabitHeatmapFilterMode,
+  type HabitHeatmapDayTile,
   type VagalToneDailyRecord,
   type DailyHabitDurationGoalsConfig,
   type PriorDayHabitRecord,
@@ -367,6 +370,30 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
       }),
     [activeNsdrCompleted, activeReframingCompleted, priorSixDaysHistory]
   );
+
+  // 30-Day Habit Completion Heatmap Calendar state & filter mode
+  const [heatmapFilterMode, setHeatmapFilterMode] =
+    useState<HabitHeatmapFilterMode>('combined');
+  const [selectedHeatmapDayIndex, setSelectedHeatmapDayIndex] =
+    useState<number>(30);
+  const habitHeatmap30d = React.useMemo(
+    () =>
+      computeHabitCompletionHeatmap30Days({
+        todayNsdrCompleted: activeNsdrCompleted,
+        todayCognitiveReframingCompleted: activeReframingCompleted,
+        priorSixDays: priorSixDaysHistory,
+        filterMode: heatmapFilterMode,
+      }),
+    [
+      activeNsdrCompleted,
+      activeReframingCompleted,
+      priorSixDaysHistory,
+      heatmapFilterMode,
+    ]
+  );
+  const inspectedHeatmapTile: HabitHeatmapDayTile =
+    habitHeatmap30d.days.find((d) => d.dayIndex === selectedHeatmapDayIndex) ||
+    habitHeatmap30d.days[habitHeatmap30d.days.length - 1];
 
   // Synchronize last 10 sessions from hrvHistory prop and HRV_HISTORY_STORAGE_KEY
   const resolvedHistory = React.useMemo(() => {
@@ -2574,6 +2601,404 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
                 <span className="text-[#F2B84B] tabular-nums shrink-0">
                   {weeklyCompliance.trendHeadline}
                 </span>
+              </div>
+            </div>
+          </div>
+
+          {/* 30-DAY HABIT COMPLETION HEATMAP CALENDAR (COLOR-CODED DAY TILES FOR NSDR & COGNITIVE REFRAMING) */}
+          <div
+            data-testid="habit-completion-heatmap-section"
+            data-total-days={habitHeatmap30d.days.length}
+            data-dual-synergy-days={habitHeatmap30d.dualSynergyDaysCount}
+            data-nsdr-days={habitHeatmap30d.totalNsdrDaysCount}
+            data-reframing-days={habitHeatmap30d.totalReframingDaysCount}
+            data-overall-compliance-pct={
+              habitHeatmap30d.thirtyDayOverallCompliancePct
+            }
+            data-filter-mode={heatmapFilterMode}
+            className="mt-4 pt-4 border-t border-[#233D32] space-y-4"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] font-mono uppercase tracking-wider text-[#68D391]">
+                    30-Day Longitudinal Habit Matrix · Color-Coded Calendar Telemetry
+                  </span>
+                  <span
+                    data-testid="habit-heatmap-streak-badge"
+                    className="px-2 py-0.5 rounded bg-[#142D23] text-[#F2B84B] border border-[#F2B84B]/40 text-[10px] font-mono font-semibold tabular-nums"
+                  >
+                    ★ {habitHeatmap30d.currentActiveStreakDays}d Active Run · Best Dual Run {habitHeatmap30d.longestDualSynergyStreakDays}d
+                  </span>
+                </div>
+                <h4 className="text-base font-display font-semibold text-[#F4EFE6] mt-0.5">
+                  Habit Completion Heatmap — 30-Day NSDR &amp; Cognitive Reframing Calendar
+                </h4>
+                <p className="text-xs text-[#A3B8B0] mt-0.5">
+                  Displays the last 30 days of 20m Non-Sleep Deep Rest (NSDR) and 5m Daily Cognitive Reframing compliance using color-coded day tiles. Click any day tile to inspect daily restorative metrics.
+                </p>
+              </div>
+
+              {/* Filter Mode Toggle Pills */}
+              <div
+                role="group"
+                aria-label="Habit Heatmap Filter Mode"
+                className="inline-flex rounded-lg bg-[#10231C] border border-[#233D32] p-0.5 font-mono text-xs shrink-0"
+              >
+                <button
+                  type="button"
+                  data-testid="heatmap-filter-combined"
+                  aria-pressed={heatmapFilterMode === 'combined'}
+                  onClick={() => setHeatmapFilterMode('combined')}
+                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+                    heatmapFilterMode === 'combined'
+                      ? 'bg-[#1D4032] text-[#68D391] font-semibold'
+                      : 'text-[#A3B8B0] hover:text-[#F4EFE6]'
+                  }`}
+                >
+                  All Habits (4-State)
+                </button>
+                <button
+                  type="button"
+                  data-testid="heatmap-filter-nsdr"
+                  aria-pressed={heatmapFilterMode === 'nsdr_only'}
+                  onClick={() => setHeatmapFilterMode('nsdr_only')}
+                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+                    heatmapFilterMode === 'nsdr_only'
+                      ? 'bg-[#173A38] text-[#4FD1C5] font-semibold'
+                      : 'text-[#A3B8B0] hover:text-[#F4EFE6]'
+                  }`}
+                >
+                  20m NSDR Only
+                </button>
+                <button
+                  type="button"
+                  data-testid="heatmap-filter-reframing"
+                  aria-pressed={heatmapFilterMode === 'cognitive_reframing_only'}
+                  onClick={() => setHeatmapFilterMode('cognitive_reframing_only')}
+                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+                    heatmapFilterMode === 'cognitive_reframing_only'
+                      ? 'bg-[#261E3A] text-[#B794F4] font-semibold'
+                      : 'text-[#A3B8B0] hover:text-[#F4EFE6]'
+                  }`}
+                >
+                  5m Reframing Only
+                </button>
+              </div>
+            </div>
+
+            {/* 4 Summary KPI Cards for the 30-Day Heatmap */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div
+                data-testid="heatmap-kpi-dual-synergy"
+                className="p-3 rounded-xl bg-[#10231C] border border-[#1E3A2F] space-y-1"
+              >
+                <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
+                  <span>Dual Synergy (2/2)</span>
+                  <span className="w-2.5 h-2.5 rounded-xs bg-[#153E2E] border border-[#68D391]" />
+                </div>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span
+                    data-testid="heatmap-dual-synergy-count"
+                    className="text-lg font-mono font-bold text-[#68D391] tabular-nums"
+                  >
+                    {habitHeatmap30d.dualSynergyDaysCount}/30d
+                  </span>
+                  <span className="text-[11px] font-mono text-[#D5E2DC] tabular-nums whitespace-nowrap">
+                    Both Logged
+                  </span>
+                </div>
+              </div>
+
+              <div
+                data-testid="heatmap-kpi-nsdr-days"
+                className="p-3 rounded-xl bg-[#10231C] border border-[#1E3A2F] space-y-1"
+              >
+                <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
+                  <span>20m NSDR Days</span>
+                  <span className="w-2.5 h-2.5 rounded-xs bg-[#113335] border border-[#4FD1C5]" />
+                </div>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span
+                    data-testid="heatmap-nsdr-days-count"
+                    className="text-lg font-mono font-bold text-[#4FD1C5] tabular-nums"
+                  >
+                    {habitHeatmap30d.totalNsdrDaysCount}/30d
+                  </span>
+                  <span className="text-[11px] font-mono text-[#D5E2DC] tabular-nums">
+                    {habitHeatmap30d.nsdrOnlyDaysCount}d NSDR-Only
+                  </span>
+                </div>
+              </div>
+
+              <div
+                data-testid="heatmap-kpi-reframing-days"
+                className="p-3 rounded-xl bg-[#10231C] border border-[#1E3A2F] space-y-1"
+              >
+                <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
+                  <span>5m Reframing Days</span>
+                  <span className="w-2.5 h-2.5 rounded-xs bg-[#231B38] border border-[#B794F4]" />
+                </div>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span
+                    data-testid="heatmap-reframing-days-count"
+                    className="text-lg font-mono font-bold text-[#B794F4] tabular-nums"
+                  >
+                    {habitHeatmap30d.totalReframingDaysCount}/30d
+                  </span>
+                  <span className="text-[11px] font-mono text-[#D5E2DC] tabular-nums">
+                    {habitHeatmap30d.reframingOnlyDaysCount}d CBT-Only
+                  </span>
+                </div>
+              </div>
+
+              <div
+                data-testid="heatmap-kpi-overall-compliance"
+                className="p-3 rounded-xl bg-[#10231C] border border-[#1E3A2F] space-y-1"
+              >
+                <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
+                  <span>30-Day Adherence</span>
+                  <span className="w-2.5 h-2.5 rounded-xs bg-[#F2B84B]" />
+                </div>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span
+                    data-testid="heatmap-overall-compliance-pct"
+                    className="text-lg font-mono font-bold text-[#F2B84B] tabular-nums"
+                  >
+                    {habitHeatmap30d.thirtyDayOverallCompliancePct}%
+                  </span>
+                  <span className="text-[11px] font-mono text-[#D5E2DC] tabular-nums">
+                    {habitHeatmap30d.totalRestorativeMinutes30d}m Total
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Color-Coded 30-Day Calendar Heatmap Container */}
+            <div className="p-4 rounded-xl bg-[#091510] border border-[#1E3A2F] space-y-3.5">
+              {/* Color-Coded Legend & Today Quick Sync */}
+              <div className="flex flex-wrap items-center justify-between gap-3 text-[11px] font-mono">
+                <div
+                  data-testid="habit-heatmap-legend"
+                  className="flex flex-wrap items-center gap-3.5"
+                >
+                  <span className="inline-flex items-center gap-1.5 text-[#68D391]">
+                    <span
+                      className="w-3 h-3 rounded-xs inline-block border"
+                      style={{
+                        backgroundColor: '#153E2E',
+                        borderColor: '#68D391',
+                      }}
+                    />
+                    <span>Dual Synergy (NSDR + CBT · 2/2)</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 text-[#4FD1C5]">
+                    <span
+                      className="w-3 h-3 rounded-xs inline-block border"
+                      style={{
+                        backgroundColor: '#113335',
+                        borderColor: '#4FD1C5',
+                      }}
+                    />
+                    <span>20m NSDR Only (1/2)</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 text-[#B794F4]">
+                    <span
+                      className="w-3 h-3 rounded-xs inline-block border"
+                      style={{
+                        backgroundColor: '#231B38',
+                        borderColor: '#B794F4',
+                      }}
+                    />
+                    <span>5m Reframing Only (1/2)</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 text-[#A3B8B0]">
+                    <span
+                      className="w-3 h-3 rounded-xs inline-block border"
+                      style={{
+                        backgroundColor: '#0B1813',
+                        borderColor: '#1E352B',
+                      }}
+                    />
+                    <span>Rest / Unlogged (0/2)</span>
+                  </span>
+                </div>
+
+                <span className="text-[#A3B8B0] tabular-nums">
+                  {habitHeatmap30d.days[0]?.shortDateLabel} →{' '}
+                  {habitHeatmap30d.days[29]?.shortDateLabel} (
+                  {habitHeatmap30d.totalActiveDaysCount}/30 Active Days)
+                </span>
+              </div>
+
+              {/* 30 Color-Coded Calendar Day Tiles Grid (6 columns x 5 rows on desktop/tablet, 3x10 on small mobile) */}
+              <div
+                data-testid="habit-heatmap-calendar-grid"
+                role="grid"
+                aria-label="30-Day Habit Completion Heatmap Calendar"
+                className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-6 gap-2.5"
+              >
+                {habitHeatmap30d.days.map((tile) => {
+                  const isSelected =
+                    inspectedHeatmapTile.dayIndex === tile.dayIndex;
+                  return (
+                    <button
+                      key={tile.dayIndex}
+                      type="button"
+                      data-testid={`habit-heatmap-tile-${tile.dayIndex}`}
+                      data-day-index={tile.dayIndex}
+                      data-date-iso={tile.dateIso}
+                      data-compliance-status={tile.status}
+                      data-compliance-pct={tile.compliancePct}
+                      data-tile-bg-hex={tile.tileBgHex}
+                      data-tile-border-hex={tile.tileBorderHex}
+                      data-is-today={tile.isToday ? 'true' : 'false'}
+                      onClick={() => setSelectedHeatmapDayIndex(tile.dayIndex)}
+                      onMouseEnter={() =>
+                        setSelectedHeatmapDayIndex(tile.dayIndex)
+                      }
+                      title={`Day ${tile.dayIndex} (${tile.shortDateLabel} · ${tile.weekdayShort}): ${tile.statusLabel} · ${tile.restorativeMinutes}m restorative volume`}
+                      className={`p-2.5 rounded-lg text-left font-mono transition-transform cursor-pointer border flex flex-col justify-between min-h-[64px] ${
+                        isSelected
+                          ? 'ring-2 ring-[#F2B84B] scale-[1.02]'
+                          : 'hover:scale-[1.02]'
+                      }`}
+                      style={{
+                        backgroundColor: tile.tileBgHex,
+                        borderColor: tile.isToday
+                          ? '#F2B84B'
+                          : tile.tileBorderHex,
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-1.5">
+                        <span className="text-[11px] font-semibold text-[#F4EFE6] tabular-nums whitespace-nowrap">
+                          {tile.shortDateLabel}
+                        </span>
+                        {tile.isToday ? (
+                          <span className="px-1.5 py-0.2 rounded bg-[#F2B84B] text-[#091510] text-[8px] font-bold uppercase shrink-0">
+                            TODAY
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-[#A3B8B0] tabular-nums shrink-0">
+                            D{tile.dayIndex}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Dual-Habit Indicator Dots & Status Badge */}
+                      <div className="flex items-center justify-between gap-1 my-1">
+                        <div className="flex items-center gap-1">
+                          <span
+                            aria-label={
+                              tile.nsdrCompleted
+                                ? 'NSDR Completed'
+                                : 'NSDR Not Logged'
+                            }
+                            className="w-2 h-2 rounded-full inline-block"
+                            style={{
+                              backgroundColor: tile.nsdrCompleted
+                                ? '#4FD1C5'
+                                : '#1A2E25',
+                            }}
+                          />
+                          <span
+                            aria-label={
+                              tile.cognitiveReframingCompleted
+                                ? 'Cognitive Reframing Completed'
+                                : 'Cognitive Reframing Not Logged'
+                            }
+                            className="w-2 h-2 rounded-full inline-block"
+                            style={{
+                              backgroundColor: tile.cognitiveReframingCompleted
+                                ? '#B794F4'
+                                : '#1A2E25',
+                            }}
+                          />
+                        </div>
+                        <span
+                          className="text-[10px] font-bold tabular-nums"
+                          style={{ color: tile.tileTextHex }}
+                        >
+                          {tile.tileBadgeText}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[9px] text-[#A3B8B0] tabular-nums">
+                        <span>{tile.weekdayShort}</span>
+                        <span>{tile.restorativeMinutes}m</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Interactive Day Tile Inspector & Today Habit Toggle Controls */}
+              <div
+                data-testid="habit-heatmap-day-inspector"
+                data-inspected-day-index={inspectedHeatmapTile.dayIndex}
+                data-inspected-status={inspectedHeatmapTile.status}
+                className="pt-3 border-t border-[#1E3A2F] flex flex-wrap items-center justify-between gap-3 text-xs font-mono"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="px-2 py-0.5 rounded bg-[#10231C] border border-[#233D32] text-[#F4EFE6] font-bold tabular-nums">
+                    Day {inspectedHeatmapTile.dayIndex} ·{' '}
+                    {inspectedHeatmapTile.shortDateLabel} (
+                    {inspectedHeatmapTile.isToday
+                      ? 'Today'
+                      : `${inspectedHeatmapTile.dayOffset}d`}
+                    )
+                  </span>
+                  <span
+                    data-testid="habit-heatmap-inspected-status-label"
+                    className="font-semibold"
+                    style={{ color: inspectedHeatmapTile.tileTextHex }}
+                  >
+                    {inspectedHeatmapTile.statusLabel}
+                  </span>
+                  <span className="text-[#A3B8B0] tabular-nums">
+                    · {inspectedHeatmapTile.restorativeMinutes}m Logged (
+                    {inspectedHeatmapTile.nsdrCompleted ? '✓ 20m NSDR' : '✗ NSDR'}{' '}
+                    / {inspectedHeatmapTile.cognitiveReframingCompleted ? '✓ 5m CBT' : '✗ CBT'})
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] uppercase tracking-wider text-[#A3B8B0]">
+                    Update Today (Day 30):
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="heatmap-toggle-today-nsdr"
+                    onClick={() => {
+                      setSelectedHeatmapDayIndex(30);
+                      handleExerciseToggleClick('nsdr_protocol');
+                    }}
+                    className={`px-2.5 py-1 rounded-md text-[10px] font-mono font-semibold transition-colors cursor-pointer border ${
+                      activeNsdrCompleted
+                        ? 'bg-[#173A38] text-[#4FD1C5] border-[#4FD1C5]'
+                        : 'bg-[#10231C] text-[#A3B8B0] border-[#233D32] hover:text-[#F4EFE6]'
+                    }`}
+                  >
+                    {activeNsdrCompleted ? '✓ Today NSDR' : '+ Log Today NSDR'}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="heatmap-toggle-today-reframing"
+                    onClick={() => {
+                      setSelectedHeatmapDayIndex(30);
+                      handleExerciseToggleClick('cognitive_reframing');
+                    }}
+                    className={`px-2.5 py-1 rounded-md text-[10px] font-mono font-semibold transition-colors cursor-pointer border ${
+                      activeReframingCompleted
+                        ? 'bg-[#261E3A] text-[#B794F4] border-[#B794F4]'
+                        : 'bg-[#10231C] text-[#A3B8B0] border-[#233D32] hover:text-[#F4EFE6]'
+                    }`}
+                  >
+                    {activeReframingCompleted
+                      ? '✓ Today Reframing'
+                      : '+ Log Today Reframing'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

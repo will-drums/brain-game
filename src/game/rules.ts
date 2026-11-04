@@ -4634,6 +4634,374 @@ export function computeVagalToneTrend30Days(params?: {
   };
 }
 
+/**
+ * 30-Day Habit Completion Heatmap Calendar (NSDR & Daily Cognitive Reframing Compliance)
+ * Generates 30 color-coded calendar day tiles representing daily completion of Non-Sleep Deep Rest (NSDR)
+ * and Daily Cognitive Reframing over the last 30 days in the Clinical Evidence Codex modal.
+ */
+export type HabitHeatmapComplianceStatus =
+  | 'both_completed'
+  | 'nsdr_only'
+  | 'reframing_only'
+  | 'rest_day';
+
+export type HabitHeatmapFilterMode =
+  | 'combined'
+  | 'nsdr_only'
+  | 'cognitive_reframing_only';
+
+export interface HabitHeatmapDayTile {
+  dayIndex: number; // 1..30
+  dayOffset: number; // -29..0
+  dateIso: string; // YYYY-MM-DD
+  shortDateLabel: string; // e.g., "Oct 06", "Nov 04"
+  dayOfMonthNum: number; // 1..31
+  weekdayShort: string; // "Sun".."Sat"
+  weekRowIndex: number; // 0..4 (5 rows of 6 days)
+  nsdrCompleted: boolean;
+  cognitiveReframingCompleted: boolean;
+  completedCount: number; // 0, 1, or 2
+  compliancePct: number; // 0, 50, or 100
+  restorativeMinutes: number; // 0, 5, 20, or 25
+  status: HabitHeatmapComplianceStatus;
+  statusLabel: string;
+  tileBgHex: string;
+  tileBorderHex: string;
+  tileTextHex: string;
+  tileBadgeText: string;
+  isToday: boolean;
+}
+
+export interface HabitCompletionHeatmap30DaySummary {
+  days: HabitHeatmapDayTile[];
+  filterMode: HabitHeatmapFilterMode;
+  dualSynergyDaysCount: number;
+  nsdrOnlyDaysCount: number;
+  reframingOnlyDaysCount: number;
+  restDaysCount: number;
+  totalActiveDaysCount: number;
+  totalNsdrDaysCount: number;
+  totalReframingDaysCount: number;
+  thirtyDayOverallCompliancePct: number; // 0..100 across 60 total habit slots
+  thirtyDayActiveDayRatePct: number; // 0..100 across 30 days
+  currentActiveStreakDays: number;
+  longestDualSynergyStreakDays: number;
+  totalRestorativeMinutes30d: number;
+}
+
+/**
+ * Historical 23-day seed (Days 1..23, i.e., -29d to -7d) preceding the 7-day window (-6d to Today).
+ */
+export const DEFAULT_PRIOR_23_DAYS_HABIT_SEED: ReadonlyArray<{
+  nsdrCompleted: boolean;
+  cognitiveReframingCompleted: boolean;
+}> = [
+  { nsdrCompleted: true, cognitiveReframingCompleted: false }, // Day 1 (-29d)
+  { nsdrCompleted: false, cognitiveReframingCompleted: false }, // Day 2 (-28d)
+  { nsdrCompleted: true, cognitiveReframingCompleted: true }, // Day 3 (-27d)
+  { nsdrCompleted: false, cognitiveReframingCompleted: true }, // Day 4 (-26d)
+  { nsdrCompleted: true, cognitiveReframingCompleted: true }, // Day 5 (-25d)
+  { nsdrCompleted: true, cognitiveReframingCompleted: false }, // Day 6 (-24d)
+  { nsdrCompleted: false, cognitiveReframingCompleted: false }, // Day 7 (-23d)
+  { nsdrCompleted: true, cognitiveReframingCompleted: true }, // Day 8 (-22d)
+  { nsdrCompleted: true, cognitiveReframingCompleted: false }, // Day 9 (-21d)
+  { nsdrCompleted: false, cognitiveReframingCompleted: true }, // Day 10 (-20d)
+  { nsdrCompleted: true, cognitiveReframingCompleted: true }, // Day 11 (-19d)
+  { nsdrCompleted: true, cognitiveReframingCompleted: true }, // Day 12 (-18d)
+  { nsdrCompleted: false, cognitiveReframingCompleted: false }, // Day 13 (-17d)
+  { nsdrCompleted: true, cognitiveReframingCompleted: false }, // Day 14 (-16d)
+  { nsdrCompleted: true, cognitiveReframingCompleted: true }, // Day 15 (-15d)
+  { nsdrCompleted: false, cognitiveReframingCompleted: true }, // Day 16 (-14d)
+  { nsdrCompleted: true, cognitiveReframingCompleted: true }, // Day 17 (-13d)
+  { nsdrCompleted: true, cognitiveReframingCompleted: false }, // Day 18 (-12d)
+  { nsdrCompleted: true, cognitiveReframingCompleted: true }, // Day 19 (-11d)
+  { nsdrCompleted: false, cognitiveReframingCompleted: false }, // Day 20 (-10d)
+  { nsdrCompleted: true, cognitiveReframingCompleted: true }, // Day 21 (-9d)
+  { nsdrCompleted: false, cognitiveReframingCompleted: true }, // Day 22 (-8d)
+  { nsdrCompleted: true, cognitiveReframingCompleted: true }, // Day 23 (-7d)
+];
+
+const SHORT_WEEKDAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+
+export function resolveHabitHeatmapTileVisuals(params: {
+  nsdrCompleted: boolean;
+  cognitiveReframingCompleted: boolean;
+  filterMode?: HabitHeatmapFilterMode;
+}): {
+  status: HabitHeatmapComplianceStatus;
+  statusLabel: string;
+  tileBgHex: string;
+  tileBorderHex: string;
+  tileTextHex: string;
+  tileBadgeText: string;
+} {
+  const mode = params.filterMode ?? 'combined';
+  const nsdr = Boolean(params.nsdrCompleted);
+  const reframing = Boolean(params.cognitiveReframingCompleted);
+
+  let status: HabitHeatmapComplianceStatus = 'rest_day';
+  let statusLabel = 'Unlogged / Rest Day (0/2)';
+  if (nsdr && reframing) {
+    status = 'both_completed';
+    statusLabel = 'Dual Synergy · NSDR + Cognitive Reframing (2/2)';
+  } else if (nsdr) {
+    status = 'nsdr_only';
+    statusLabel = '20m NSDR Protocol Completed (1/2)';
+  } else if (reframing) {
+    status = 'reframing_only';
+    statusLabel = '5m Cognitive Reframing Completed (1/2)';
+  }
+
+  if (mode === 'nsdr_only') {
+    return nsdr
+      ? {
+          status,
+          statusLabel,
+          tileBgHex: '#113335',
+          tileBorderHex: '#4FD1C5',
+          tileTextHex: '#4FD1C5',
+          tileBadgeText: 'NSDR ✓',
+        }
+      : {
+          status,
+          statusLabel,
+          tileBgHex: '#0B1813',
+          tileBorderHex: '#1E352B',
+          tileTextHex: '#526B61',
+          tileBadgeText: '0m',
+        };
+  }
+
+  if (mode === 'cognitive_reframing_only') {
+    return reframing
+      ? {
+          status,
+          statusLabel,
+          tileBgHex: '#231B38',
+          tileBorderHex: '#B794F4',
+          tileTextHex: '#B794F4',
+          tileBadgeText: 'CBT ✓',
+        }
+      : {
+          status,
+          statusLabel,
+          tileBgHex: '#0B1813',
+          tileBorderHex: '#1E352B',
+          tileTextHex: '#526B61',
+          tileBadgeText: '0m',
+        };
+  }
+
+  // Combined 4-state color-coded tiles
+  if (status === 'both_completed') {
+    return {
+      status,
+      statusLabel,
+      tileBgHex: '#153E2E',
+      tileBorderHex: '#68D391',
+      tileTextHex: '#68D391',
+      tileBadgeText: '2/2',
+    };
+  }
+  if (status === 'nsdr_only') {
+    return {
+      status,
+      statusLabel,
+      tileBgHex: '#113335',
+      tileBorderHex: '#4FD1C5',
+      tileTextHex: '#4FD1C5',
+      tileBadgeText: 'NSDR',
+    };
+  }
+  if (status === 'reframing_only') {
+    return {
+      status,
+      statusLabel,
+      tileBgHex: '#231B38',
+      tileBorderHex: '#B794F4',
+      tileTextHex: '#B794F4',
+      tileBadgeText: 'CBT',
+    };
+  }
+  return {
+    status,
+    statusLabel,
+    tileBgHex: '#0B1813',
+    tileBorderHex: '#1E352B',
+    tileTextHex: '#526B61',
+    tileBadgeText: '0/2',
+  };
+}
+
+export function computeHabitCompletionHeatmap30Days(params: {
+  todayNsdrCompleted: boolean;
+  todayCognitiveReframingCompleted: boolean;
+  priorSixDays?: readonly PriorDayHabitRecord[];
+  priorTwentyThreeDays?: ReadonlyArray<{
+    nsdrCompleted: boolean;
+    cognitiveReframingCompleted: boolean;
+  }>;
+  referenceDateIso?: string;
+  filterMode?: HabitHeatmapFilterMode;
+}): HabitCompletionHeatmap30DaySummary {
+  const filterMode: HabitHeatmapFilterMode = params.filterMode ?? 'combined';
+  const base23 =
+    params.priorTwentyThreeDays && params.priorTwentyThreeDays.length === 23
+      ? params.priorTwentyThreeDays
+      : DEFAULT_PRIOR_23_DAYS_HABIT_SEED;
+  const base6 =
+    params.priorSixDays && params.priorSixDays.length === 6
+      ? params.priorSixDays
+      : DEFAULT_PRIOR_SIX_DAYS_HABIT_HISTORY;
+
+  let anchorUtcMs = params.referenceDateIso
+    ? parseIsoDateToUtcMs(params.referenceDateIso)
+    : null;
+  if (anchorUtcMs === null) {
+    anchorUtcMs = Date.UTC(2026, 10, 4); // 2026-11-04 default anchor
+  }
+
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  const combinedRaw30: Array<{
+    nsdrCompleted: boolean;
+    cognitiveReframingCompleted: boolean;
+    isToday: boolean;
+  }> = [
+    ...base23.map((d) => ({
+      nsdrCompleted: Boolean(d.nsdrCompleted),
+      cognitiveReframingCompleted: Boolean(d.cognitiveReframingCompleted),
+      isToday: false,
+    })),
+    ...base6.map((d) => ({
+      nsdrCompleted: Boolean(d.nsdrCompleted),
+      cognitiveReframingCompleted: Boolean(d.cognitiveReframingCompleted),
+      isToday: false,
+    })),
+    {
+      nsdrCompleted: Boolean(params.todayNsdrCompleted),
+      cognitiveReframingCompleted: Boolean(params.todayCognitiveReframingCompleted),
+      isToday: true,
+    },
+  ];
+
+  const days: HabitHeatmapDayTile[] = combinedRaw30.map((entry, idx) => {
+    const dayOffset = idx - 29; // -29..0
+    const dayUtcMs = (anchorUtcMs as number) + dayOffset * DAY_MS;
+    const { dateIso, shortDateLabel } = formatUtcMsToIsoAndShortLabel(dayUtcMs);
+    const dt = new Date(dayUtcMs);
+    const dayOfMonthNum = dt.getUTCDate();
+    const weekdayShort = SHORT_WEEKDAY_NAMES[dt.getUTCDay()] || 'Mon';
+    const weekRowIndex = Math.floor(idx / 6);
+
+    const nsdrCompleted = entry.nsdrCompleted;
+    const cognitiveReframingCompleted = entry.cognitiveReframingCompleted;
+    const completedCount =
+      (nsdrCompleted ? 1 : 0) + (cognitiveReframingCompleted ? 1 : 0);
+    const compliancePct = Math.round((completedCount / 2) * 100);
+    const restorativeMinutes =
+      (nsdrCompleted ? 20 : 0) + (cognitiveReframingCompleted ? 5 : 0);
+
+    const visuals = resolveHabitHeatmapTileVisuals({
+      nsdrCompleted,
+      cognitiveReframingCompleted,
+      filterMode,
+    });
+
+    return {
+      dayIndex: idx + 1,
+      dayOffset,
+      dateIso,
+      shortDateLabel,
+      dayOfMonthNum,
+      weekdayShort,
+      weekRowIndex,
+      nsdrCompleted,
+      cognitiveReframingCompleted,
+      completedCount,
+      compliancePct,
+      restorativeMinutes,
+      status: visuals.status,
+      statusLabel: visuals.statusLabel,
+      tileBgHex: visuals.tileBgHex,
+      tileBorderHex: visuals.tileBorderHex,
+      tileTextHex: visuals.tileTextHex,
+      tileBadgeText: visuals.tileBadgeText,
+      isToday: entry.isToday,
+    };
+  });
+
+  const dualSynergyDaysCount = days.filter(
+    (d) => d.status === 'both_completed'
+  ).length;
+  const nsdrOnlyDaysCount = days.filter((d) => d.status === 'nsdr_only').length;
+  const reframingOnlyDaysCount = days.filter(
+    (d) => d.status === 'reframing_only'
+  ).length;
+  const restDaysCount = days.filter((d) => d.status === 'rest_day').length;
+  const totalActiveDaysCount = 30 - restDaysCount;
+
+  const totalNsdrDaysCount = days.filter((d) => d.nsdrCompleted).length;
+  const totalReframingDaysCount = days.filter(
+    (d) => d.cognitiveReframingCompleted
+  ).length;
+  const totalCompletedSlots = totalNsdrDaysCount + totalReframingDaysCount;
+  const thirtyDayOverallCompliancePct = Math.round(
+    (totalCompletedSlots / 60) * 100
+  );
+  const thirtyDayActiveDayRatePct = Math.round(
+    (totalActiveDaysCount / 30) * 100
+  );
+
+  // Compute current active streak (consecutive days from Today backwards with >=1 habit completed; if Today is not yet logged, count consecutive days up to yesterday)
+  let currentActiveStreakDays = 0;
+  const startIdx = days[29].completedCount > 0 ? 29 : 28;
+  for (let i = startIdx; i >= 0; i--) {
+    if (days[i].completedCount > 0) {
+      currentActiveStreakDays++;
+    } else {
+      break;
+    }
+  }
+
+  // Compute longest consecutive Dual-Synergy (2/2) streak across the 30 days
+  let longestDualSynergyStreakDays = 0;
+  let runningDual = 0;
+  for (const d of days) {
+    if (d.status === 'both_completed') {
+      runningDual++;
+      if (runningDual > longestDualSynergyStreakDays) {
+        longestDualSynergyStreakDays = runningDual;
+      }
+    } else {
+      runningDual = 0;
+    }
+  }
+
+  const totalRestorativeMinutes30d = days.reduce(
+    (acc, d) => acc + d.restorativeMinutes,
+    0
+  );
+
+  return {
+    days,
+    filterMode,
+    dualSynergyDaysCount,
+    nsdrOnlyDaysCount,
+    reframingOnlyDaysCount,
+    restDaysCount,
+    totalActiveDaysCount,
+    totalNsdrDaysCount,
+    totalReframingDaysCount,
+    thirtyDayOverallCompliancePct,
+    thirtyDayActiveDayRatePct,
+    currentActiveStreakDays,
+    longestDualSynergyStreakDays,
+    totalRestorativeMinutes30d,
+  };
+}
+
+
 
 
 
