@@ -3324,4 +3324,284 @@ export function evaluateGentleHabitNotification(params: {
   };
 }
 
+/**
+ * End-of-Session 'Cognitive Bloom Impact' Summary Breakdown Engine
+ * Deconstructs how specific game mechanics (N-Back Working Memory Accuracy vs. UFOV Peripheral
+ * Response Times, Hippocampal BDNF Tree Grafting, and 0.1 Hz HRV Vagal Coherence) contributed
+ * to the player's final Brain Rejuvenation Index (BRI) Score.
+ */
+export type CognitiveBloomMechanicId =
+  | 'nback_working_memory'
+  | 'ufov_response_speed'
+  | 'hippocampal_synaptogenesis'
+  | 'vagal_hrv_coherence';
+
+export interface CognitiveBloomMechanicContribution {
+  id: CognitiveBloomMechanicId;
+  label: string;
+  shortLabel: string;
+  accentHex: string;
+  protocolCitation: string;
+  scorePoints: number;
+  contributionPct: number;
+  performanceMetricLabel: string;
+  bloomImpactNote: string;
+}
+
+export interface CognitiveBloomImpactInput {
+  summary: CognitiveSummary;
+  treesGrafted?: number;
+  targetTrees?: number;
+  nBackLevel?: 1 | 2;
+  ufovWindowMs?: number;
+  avgUfovResponseMs?: number;
+  flowMultiplier?: number;
+}
+
+export interface CognitiveBloomImpactBreakdown {
+  totalRejuvenationScore: number;
+  nBackAccuracyPct: number;
+  ufovAccuracyPct: number;
+  avgUfovResponseMs: number;
+  ufovWindowMs: number;
+  nBackScorePoints: number;
+  ufovScorePoints: number;
+  synaptogenesisScorePoints: number;
+  vagalCoherenceScorePoints: number;
+  nBackContributionPct: number;
+  ufovContributionPct: number;
+  synaptogenesisContributionPct: number;
+  vagalCoherenceContributionPct: number;
+  nBackVsUfovDeltaPoints: number;
+  nBackVsUfovComparisonLabel: string;
+  primaryDriverId: CognitiveBloomMechanicId;
+  primaryDriverLabel: string;
+  bloomSynergyTier:
+    | 'Apex Neuro-Bloom Synergy'
+    | 'High Dual-Task Convergence'
+    | 'Balanced Cortical Bloom'
+    | 'Foundational Calibration';
+  contributors: CognitiveBloomMechanicContribution[];
+}
+
+export function computeCognitiveBloomImpactBreakdown(
+  input: CognitiveBloomImpactInput
+): CognitiveBloomImpactBreakdown {
+  const { summary } = input;
+  const totalRejuvenationScore = Math.max(100, Math.round(Number(summary.rejuvenationScore) || 0));
+
+  const nBackAccuracyPct = Math.max(
+    0,
+    Math.min(100, Math.round(Number(summary.workingMemoryPct) || 0))
+  );
+  const ufovAccuracyPct = Math.max(
+    0,
+    Math.min(100, Math.round(Number(summary.processingSpeedPct) || 0))
+  );
+  const spatialPlasticityPct = Math.max(
+    0,
+    Math.min(100, Math.round(Number(summary.spatialPlasticityPct) || 0))
+  );
+  const vagalCoherencePct = Math.max(
+    0,
+    Math.min(100, Math.round(Number(summary.vagalCoherencePct) || 0))
+  );
+
+  const nBackLevel: 1 | 2 = input.nBackLevel === 2 ? 2 : 1;
+  const ufovWindowMs = Math.max(
+    750,
+    Math.min(2600, Math.round(Number(input.ufovWindowMs) || 1580))
+  );
+
+  // Derive or sanitize average UFOV response latency in ms (lower ms = faster divided-attention lock)
+  const derivedResponseMs = Math.round(
+    ufovWindowMs * (0.64 - (ufovAccuracyPct / 100) * 0.24)
+  );
+  const rawAvgResponseMs =
+    typeof input.avgUfovResponseMs === 'number' && Number.isFinite(input.avgUfovResponseMs)
+      ? input.avgUfovResponseMs
+      : derivedResponseMs;
+  const avgUfovResponseMs = Math.max(260, Math.min(2200, Math.round(rawAvgResponseMs)));
+
+  const targetTrees = Math.max(1, Math.round(Number(input.targetTrees) || 4));
+  const derivedTreesFromPct = Math.round((spatialPlasticityPct / 100) * targetTrees);
+  const treesGrafted =
+    typeof input.treesGrafted === 'number' &&
+    Number.isFinite(input.treesGrafted) &&
+    (input.treesGrafted > 0 || spatialPlasticityPct === 0)
+      ? Math.max(0, Math.round(input.treesGrafted))
+      : derivedTreesFromPct;
+
+  // Faster UFOV response times (< 750ms) amplify processing speed's contribution to the Rejuvenation Score
+  const ufovSpeedEfficiencyFactor = Math.max(
+    0.6,
+    Math.min(2.2, 1150 / Math.max(260, avgUfovResponseMs))
+  );
+  const nBackDifficultyFactor = nBackLevel === 2 ? 1.14 : 1.0;
+
+  // Compute raw mechanic weights grounded in session accuracy, UFOV latency, grafted trees, and HRV coherence
+  const rawNBack = Math.max(
+    25,
+    (nBackAccuracyPct + 12) * 3.15 * nBackDifficultyFactor
+  );
+  const rawUfov = Math.max(
+    25,
+    (ufovAccuracyPct + 12) * 2.55 * ufovSpeedEfficiencyFactor
+  );
+  const rawSynaptogenesis = Math.max(
+    25,
+    (spatialPlasticityPct + 15) * 2.35 + treesGrafted * 18
+  );
+  const rawVagal = Math.max(
+    20,
+    (vagalCoherencePct + 15) * 1.85
+  );
+
+  const rawTotal = rawNBack + rawUfov + rawSynaptogenesis + rawVagal;
+
+  // Allocate integer score points so all 4 mechanics sum to totalRejuvenationScore
+  const rawEntries: { id: CognitiveBloomMechanicId; raw: number }[] = [
+    { id: 'nback_working_memory', raw: rawNBack },
+    { id: 'ufov_response_speed', raw: rawUfov },
+    { id: 'hippocampal_synaptogenesis', raw: rawSynaptogenesis },
+    { id: 'vagal_hrv_coherence', raw: rawVagal },
+  ];
+
+  const pointsMap: Record<CognitiveBloomMechanicId, number> = {
+    nback_working_memory: Math.round((rawNBack / rawTotal) * totalRejuvenationScore),
+    ufov_response_speed: Math.round((rawUfov / rawTotal) * totalRejuvenationScore),
+    hippocampal_synaptogenesis: Math.round((rawSynaptogenesis / rawTotal) * totalRejuvenationScore),
+    vagal_hrv_coherence: Math.round((rawVagal / rawTotal) * totalRejuvenationScore),
+  };
+
+  // Identify primary driver by highest raw weight
+  const sortedByRaw = [...rawEntries].sort((a, b) => b.raw - a.raw);
+  const primaryDriverId = sortedByRaw[0].id;
+
+  const currentPointsSum =
+    pointsMap.nback_working_memory +
+    pointsMap.ufov_response_speed +
+    pointsMap.hippocampal_synaptogenesis +
+    pointsMap.vagal_hrv_coherence;
+  pointsMap[primaryDriverId] += totalRejuvenationScore - currentPointsSum;
+
+  // Allocate integer percentage shares so all 4 mechanics sum to 100%
+  const pctMap: Record<CognitiveBloomMechanicId, number> = {
+    nback_working_memory: Math.round((pointsMap.nback_working_memory / totalRejuvenationScore) * 100),
+    ufov_response_speed: Math.round((pointsMap.ufov_response_speed / totalRejuvenationScore) * 100),
+    hippocampal_synaptogenesis: Math.round(
+      (pointsMap.hippocampal_synaptogenesis / totalRejuvenationScore) * 100
+    ),
+    vagal_hrv_coherence: Math.round((pointsMap.vagal_hrv_coherence / totalRejuvenationScore) * 100),
+  };
+
+  const currentPctSum =
+    pctMap.nback_working_memory +
+    pctMap.ufov_response_speed +
+    pctMap.hippocampal_synaptogenesis +
+    pctMap.vagal_hrv_coherence;
+  pctMap[primaryDriverId] += 100 - currentPctSum;
+
+  const nBackScorePoints = pointsMap.nback_working_memory;
+  const ufovScorePoints = pointsMap.ufov_response_speed;
+  const synaptogenesisScorePoints = pointsMap.hippocampal_synaptogenesis;
+  const vagalCoherenceScorePoints = pointsMap.vagal_hrv_coherence;
+
+  const nBackContributionPct = pctMap.nback_working_memory;
+  const ufovContributionPct = pctMap.ufov_response_speed;
+  const synaptogenesisContributionPct = pctMap.hippocampal_synaptogenesis;
+  const vagalCoherenceContributionPct = pctMap.vagal_hrv_coherence;
+
+  const nBackVsUfovDeltaPoints = nBackScorePoints - ufovScorePoints;
+  const nBackVsUfovComparisonLabel =
+    nBackVsUfovDeltaPoints > 15
+      ? `N-Back Accuracy (${nBackAccuracyPct}% · +${nBackScorePoints} pts) outpaced UFOV ${avgUfovResponseMs}ms Response (+${ufovScorePoints} pts) by +${nBackVsUfovDeltaPoints} BRI pts`
+      : nBackVsUfovDeltaPoints < -15
+      ? `Rapid UFOV ${avgUfovResponseMs}ms Response (${ufovAccuracyPct}% · +${ufovScorePoints} pts) outpaced N-Back Accuracy (+${nBackScorePoints} pts) by +${Math.abs(nBackVsUfovDeltaPoints)} BRI pts`
+      : `Balanced Dual-Task Coupling: N-Back Accuracy (${nBackAccuracyPct}% · +${nBackScorePoints} pts) & UFOV ${avgUfovResponseMs}ms Response (+${ufovScorePoints} pts) within ${Math.abs(nBackVsUfovDeltaPoints)} pts`;
+
+  const contributors: CognitiveBloomMechanicContribution[] = [
+    {
+      id: 'nback_working_memory',
+      label: 'N-Back Working Memory Accuracy',
+      shortLabel: 'N-Back Accuracy',
+      accentHex: '#4FD1C5',
+      protocolCitation: 'Jaeggi et al. (2008)',
+      scorePoints: nBackScorePoints,
+      contributionPct: nBackContributionPct,
+      performanceMetricLabel: `${nBackAccuracyPct}% Accuracy · ${nBackLevel}-Back Stream`,
+      bloomImpactNote: `Sustained ${nBackLevel}-Back harmonic echo matching generated +${nBackScorePoints} BRI pts (${nBackContributionPct}% of total bloom).`,
+    },
+    {
+      id: 'ufov_response_speed',
+      label: 'UFOV Peripheral Response Speed',
+      shortLabel: 'UFOV Response Time',
+      accentHex: '#F2B84B',
+      protocolCitation: 'Ball et al. (2002)',
+      scorePoints: ufovScorePoints,
+      contributionPct: ufovContributionPct,
+      performanceMetricLabel: `${avgUfovResponseMs}ms Avg Response · ${ufovAccuracyPct}% Hit`,
+      bloomImpactNote: `Peripheral firefly lock at ${avgUfovResponseMs}ms (${ufovWindowMs}ms window) contributed +${ufovScorePoints} BRI pts (${ufovContributionPct}%).`,
+    },
+    {
+      id: 'hippocampal_synaptogenesis',
+      label: 'Hippocampal BDNF Tree Grafting',
+      shortLabel: 'BDNF Tree Grafts',
+      accentHex: '#B794F4',
+      protocolCitation: 'Erickson et al. (2011)',
+      scorePoints: synaptogenesisScorePoints,
+      contributionPct: synaptogenesisContributionPct,
+      performanceMetricLabel: `${treesGrafted}/${targetTrees} Trees Grafted · ${spatialPlasticityPct}%`,
+      bloomImpactNote: `Spatial dendrite grafting across ${treesGrafted}/${targetTrees} sanctuary nodes yielded +${synaptogenesisScorePoints} BRI pts (${synaptogenesisContributionPct}%).`,
+    },
+    {
+      id: 'vagal_hrv_coherence',
+      label: '0.1 Hz HRV Vagal Coherence',
+      shortLabel: '0.1 Hz HRV Shield',
+      accentHex: '#68D391',
+      protocolCitation: 'Lehrer & Gevirtz (2014)',
+      scorePoints: vagalCoherenceScorePoints,
+      contributionPct: vagalCoherenceContributionPct,
+      performanceMetricLabel: `${vagalCoherencePct}% Vagal Tone · 0.1 Hz Cadence`,
+      bloomImpactNote: `Resonance breathing & vitality preservation added +${vagalCoherenceScorePoints} BRI pts (${vagalCoherenceContributionPct}%).`,
+    },
+  ];
+
+  const primaryDriverObj =
+    contributors.find((c) => c.id === primaryDriverId) || contributors[0];
+
+  const combinedDualScore = (nBackAccuracyPct + ufovAccuracyPct) / 2;
+  const bloomSynergyTier =
+    combinedDualScore >= 88 && avgUfovResponseMs <= 760
+      ? 'Apex Neuro-Bloom Synergy'
+      : combinedDualScore >= 78
+      ? 'High Dual-Task Convergence'
+      : combinedDualScore >= 65
+      ? 'Balanced Cortical Bloom'
+      : 'Foundational Calibration';
+
+  return {
+    totalRejuvenationScore,
+    nBackAccuracyPct,
+    ufovAccuracyPct,
+    avgUfovResponseMs,
+    ufovWindowMs,
+    nBackScorePoints,
+    ufovScorePoints,
+    synaptogenesisScorePoints,
+    vagalCoherenceScorePoints,
+    nBackContributionPct,
+    ufovContributionPct,
+    synaptogenesisContributionPct,
+    vagalCoherenceContributionPct,
+    nBackVsUfovDeltaPoints,
+    nBackVsUfovComparisonLabel,
+    primaryDriverId,
+    primaryDriverLabel: primaryDriverObj.label,
+    bloomSynergyTier,
+    contributors,
+  };
+}
+
+
 

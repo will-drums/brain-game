@@ -64,8 +64,64 @@ import {
   formatMinutesToTimeHm,
   sanitizeGentleNotificationConfig,
   evaluateGentleHabitNotification,
+  computeCognitiveBloomImpactBreakdown,
   type ChimeSymbol,
 } from './rules';
+
+test('computeCognitiveBloomImpactBreakdown deconstructs how N-Back accuracy vs UFOV response times and other mechanics contributed to the final Rejuvenation Score', () => {
+  // 1. N-Back Dominant Session (High 2-Back accuracy 95% vs slower 1350ms UFOV response)
+  const nBackDominant = computeCognitiveBloomImpactBreakdown({
+    summary: {
+      rejuvenationScore: 1000,
+      workingMemoryPct: 95,
+      processingSpeedPct: 62,
+      spatialPlasticityPct: 75,
+      vagalCoherencePct: 70,
+      isStageCleared: true,
+    },
+    treesGrafted: 3,
+    targetTrees: 4,
+    nBackLevel: 2,
+    ufovWindowMs: 1800,
+    avgUfovResponseMs: 1350,
+  });
+
+  assert.equal(nBackDominant.totalRejuvenationScore, 1000);
+  const pointsSum1 = nBackDominant.contributors.reduce((sum, c) => sum + c.scorePoints, 0);
+  const pctSum1 = nBackDominant.contributors.reduce((sum, c) => sum + c.contributionPct, 0);
+  assert.equal(pointsSum1, 1000);
+  assert.equal(pctSum1, 100);
+  assert.ok(nBackDominant.nBackScorePoints > nBackDominant.ufovScorePoints);
+  assert.ok(nBackDominant.nBackVsUfovDeltaPoints > 0);
+  assert.equal(nBackDominant.primaryDriverId, 'nback_working_memory');
+  assert.ok(nBackDominant.nBackVsUfovComparisonLabel.includes('N-Back Accuracy'));
+
+  // 2. Rapid UFOV Response Session (Fast 460ms UFOV response & 96% hit vs 58% 1-Back accuracy)
+  const ufovDominant = computeCognitiveBloomImpactBreakdown({
+    summary: {
+      rejuvenationScore: 1200,
+      workingMemoryPct: 58,
+      processingSpeedPct: 96,
+      spatialPlasticityPct: 75,
+      vagalCoherencePct: 72,
+      isStageCleared: true,
+    },
+    treesGrafted: 3,
+    targetTrees: 4,
+    nBackLevel: 1,
+    ufovWindowMs: 1350,
+    avgUfovResponseMs: 460,
+  });
+
+  const pointsSum2 = ufovDominant.contributors.reduce((sum, c) => sum + c.scorePoints, 0);
+  const pctSum2 = ufovDominant.contributors.reduce((sum, c) => sum + c.contributionPct, 0);
+  assert.equal(pointsSum2, 1200);
+  assert.equal(pctSum2, 100);
+  assert.ok(ufovDominant.ufovScorePoints > ufovDominant.nBackScorePoints);
+  assert.ok(ufovDominant.nBackVsUfovDeltaPoints < 0);
+  assert.equal(ufovDominant.primaryDriverId, 'ufov_response_speed');
+  assert.equal(ufovDominant.avgUfovResponseMs, 460);
+});
 
 test('evaluateGentleHabitNotification triggers 30 minutes after usual practice time when NSDR or Cognitive Reframing is unlogged and hides once completed', () => {
   assert.equal(GENTLE_NOTIFICATION_REMINDER_DELAY_MINUTES, 30);

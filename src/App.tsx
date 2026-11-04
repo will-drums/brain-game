@@ -47,6 +47,7 @@ import {
   formatMinutesToTimeHm,
   sanitizeGentleNotificationConfig,
   evaluateGentleHabitNotification,
+  computeCognitiveBloomImpactBreakdown,
   type GentleNotificationConfig,
   type SanctuaryBloomPresetId,
   type CognitiveRhythmSyncConfig,
@@ -2830,24 +2831,33 @@ export default function App() {
         </div>
       )}
 
-      {/* 5. VICTORY / GAME OVER MODAL (Single Focused Status Card with Tabular-Nums Mastery Metrics + Cognitive Insight Journal) */}
-      {gameState === 'gameover' && endSummary && (
+      {/* 5. VICTORY / GAME OVER MODAL (Single Focused Status Card with Tabular-Nums Mastery Metrics + Cognitive Bloom Impact Breakdown + Cognitive Insight Journal) */}
+      {gameState === 'gameover' && endSummary && (() => {
+        const bloomImpact = computeCognitiveBloomImpactBreakdown({
+          summary: endSummary,
+          treesGrafted: hud.treesGrafted,
+          targetTrees: hud.targetTrees,
+          nBackLevel: hud.nBackLevel,
+          ufovWindowMs: hud.adaptiveUfovWindowMs,
+          flowMultiplier: hud.flowMultiplier,
+        });
+        return (
         <div
           role="dialog"
           aria-modal="true"
           aria-labelledby="gameover-modal-title"
-          className="fixed inset-0 z-30 flex items-center justify-center p-4 md:p-6 bg-[#07120E]/88 pointer-events-auto"
+          className="fixed inset-0 z-30 flex items-center justify-center p-4 md:p-5 bg-[#07120E]/88 pointer-events-auto"
         >
-          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-[#10231C] border border-[#2C4C3E] p-6 shadow-2xl space-y-4">
-            <div className="text-center space-y-1">
-              <p className="text-xs font-mono uppercase tracking-wider text-[#68D391]">
+          <div className="w-full max-w-3xl max-h-[94vh] overflow-y-auto rounded-2xl bg-[#10231C] border border-[#2C4C3E] p-4 shadow-2xl space-y-2.5">
+            <div className="text-center space-y-0.5">
+              <p className="text-[11px] font-mono uppercase tracking-wider text-[#68D391]">
                 {gameOutcome === 'victory'
                   ? 'Hippocampal & Prefrontal Circuitry Illuminated'
                   : 'Directed Attention Fatigued — Take a Slow 0.1 Hz Breath'}
               </p>
               <h2
                 id="gameover-modal-title"
-                className="text-2xl md:text-3xl font-display font-semibold text-[#F4EFE6]"
+                className="text-xl md:text-2xl font-display font-semibold text-[#F4EFE6]"
               >
                 {gameOutcome === 'victory'
                   ? 'Sanctuary Grove Rejuvenated!'
@@ -2856,7 +2866,7 @@ export default function App() {
               {(completedStagesCount >= SANCTUARY_STAGES.length || isSanctuaryBloomActive) && (
                 <div
                   data-testid="victory-sanctuary-bloom-banner"
-                  className="mt-2 inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-[#1E1936] border border-[#B794F4]/60 text-xs font-mono text-[#B794F4]"
+                  className="mt-1 inline-flex items-center gap-2 px-3 py-0.5 rounded-lg bg-[#1E1936] border border-[#B794F4]/60 text-[11px] font-mono text-[#B794F4]"
                 >
                   <span className="w-2 h-2 rounded-full bg-[#4FD1C5]" />
                   <span>
@@ -2867,10 +2877,10 @@ export default function App() {
             </div>
 
             {/* 3 Primary Tabular-Nums Stat Tiles */}
-            <div className="grid grid-cols-3 gap-3 p-3.5 rounded-xl bg-[#0B1914] border border-[#233D32] text-center">
+            <div className="grid grid-cols-3 gap-2.5 p-2.5 rounded-xl bg-[#0B1914] border border-[#233D32] text-center">
               <div>
                 <div className="text-[10px] font-mono text-[#A3B8B0]">REJUVENATION SCORE</div>
-                <div className="text-2xl font-mono font-bold text-[#F2B84B] tabular-nums">
+                <div className="text-xl font-mono font-bold text-[#F2B84B] tabular-nums">
                   {endSummary.rejuvenationScore}
                 </div>
                 <div className="text-[10px] font-mono text-[#68D391] tabular-nums">
@@ -2879,14 +2889,14 @@ export default function App() {
               </div>
               <div>
                 <div className="text-[10px] font-mono text-[#A3B8B0]">UFOV &amp; N-BACK</div>
-                <div className="text-2xl font-mono font-bold text-[#4FD1C5] tabular-nums">
+                <div className="text-xl font-mono font-bold text-[#4FD1C5] tabular-nums">
                   {Math.round((endSummary.processingSpeedPct + endSummary.workingMemoryPct) / 2)}%
                 </div>
                 <div className="text-[10px] font-mono text-[#A3B8B0]">Accuracy</div>
               </div>
               <div>
                 <div className="text-[10px] font-mono text-[#A3B8B0]">TOTAL TREES GRAFTED</div>
-                <div className="text-2xl font-mono font-bold text-[#B794F4] tabular-nums">
+                <div className="text-xl font-mono font-bold text-[#B794F4] tabular-nums">
                   {lifetimeProgress.totalTreesGrafted}
                 </div>
                 <div className="text-[10px] font-mono text-[#A3B8B0]">
@@ -2894,6 +2904,131 @@ export default function App() {
                 </div>
               </div>
             </div>
+
+            {/* COGNITIVE BLOOM IMPACT SUMMARY PANEL (N-Back Accuracy vs. UFOV Response Times & Mechanic Score Breakdown) */}
+            <section
+              data-testid="cognitive-bloom-impact-panel"
+              data-total-score={bloomImpact.totalRejuvenationScore}
+              data-primary-driver={bloomImpact.primaryDriverId}
+              data-avg-ufov-ms={bloomImpact.avgUfovResponseMs}
+              className="p-3 rounded-xl bg-[#0B1914] border border-[#2C4C3E] space-y-2"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-[#4FD1C5] shrink-0" />
+                  <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-[#F4EFE6]">
+                    Cognitive Bloom Impact · Rejuvenation Score Breakdown
+                  </h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span
+                    data-testid="bloom-impact-synergy-tier"
+                    className="px-2 py-0.5 rounded bg-[#142D23] border border-[#68D391]/50 text-[10px] font-mono font-semibold text-[#68D391]"
+                  >
+                    {bloomImpact.bloomSynergyTier}
+                  </span>
+                  <span
+                    data-testid="bloom-impact-total-score"
+                    className="px-2 py-0.5 rounded bg-[#1A2922] border border-[#F2B84B]/50 text-[10px] font-mono font-bold text-[#F2B84B] tabular-nums"
+                  >
+                    {bloomImpact.totalRejuvenationScore} BRI pts (100%)
+                  </span>
+                </div>
+              </div>
+
+              {/* Stacked Proportional Contribution Bar */}
+              <div
+                data-testid="bloom-impact-stacked-bar"
+                className="w-full h-2.5 rounded-full bg-[#07120E] overflow-hidden flex border border-[#1E352B]"
+                title="Proportional contribution of each cognitive mechanic to the final Rejuvenation Score"
+              >
+                {bloomImpact.contributors.map((item) => (
+                  <div
+                    key={item.id}
+                    data-testid={`bloom-impact-segment-${item.id}`}
+                    style={{
+                      width: `${item.contributionPct}%`,
+                      backgroundColor: item.accentHex,
+                    }}
+                    className="h-full transition-all duration-300"
+                    title={`${item.label}: +${item.scorePoints} pts (${item.contributionPct}%)`}
+                  />
+                ))}
+              </div>
+
+              {/* N-Back Accuracy vs. UFOV Response Time Direct Comparison Callout */}
+              <div
+                data-testid="bloom-impact-nback-vs-ufov-banner"
+                className="px-3 py-1.5 rounded-lg bg-[#10241C] border border-[#233D32] flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono"
+              >
+                <span className="text-[#D5E2DC]">
+                  {bloomImpact.nBackVsUfovComparisonLabel}
+                </span>
+                <span className="text-[#4FD1C5] font-semibold shrink-0">
+                  Lead Driver: {bloomImpact.primaryDriverLabel}
+                </span>
+              </div>
+
+              {/* 4-Mechanic Contribution Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {bloomImpact.contributors.map((item) => (
+                  <div
+                    key={item.id}
+                    data-testid={`bloom-impact-card-${item.id}`}
+                    data-score-points={item.scorePoints}
+                    data-contribution-pct={item.contributionPct}
+                    className="p-2.5 rounded-xl bg-[#0F221B] border border-[#1F3A2E] space-y-1"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ backgroundColor: item.accentHex }}
+                        />
+                        <span className="text-[11px] font-semibold text-[#F4EFE6] truncate">
+                          {item.label}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0 font-mono tabular-nums">
+                        <span
+                          data-testid={`bloom-impact-points-${item.id}`}
+                          className="text-xs font-bold"
+                          style={{ color: item.accentHex }}
+                        >
+                          +{item.scorePoints} pts
+                        </span>
+                        <span
+                          data-testid={`bloom-impact-pct-${item.id}`}
+                          className="px-1.5 py-0.5 rounded bg-[#091510] text-[10px] font-semibold text-[#A3B8B0]"
+                        >
+                          {item.contributionPct}%
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[10px] font-mono text-[#A3B8B0]">
+                      <span
+                        data-testid={`bloom-impact-metric-${item.id}`}
+                        className="text-[#D5E2DC] font-semibold"
+                      >
+                        {item.performanceMetricLabel}
+                      </span>
+                      <span>{item.protocolCitation}</span>
+                    </div>
+
+                    <div className="w-full h-1.5 rounded-full bg-[#091510] overflow-hidden">
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${item.contributionPct}%`,
+                          backgroundColor: item.accentHex,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
 
             {/* Post-Session Cognitive Insight Journal (Linked to Daily Streak) */}
             <CognitiveInsightJournal
@@ -2941,7 +3076,8 @@ export default function App() {
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* 6. CLINICAL EVIDENCE CODEX MODAL */}
       <ClinicalCodexModal
@@ -2968,7 +3104,10 @@ export default function App() {
       />
 
       {/* 7. GENTLE HABIT NOTIFICATION TOAST (+30 Minutes Post-Practice NSDR & Reframing Reminder) */}
-      {gentleNotificationEval.shouldShowToast && !isCodexOpen && (
+      {gentleNotificationEval.shouldShowToast &&
+        !isCodexOpen &&
+        gameState !== 'gameover' &&
+        gameState !== 'paused' && (
         <aside
           role="status"
           aria-live="polite"
