@@ -331,30 +331,55 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
     deltaMinutes: number
   ) => {
     const currentItem = habitDurationProgress.byExerciseId[exerciseId];
-    const nextLogged = Math.max(
-      0,
-      Math.min(
-        currentItem.maxGoalMinutes,
-        currentItem.loggedMinutes + deltaMinutes
-      )
-    );
     const isCurrentlyDone =
       exerciseId === 'nsdr_protocol'
         ? activeNsdrCompleted
         : activeReframingCompleted;
 
-    persistHabitDurationGoals(() =>
-      exerciseId === 'nsdr_protocol'
+    let computedNextLogged = currentItem.loggedMinutes;
+    persistHabitDurationGoals((prev) => {
+      const prevLogged =
+        exerciseId === 'nsdr_protocol'
+          ? prev.nsdrLoggedMinutes !== undefined
+            ? prev.nsdrLoggedMinutes
+            : activeNsdrCompleted
+            ? prev.nsdrGoalMinutes
+            : 0
+          : prev.cognitiveReframingLoggedMinutes !== undefined
+          ? prev.cognitiveReframingLoggedMinutes
+          : activeReframingCompleted
+          ? prev.cognitiveReframingGoalMinutes
+          : 0;
+      const nextLogged = Math.max(
+        0,
+        Math.min(currentItem.maxGoalMinutes, prevLogged + deltaMinutes)
+      );
+      computedNextLogged = nextLogged;
+      return exerciseId === 'nsdr_protocol'
         ? { nsdrLoggedMinutes: nextLogged }
-        : { cognitiveReframingLoggedMinutes: nextLogged }
-    );
+        : { cognitiveReframingLoggedMinutes: nextLogged };
+    });
 
-    const shouldBeCompleted = nextLogged >= currentItem.goalMinutes;
+    const shouldBeCompleted = computedNextLogged >= currentItem.goalMinutes;
     if (shouldBeCompleted && !isCurrentlyDone) {
       rawToggleExercise(exerciseId);
-    } else if (nextLogged === 0 && isCurrentlyDone) {
+    } else if (computedNextLogged === 0 && isCurrentlyDone) {
       rawToggleExercise(exerciseId);
     }
+  };
+
+  const handleResetHabitDurationGoals = () => {
+    persistHabitDurationGoals(() => ({
+      nsdrGoalMinutes: DEFAULT_DAILY_HABIT_DURATION_GOALS.nsdrGoalMinutes,
+      cognitiveReframingGoalMinutes:
+        DEFAULT_DAILY_HABIT_DURATION_GOALS.cognitiveReframingGoalMinutes,
+      nsdrLoggedMinutes: activeNsdrCompleted
+        ? DEFAULT_DAILY_HABIT_DURATION_GOALS.nsdrGoalMinutes
+        : 0,
+      cognitiveReframingLoggedMinutes: activeReframingCompleted
+        ? DEFAULT_DAILY_HABIT_DURATION_GOALS.cognitiveReframingGoalMinutes
+        : 0,
+    }));
   };
 
   // 7-Day Weekly Habit Compliance state (prior 6 days seed + live Day 7 synced with today's NSDR & Cognitive Reframing)
@@ -2427,34 +2452,85 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
                 </div>
 
                 {/* Quick Today Sync Controls */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2.5">
                   <span className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
                     Today (Day 7):
                   </span>
-                  <button
-                    type="button"
-                    data-testid="weekly-chart-toggle-today-nsdr"
-                    onClick={() => handleExerciseToggleClick('nsdr_protocol')}
-                    className={`px-2.5 py-1 rounded-md text-[10px] font-mono font-semibold transition-colors cursor-pointer border ${
-                      activeNsdrCompleted
-                        ? 'bg-[#173A38] text-[#4FD1C5] border-[#4FD1C5]'
-                        : 'bg-[#10231C] text-[#A3B8B0] border-[#233D32] hover:text-[#F4EFE6]'
-                    }`}
-                  >
-                    {activeNsdrCompleted ? '✓ NSDR Logged' : '+ Log Today NSDR'}
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="weekly-chart-toggle-today-reframing"
-                    onClick={() => handleExerciseToggleClick('cognitive_reframing')}
-                    className={`px-2.5 py-1 rounded-md text-[10px] font-mono font-semibold transition-colors cursor-pointer border ${
+                  <div className="flex flex-col gap-1 min-w-[132px]">
+                    <button
+                      type="button"
+                      data-testid="weekly-chart-toggle-today-nsdr"
+                      onClick={() => handleExerciseToggleClick('nsdr_protocol')}
+                      className={`px-2.5 py-1 rounded-md text-[10px] font-mono font-semibold transition-colors cursor-pointer border tabular-nums ${
+                        habitDurationProgress.nsdr.isGoalMet || activeNsdrCompleted
+                          ? 'bg-[#173A38] text-[#4FD1C5] border-[#4FD1C5]'
+                          : 'bg-[#10231C] text-[#A3B8B0] border-[#233D32] hover:text-[#F4EFE6]'
+                      }`}
+                    >
+                      {habitDurationProgress.nsdr.isGoalMet || activeNsdrCompleted
+                        ? `✓ NSDR (${habitDurationProgress.nsdr.loggedMinutes}/${habitDurationProgress.nsdr.goalMinutes}m)`
+                        : `+ Log NSDR (${habitDurationProgress.nsdr.loggedMinutes}/${habitDurationProgress.nsdr.goalMinutes}m)`}
+                    </button>
+                    <div
+                      role="progressbar"
+                      aria-label="Weekly chart today NSDR duration goal progress"
+                      aria-valuenow={habitDurationProgress.nsdr.progressPct}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      data-testid="weekly-chart-progress-bar-nsdr"
+                      className="w-full h-1.5 rounded-full bg-[#060E0B] overflow-hidden border border-[#233D32]"
+                    >
+                      <div
+                        className="h-full rounded-full transition-all duration-200"
+                        style={{
+                          width: `${habitDurationProgress.nsdr.progressPct}%`,
+                          backgroundColor: habitDurationProgress.nsdr.isGoalMet
+                            ? '#68D391'
+                            : '#4FD1C5',
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1 min-w-[146px]">
+                    <button
+                      type="button"
+                      data-testid="weekly-chart-toggle-today-reframing"
+                      onClick={() => handleExerciseToggleClick('cognitive_reframing')}
+                      className={`px-2.5 py-1 rounded-md text-[10px] font-mono font-semibold transition-colors cursor-pointer border tabular-nums ${
+                        habitDurationProgress.cognitiveReframing.isGoalMet ||
+                        activeReframingCompleted
+                          ? 'bg-[#261E3A] text-[#B794F4] border-[#B794F4]'
+                          : 'bg-[#10231C] text-[#A3B8B0] border-[#233D32] hover:text-[#F4EFE6]'
+                      }`}
+                    >
+                      {habitDurationProgress.cognitiveReframing.isGoalMet ||
                       activeReframingCompleted
-                        ? 'bg-[#261E3A] text-[#B794F4] border-[#B794F4]'
-                        : 'bg-[#10231C] text-[#A3B8B0] border-[#233D32] hover:text-[#F4EFE6]'
-                    }`}
-                  >
-                    {activeReframingCompleted ? '✓ Reframing Logged' : '+ Log Today Reframing'}
-                  </button>
+                        ? `✓ Reframing (${habitDurationProgress.cognitiveReframing.loggedMinutes}/${habitDurationProgress.cognitiveReframing.goalMinutes}m)`
+                        : `+ Log Reframing (${habitDurationProgress.cognitiveReframing.loggedMinutes}/${habitDurationProgress.cognitiveReframing.goalMinutes}m)`}
+                    </button>
+                    <div
+                      role="progressbar"
+                      aria-label="Weekly chart today Cognitive Reframing duration goal progress"
+                      aria-valuenow={
+                        habitDurationProgress.cognitiveReframing.progressPct
+                      }
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      data-testid="weekly-chart-progress-bar-reframing"
+                      className="w-full h-1.5 rounded-full bg-[#060E0B] overflow-hidden border border-[#233D32]"
+                    >
+                      <div
+                        className="h-full rounded-full transition-all duration-200"
+                        style={{
+                          width: `${habitDurationProgress.cognitiveReframing.progressPct}%`,
+                          backgroundColor:
+                            habitDurationProgress.cognitiveReframing.isGoalMet
+                              ? '#68D391'
+                              : '#B794F4',
+                        }}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -2962,42 +3038,91 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2.5">
                   <span className="text-[10px] uppercase tracking-wider text-[#A3B8B0]">
                     Update Today (Day 30):
                   </span>
-                  <button
-                    type="button"
-                    data-testid="heatmap-toggle-today-nsdr"
-                    onClick={() => {
-                      setSelectedHeatmapDayIndex(30);
-                      handleExerciseToggleClick('nsdr_protocol');
-                    }}
-                    className={`px-2.5 py-1 rounded-md text-[10px] font-mono font-semibold transition-colors cursor-pointer border ${
-                      activeNsdrCompleted
-                        ? 'bg-[#173A38] text-[#4FD1C5] border-[#4FD1C5]'
-                        : 'bg-[#10231C] text-[#A3B8B0] border-[#233D32] hover:text-[#F4EFE6]'
-                    }`}
-                  >
-                    {activeNsdrCompleted ? '✓ Today NSDR' : '+ Log Today NSDR'}
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="heatmap-toggle-today-reframing"
-                    onClick={() => {
-                      setSelectedHeatmapDayIndex(30);
-                      handleExerciseToggleClick('cognitive_reframing');
-                    }}
-                    className={`px-2.5 py-1 rounded-md text-[10px] font-mono font-semibold transition-colors cursor-pointer border ${
+                  <div className="flex flex-col gap-1 min-w-[132px]">
+                    <button
+                      type="button"
+                      data-testid="heatmap-toggle-today-nsdr"
+                      onClick={() => {
+                        setSelectedHeatmapDayIndex(30);
+                        handleExerciseToggleClick('nsdr_protocol');
+                      }}
+                      className={`px-2.5 py-1 rounded-md text-[10px] font-mono font-semibold transition-colors cursor-pointer border tabular-nums ${
+                        habitDurationProgress.nsdr.isGoalMet || activeNsdrCompleted
+                          ? 'bg-[#173A38] text-[#4FD1C5] border-[#4FD1C5]'
+                          : 'bg-[#10231C] text-[#A3B8B0] border-[#233D32] hover:text-[#F4EFE6]'
+                      }`}
+                    >
+                      {habitDurationProgress.nsdr.isGoalMet || activeNsdrCompleted
+                        ? `✓ Today NSDR (${habitDurationProgress.nsdr.loggedMinutes}/${habitDurationProgress.nsdr.goalMinutes}m)`
+                        : `+ Log NSDR (${habitDurationProgress.nsdr.loggedMinutes}/${habitDurationProgress.nsdr.goalMinutes}m)`}
+                    </button>
+                    <div
+                      role="progressbar"
+                      aria-label="Heatmap today NSDR duration goal progress"
+                      aria-valuenow={habitDurationProgress.nsdr.progressPct}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      data-testid="heatmap-progress-bar-nsdr"
+                      className="w-full h-1.5 rounded-full bg-[#060E0B] overflow-hidden border border-[#233D32]"
+                    >
+                      <div
+                        className="h-full rounded-full transition-all duration-200"
+                        style={{
+                          width: `${habitDurationProgress.nsdr.progressPct}%`,
+                          backgroundColor: habitDurationProgress.nsdr.isGoalMet
+                            ? '#68D391'
+                            : '#4FD1C5',
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1 min-w-[146px]">
+                    <button
+                      type="button"
+                      data-testid="heatmap-toggle-today-reframing"
+                      onClick={() => {
+                        setSelectedHeatmapDayIndex(30);
+                        handleExerciseToggleClick('cognitive_reframing');
+                      }}
+                      className={`px-2.5 py-1 rounded-md text-[10px] font-mono font-semibold transition-colors cursor-pointer border tabular-nums ${
+                        habitDurationProgress.cognitiveReframing.isGoalMet ||
+                        activeReframingCompleted
+                          ? 'bg-[#261E3A] text-[#B794F4] border-[#B794F4]'
+                          : 'bg-[#10231C] text-[#A3B8B0] border-[#233D32] hover:text-[#F4EFE6]'
+                      }`}
+                    >
+                      {habitDurationProgress.cognitiveReframing.isGoalMet ||
                       activeReframingCompleted
-                        ? 'bg-[#261E3A] text-[#B794F4] border-[#B794F4]'
-                        : 'bg-[#10231C] text-[#A3B8B0] border-[#233D32] hover:text-[#F4EFE6]'
-                    }`}
-                  >
-                    {activeReframingCompleted
-                      ? '✓ Today Reframing'
-                      : '+ Log Today Reframing'}
-                  </button>
+                        ? `✓ Today Reframing (${habitDurationProgress.cognitiveReframing.loggedMinutes}/${habitDurationProgress.cognitiveReframing.goalMinutes}m)`
+                        : `+ Log Reframing (${habitDurationProgress.cognitiveReframing.loggedMinutes}/${habitDurationProgress.cognitiveReframing.goalMinutes}m)`}
+                    </button>
+                    <div
+                      role="progressbar"
+                      aria-label="Heatmap today Cognitive Reframing duration goal progress"
+                      aria-valuenow={
+                        habitDurationProgress.cognitiveReframing.progressPct
+                      }
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      data-testid="heatmap-progress-bar-reframing"
+                      className="w-full h-1.5 rounded-full bg-[#060E0B] overflow-hidden border border-[#233D32]"
+                    >
+                      <div
+                        className="h-full rounded-full transition-all duration-200"
+                        style={{
+                          width: `${habitDurationProgress.cognitiveReframing.progressPct}%`,
+                          backgroundColor:
+                            habitDurationProgress.cognitiveReframing.isGoalMet
+                              ? '#68D391'
+                              : '#B794F4',
+                        }}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -3006,18 +3131,35 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
           {/* DAILY RESTORATIVE HABIT TRACKER: NON-SLEEP DEEP REST (NSDR) & DAILY COGNITIVE REFRAMING (SYNCED WITH DAILY STREAK) */}
           <div
             data-testid="daily-habit-tracker-panel"
+            data-nsdr-goal-min={habitDurationProgress.nsdr.goalMinutes}
+            data-nsdr-logged-min={habitDurationProgress.nsdr.loggedMinutes}
+            data-nsdr-progress-pct={habitDurationProgress.nsdr.progressPct}
+            data-reframing-goal-min={
+              habitDurationProgress.cognitiveReframing.goalMinutes
+            }
+            data-reframing-logged-min={
+              habitDurationProgress.cognitiveReframing.loggedMinutes
+            }
+            data-reframing-progress-pct={
+              habitDurationProgress.cognitiveReframing.progressPct
+            }
+            data-combined-goal-min={habitDurationProgress.totalGoalMinutes}
+            data-combined-logged-min={habitDurationProgress.totalLoggedMinutes}
+            data-combined-progress-pct={
+              habitDurationProgress.combinedProgressPct
+            }
             className="mt-4 pt-4 border-t border-[#233D32] space-y-3.5"
           >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <span className="text-[11px] font-mono uppercase tracking-wider text-[#F2B84B]">
-                  Daily Mind-Body Habit Tracker · Synced with Daily Practice Streak
+                  Daily Mind-Body Habit Tracker · Custom Daily Duration Goals &amp; Streak Sync
                 </span>
                 <h4 className="text-base font-display font-semibold text-[#F4EFE6]">
                   Non-Sleep Deep Rest (NSDR) &amp; Daily Cognitive Reframing Log
                 </h4>
                 <p className="text-xs text-[#A3B8B0]">
-                  Completing either daily mind-body exercise automatically logs and synchronizes with your consecutive Daily Streak state.
+                  Set your daily duration goals for NSDR (5–40 min) and Cognitive Reframing (3–20 min). Track logged minutes on the visual progress bar beneath each habit log button.
                 </p>
               </div>
 
@@ -3039,6 +3181,64 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
               </div>
             </div>
 
+            {/* Combined Daily Duration Goal Progress Banner */}
+            <div
+              data-testid="daily-habit-combined-goal-banner"
+              className="p-3 rounded-xl bg-[#091510] border border-[#1E3A2F] space-y-2"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] uppercase tracking-wider text-[#68D391] font-bold">
+                    Combined Daily Duration Goal:
+                  </span>
+                  <span
+                    data-testid="daily-habit-combined-goal-readout"
+                    className="text-[#F4EFE6] font-semibold tabular-nums"
+                  >
+                    {habitDurationProgress.totalLoggedMinutes}/
+                    {habitDurationProgress.totalGoalMinutes} min Logged (
+                    {habitDurationProgress.combinedProgressPct}%)
+                  </span>
+                  <span className="text-[#A3B8B0] tabular-nums">
+                    · NSDR {habitDurationProgress.nsdr.loggedMinutes}/
+                    {habitDurationProgress.nsdr.goalMinutes}m + Reframing{' '}
+                    {habitDurationProgress.cognitiveReframing.loggedMinutes}/
+                    {habitDurationProgress.cognitiveReframing.goalMinutes}m
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  data-testid="habit-duration-goals-reset-btn"
+                  onClick={handleResetHabitDurationGoals}
+                  className="px-2.5 py-1 rounded-md bg-[#10231C] hover:bg-[#18352A] text-[#A3B8B0] hover:text-[#F4EFE6] border border-[#233D32] text-[10px] font-mono font-semibold transition-colors cursor-pointer"
+                >
+                  Reset Goals (20m / 5m)
+                </button>
+              </div>
+
+              <div
+                role="progressbar"
+                aria-label="Combined daily habit duration goal progress"
+                aria-valuenow={habitDurationProgress.combinedProgressPct}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                data-testid="daily-habit-combined-progress-bar"
+                className="w-full h-2 rounded-full bg-[#060E0B] overflow-hidden border border-[#233D32]"
+              >
+                <div
+                  data-testid="daily-habit-combined-progress-fill"
+                  className="h-full rounded-full transition-all duration-200"
+                  style={{
+                    width: `${habitDurationProgress.combinedProgressPct}%`,
+                    backgroundColor: habitDurationProgress.bothGoalsMet
+                      ? '#68D391'
+                      : '#4FD1C5',
+                  }}
+                />
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
               {DAILY_HABIT_EXERCISES.map((exercise) => {
                 const isExerciseDone =
@@ -3057,6 +3257,10 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
                   <div
                     key={exercise.id}
                     data-testid={`habit-exercise-card-${exercise.id}`}
+                    data-goal-minutes={itemProgress.goalMinutes}
+                    data-logged-minutes={itemProgress.loggedMinutes}
+                    data-progress-pct={itemProgress.progressPct}
+                    data-is-goal-met={itemProgress.isGoalMet ? 'true' : 'false'}
                     title={tooltipData.formattedTooltipText}
                     onMouseEnter={() => setHoveredHabitTooltipId(exercise.id)}
                     onMouseLeave={() =>
@@ -3079,158 +3283,211 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
                           >
                             {exercise.protocolBadge}
                           </span>
-                          <span className="text-[10px] font-mono text-[#A3B8B0]">
-                            Goal: {itemProgress.goalMinutes} Min/Day
+                          <span className="text-[10px] font-mono text-[#A3B8B0] tabular-nums">
+                            Daily Goal: {itemProgress.goalMinutes} Min/Day
                           </span>
                         </div>
 
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            data-testid={`habit-tooltip-trigger-${exercise.id}`}
-                            aria-describedby={tooltipDomId}
-                            aria-expanded={isTooltipOpen}
-                            title={tooltipData.formattedTooltipText}
-                            onFocus={() => setHoveredHabitTooltipId(exercise.id)}
-                            onBlur={() =>
-                              setHoveredHabitTooltipId((prev) =>
-                                prev === exercise.id ? null : prev
-                              )
-                            }
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setPinnedHabitTooltipId((prev) =>
-                                prev === exercise.id ? null : exercise.id
-                              );
-                            }}
-                            className={`px-2 py-1 rounded-md border text-[10px] font-mono font-semibold transition-colors cursor-pointer ${
-                              isTooltipOpen
-                                ? 'bg-[#17382C] text-[#68D391] border-[#68D391]'
-                                : 'bg-[#0B1914] hover:bg-[#163025] text-[#4FD1C5] border-[#2C4C3E]'
-                            }`}
-                          >
-                            ⓘ Clinical Benefit
-                          </button>
-
-                          <button
-                            type="button"
-                            data-testid={`habit-exercise-toggle-${exercise.id}`}
-                            aria-pressed={itemProgress.isGoalMet}
-                            aria-describedby={tooltipDomId}
-                            title={tooltipData.formattedTooltipText}
-                            onClick={() => handleExerciseToggleClick(exercise.id)}
-                            className={`px-3 py-1 rounded-md text-[10px] font-mono font-semibold transition-colors cursor-pointer border ${
-                              itemProgress.isGoalMet
-                                ? 'bg-[#68D391] text-[#091510] border-[#68D391]'
-                                : 'bg-[#0B1914] text-[#F2B84B] border-[#F2B84B]/50 hover:bg-[#163025] hover:text-[#F4EFE6]'
-                            }`}
-                          >
-                            {itemProgress.isGoalMet
-                              ? '✓ Completed & Synced with Streak'
-                              : `+ Log ${exercise.shortLabel}`}
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          data-testid={`habit-tooltip-trigger-${exercise.id}`}
+                          aria-describedby={tooltipDomId}
+                          aria-expanded={isTooltipOpen}
+                          title={tooltipData.formattedTooltipText}
+                          onFocus={() => setHoveredHabitTooltipId(exercise.id)}
+                          onBlur={() =>
+                            setHoveredHabitTooltipId((prev) =>
+                              prev === exercise.id ? null : prev
+                            )
+                          }
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPinnedHabitTooltipId((prev) =>
+                              prev === exercise.id ? null : exercise.id
+                            );
+                          }}
+                          className={`px-2 py-1 rounded-md border text-[10px] font-mono font-semibold transition-colors cursor-pointer ${
+                            isTooltipOpen
+                              ? 'bg-[#17382C] text-[#68D391] border-[#68D391]'
+                              : 'bg-[#0B1914] hover:bg-[#163025] text-[#4FD1C5] border-[#2C4C3E]'
+                          }`}
+                        >
+                          ⓘ Clinical Benefit
+                        </button>
                       </div>
 
-                      {/* VISUAL PROGRESS BAR & DAILY DURATION GOAL SETTER BENEATH HABIT LOG BUTTON */}
+                      {/* HABIT LOG BUTTON + VISUAL PROGRESS BAR DIRECTLY BENEATH BUTTON + DAILY DURATION GOAL SETTER */}
                       <div
                         data-testid={`habit-duration-goal-panel-${exercise.id}`}
-                        className="p-3 rounded-xl bg-[#091510]/90 border border-[#1E3A2F] space-y-2"
+                        className="p-3 rounded-xl bg-[#091510]/90 border border-[#1E3A2F] space-y-2.5"
                       >
-                        <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
-                          <span
-                            data-testid={`habit-duration-status-${exercise.id}`}
-                            className="font-semibold text-[#F4EFE6] tabular-nums"
-                          >
-                            {itemProgress.statusLabel}
+                        {/* Primary Habit Log Button */}
+                        <button
+                          type="button"
+                          data-testid={`habit-exercise-toggle-${exercise.id}`}
+                          aria-pressed={itemProgress.isGoalMet}
+                          aria-describedby={tooltipDomId}
+                          title={tooltipData.formattedTooltipText}
+                          onClick={() => handleExerciseToggleClick(exercise.id)}
+                          className={`w-full px-3 py-2 rounded-lg text-[11px] font-mono font-semibold transition-colors cursor-pointer border flex items-center justify-between gap-2 tabular-nums ${
+                            itemProgress.isGoalMet
+                              ? 'bg-[#68D391] text-[#091510] border-[#68D391]'
+                              : 'bg-[#0D1E18] text-[#F2B84B] border-[#F2B84B]/60 hover:bg-[#163025] hover:text-[#F4EFE6]'
+                          }`}
+                        >
+                          <span className="truncate">
+                            {itemProgress.isGoalMet
+                              ? `✓ Completed & Synced with Streak`
+                              : `+ Log ${exercise.shortLabel}`}
                           </span>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <button
-                              type="button"
-                              data-testid={`habit-duration-sub-${exercise.id}`}
-                              onClick={() =>
-                                handleAdjustHabitLoggedMinutes(
-                                  exercise.id,
-                                  -itemProgress.incrementMinutes
-                                )
-                              }
-                              className="px-1.5 py-0.5 rounded bg-[#10231C] hover:bg-[#18352A] text-[#A3B8B0] hover:text-[#F4EFE6] border border-[#233D32] text-[10px] font-mono font-semibold cursor-pointer tabular-nums"
-                              title={`Subtract ${itemProgress.incrementMinutes} minutes logged`}
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded tabular-nums whitespace-nowrap shrink-0 ${
+                              itemProgress.isGoalMet
+                                ? 'bg-[#091510]/20 text-[#091510]'
+                                : 'bg-[#091510] text-[#4FD1C5]'
+                            }`}
+                          >
+                            {itemProgress.loggedMinutes}/{itemProgress.goalMinutes}m ·{' '}
+                            {itemProgress.progressPct}%
+                          </span>
+                        </button>
+
+                        {/* Visual Progress Bar Directly Beneath Each Habit Log Button */}
+                        <div className="space-y-1.5">
+                          <div
+                            role="progressbar"
+                            aria-label={`${exercise.shortLabel} daily duration goal progress`}
+                            aria-valuenow={itemProgress.progressPct}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            data-testid={`habit-duration-progress-bar-${exercise.id}`}
+                            data-goal-minutes={itemProgress.goalMinutes}
+                            data-logged-minutes={itemProgress.loggedMinutes}
+                            data-progress-pct={itemProgress.progressPct}
+                            data-is-goal-met={
+                              itemProgress.isGoalMet ? 'true' : 'false'
+                            }
+                            className="w-full h-3 rounded-full bg-[#060E0B] overflow-hidden border border-[#233D32]"
+                          >
+                            <div
+                              data-testid={`habit-duration-progress-fill-${exercise.id}`}
+                              className="h-full rounded-full transition-all duration-200"
+                              style={{
+                                width: `${itemProgress.progressPct}%`,
+                                backgroundColor: itemProgress.isGoalMet
+                                  ? '#68D391'
+                                  : exercise.accentHex,
+                              }}
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-between gap-2 text-[10.5px] font-mono">
+                            <span
+                              data-testid={`habit-duration-status-${exercise.id}`}
+                              className="font-semibold text-[#F4EFE6] tabular-nums truncate"
                             >
-                              -{itemProgress.incrementMinutes}m
-                            </button>
-                            <button
-                              type="button"
-                              data-testid={`habit-duration-add-${exercise.id}`}
-                              onClick={() =>
-                                handleAdjustHabitLoggedMinutes(
-                                  exercise.id,
-                                  itemProgress.incrementMinutes
-                                )
-                              }
-                              className="px-1.5 py-0.5 rounded bg-[#143025] hover:bg-[#1D4434] text-[#68D391] border border-[#2C5E48] text-[10px] font-mono font-semibold cursor-pointer tabular-nums"
-                              title={`Log +${itemProgress.incrementMinutes} minutes toward daily duration goal`}
-                            >
-                              +{itemProgress.incrementMinutes}m
-                            </button>
+                              {itemProgress.statusLabel}
+                            </span>
+
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                data-testid={`habit-duration-sub-${exercise.id}`}
+                                onClick={() =>
+                                  handleAdjustHabitLoggedMinutes(
+                                    exercise.id,
+                                    -itemProgress.incrementMinutes
+                                  )
+                                }
+                                className="px-1.5 py-0.5 rounded bg-[#10231C] hover:bg-[#18352A] text-[#A3B8B0] hover:text-[#F4EFE6] border border-[#233D32] text-[10px] font-mono font-semibold cursor-pointer tabular-nums whitespace-nowrap"
+                                title={`Subtract ${itemProgress.incrementMinutes} minutes logged`}
+                              >
+                                -{itemProgress.incrementMinutes}m
+                              </button>
+                              <button
+                                type="button"
+                                data-testid={`habit-duration-add-${exercise.id}`}
+                                onClick={() =>
+                                  handleAdjustHabitLoggedMinutes(
+                                    exercise.id,
+                                    itemProgress.incrementMinutes
+                                  )
+                                }
+                                className="px-1.5 py-0.5 rounded bg-[#143025] hover:bg-[#1D4434] text-[#68D391] border border-[#2C5E48] text-[10px] font-mono font-semibold cursor-pointer tabular-nums whitespace-nowrap"
+                                title={`Log +${itemProgress.incrementMinutes} minutes toward daily duration goal`}
+                              >
+                                +{itemProgress.incrementMinutes}m
+                              </button>
+                              <span
+                                data-testid={`habit-duration-pct-badge-${exercise.id}`}
+                                className="font-bold text-[10.5px] pl-0.5 tabular-nums whitespace-nowrap"
+                                style={{
+                                  color: itemProgress.isGoalMet
+                                    ? '#68D391'
+                                    : exercise.accentHex,
+                                }}
+                              >
+                                {itemProgress.progressPct}%
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="text-[10px] font-mono text-[#A3B8B0] tabular-nums truncate">
+                            <span data-testid={`habit-duration-delta-${exercise.id}`}>
+                              {itemProgress.deltaSummaryText}
+                            </span>
                           </div>
                         </div>
 
-                        {/* Visual Progress Bar Beneath Habit Log Button */}
-                        <div
-                          role="progressbar"
-                          aria-label={`${exercise.shortLabel} daily duration goal progress`}
-                          aria-valuenow={itemProgress.progressPct}
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                          data-testid={`habit-duration-progress-bar-${exercise.id}`}
-                          className="w-full h-2.5 rounded-full bg-[#060E0B] overflow-hidden border border-[#233D32]"
-                        >
-                          <div
-                            data-testid={`habit-duration-progress-fill-${exercise.id}`}
-                            className="h-full rounded-full transition-all duration-200"
-                            style={{
-                              width: `${itemProgress.progressPct}%`,
-                              backgroundColor: itemProgress.isGoalMet
-                                ? '#68D391'
-                                : exercise.accentHex,
-                            }}
-                          />
-                        </div>
-
-                        <div className="flex items-center justify-between gap-2 text-[10px] font-mono text-[#A3B8B0] tabular-nums">
-                          <span data-testid={`habit-duration-delta-${exercise.id}`}>
-                            {itemProgress.deltaSummaryText}
-                          </span>
-                          <span
-                            data-testid={`habit-duration-pct-badge-${exercise.id}`}
-                            className="font-bold"
-                            style={{
-                              color: itemProgress.isGoalMet
-                                ? '#68D391'
-                                : exercise.accentHex,
-                            }}
-                          >
-                            {itemProgress.progressPct}%
-                          </span>
-                        </div>
-
-                        {/* Interactive Daily Duration Goal Setter (Slider + Quick Presets) */}
-                        <div className="pt-1.5 border-t border-[#162C23] space-y-1.5">
+                        {/* Interactive Daily Duration Goal Setter (Slider + Step Buttons + Quick Presets) */}
+                        <div className="pt-2 border-t border-[#162C23] space-y-1.5">
                           <div className="flex items-center justify-between gap-2">
                             <label
                               htmlFor={`habit-duration-goal-slider-${exercise.id}`}
-                              className="text-[10.5px] font-mono text-[#D5E2DC]"
+                              className="text-[10.5px] font-mono text-[#D5E2DC] whitespace-nowrap"
                             >
-                              Set Daily Duration Goal (min)
+                              Daily Duration Goal ({itemProgress.minGoalMinutes}–
+                              {itemProgress.maxGoalMinutes}m)
                             </label>
-                            <span
-                              data-testid={`habit-duration-goal-value-${exercise.id}`}
-                              className="text-[11px] font-mono font-bold tabular-nums"
-                              style={{ color: exercise.accentHex }}
-                            >
-                              {itemProgress.goalMinutes} min/day
-                            </span>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                data-testid={`habit-duration-goal-dec-${exercise.id}`}
+                                aria-label={`Decrease ${exercise.shortLabel} daily duration goal`}
+                                onClick={() =>
+                                  handleUpdateHabitDurationGoal(
+                                    exercise.id,
+                                    itemProgress.goalMinutes -
+                                      itemProgress.stepMinutes
+                                  )
+                                }
+                                className="px-1.5 py-0.5 rounded bg-[#10231C] hover:bg-[#18352A] text-[#A3B8B0] hover:text-[#F4EFE6] border border-[#233D32] text-[10px] font-mono font-bold cursor-pointer tabular-nums whitespace-nowrap"
+                              >
+                                -{itemProgress.stepMinutes}m
+                              </button>
+                              <span
+                                data-testid={`habit-duration-goal-value-${exercise.id}`}
+                                className="text-[10.5px] font-mono font-bold tabular-nums min-w-[54px] text-center whitespace-nowrap"
+                                style={{ color: exercise.accentHex }}
+                              >
+                                {itemProgress.goalMinutes}m/day
+                              </span>
+                              <button
+                                type="button"
+                                data-testid={`habit-duration-goal-inc-${exercise.id}`}
+                                aria-label={`Increase ${exercise.shortLabel} daily duration goal`}
+                                onClick={() =>
+                                  handleUpdateHabitDurationGoal(
+                                    exercise.id,
+                                    itemProgress.goalMinutes +
+                                      itemProgress.stepMinutes
+                                  )
+                                }
+                                className="px-1.5 py-0.5 rounded bg-[#10231C] hover:bg-[#18352A] text-[#A3B8B0] hover:text-[#F4EFE6] border border-[#233D32] text-[10px] font-mono font-bold cursor-pointer tabular-nums whitespace-nowrap"
+                              >
+                                +{itemProgress.stepMinutes}m
+                              </button>
+                            </div>
                           </div>
                           <input
                             id={`habit-duration-goal-slider-${exercise.id}`}

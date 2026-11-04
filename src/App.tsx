@@ -3240,55 +3240,102 @@ export default function App() {
             {gentleNotificationEval.toastMessage}
           </p>
 
-          {/* Quick-Log Buttons for Unlogged NSDR & Cognitive Reframing Exercises */}
+          {/* Quick-Log Buttons for Unlogged NSDR & Cognitive Reframing Exercises + Visual Progress Bars Beneath Each Button */}
           <div className="mt-2.5 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              data-testid="gentle-toast-log-nsdr-btn"
-              onClick={() => handleToggleDailyHabitExercise('nsdr_protocol')}
-              className={`flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-xl border text-left transition-colors cursor-pointer ${
-                dailyHabitTracker.nsdrCompleted
-                  ? 'bg-[#143325] border-[#68D391] text-[#68D391]'
-                  : 'bg-[#10241C] hover:bg-[#173529] border-[#4FD1C5]/60 text-[#F4EFE6]'
-              }`}
-            >
-              <div className="min-w-0">
-                <div className="text-[10.5px] font-mono font-bold truncate">
-                  {dailyHabitTracker.nsdrCompleted ? '✓ NSDR Logged' : 'Log 20m NSDR'}
+            <div className="flex flex-col gap-1">
+              <button
+                type="button"
+                data-testid="gentle-toast-log-nsdr-btn"
+                onClick={() => handleToggleDailyHabitExercise('nsdr_protocol')}
+                className={`flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-xl border text-left transition-colors cursor-pointer ${
+                  dailyHabitTracker.nsdrCompleted
+                    ? 'bg-[#143325] border-[#68D391] text-[#68D391]'
+                    : 'bg-[#10241C] hover:bg-[#173529] border-[#4FD1C5]/60 text-[#F4EFE6]'
+                }`}
+              >
+                <div className="min-w-0">
+                  <div className="text-[10.5px] font-mono font-bold truncate">
+                    {dailyHabitTracker.nsdrCompleted ? '✓ NSDR Logged' : 'Log 20m NSDR'}
+                  </div>
+                  <div className="text-[9px] font-mono text-[#A3B8B0] truncate">
+                    Dopamine Reset
+                  </div>
                 </div>
-                <div className="text-[9px] font-mono text-[#A3B8B0] truncate">
-                  Dopamine Reset
-                </div>
+                <span className="text-[9.5px] font-mono font-bold px-1.5 py-0.5 rounded bg-[#091510]/70 text-[#4FD1C5] shrink-0">
+                  {dailyHabitTracker.nsdrCompleted ? 'Done' : '+Log'}
+                </span>
+              </button>
+              <div
+                role="progressbar"
+                aria-label="Gentle notification NSDR daily duration goal progress"
+                aria-valuenow={dailyHabitTracker.nsdrCompleted ? 100 : 0}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                data-testid="gentle-toast-progress-bar-nsdr"
+                className="w-full h-1.5 rounded-full bg-[#060E0B] overflow-hidden border border-[#233D32]"
+              >
+                <div
+                  className="h-full rounded-full transition-all duration-200"
+                  style={{
+                    width: dailyHabitTracker.nsdrCompleted ? '100%' : '0%',
+                    backgroundColor: dailyHabitTracker.nsdrCompleted
+                      ? '#68D391'
+                      : '#4FD1C5',
+                  }}
+                />
               </div>
-              <span className="text-[9.5px] font-mono font-bold px-1.5 py-0.5 rounded bg-[#091510]/70 text-[#4FD1C5] shrink-0">
-                {dailyHabitTracker.nsdrCompleted ? 'Done' : '+Log'}
-              </span>
-            </button>
+            </div>
 
-            <button
-              type="button"
-              data-testid="gentle-toast-log-reframing-btn"
-              onClick={() => handleToggleDailyHabitExercise('cognitive_reframing')}
-              className={`flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-xl border text-left transition-colors cursor-pointer ${
-                dailyHabitTracker.cognitiveReframingCompleted
-                  ? 'bg-[#143325] border-[#68D391] text-[#68D391]'
-                  : 'bg-[#10241C] hover:bg-[#173529] border-[#F2B84B]/60 text-[#F4EFE6]'
-              }`}
-            >
-              <div className="min-w-0">
-                <div className="text-[10.5px] font-mono font-bold truncate">
-                  {dailyHabitTracker.cognitiveReframingCompleted
-                    ? '✓ Reframing Logged'
-                    : 'Log 5m Reframing'}
+            <div className="flex flex-col gap-1">
+              <button
+                type="button"
+                data-testid="gentle-toast-log-reframing-btn"
+                onClick={() => handleToggleDailyHabitExercise('cognitive_reframing')}
+                className={`flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-xl border text-left transition-colors cursor-pointer ${
+                  dailyHabitTracker.cognitiveReframingCompleted
+                    ? 'bg-[#143325] border-[#68D391] text-[#68D391]'
+                    : 'bg-[#10241C] hover:bg-[#173529] border-[#F2B84B]/60 text-[#F4EFE6]'
+                }`}
+              >
+                <div className="min-w-0">
+                  <div className="text-[10.5px] font-mono font-bold truncate">
+                    {dailyHabitTracker.cognitiveReframingCompleted
+                      ? '✓ Reframing Logged'
+                      : 'Log 5m Reframing'}
+                  </div>
+                  <div className="text-[9px] font-mono text-[#A3B8B0] truncate">
+                    Prefrontal Reappraisal
+                  </div>
                 </div>
-                <div className="text-[9px] font-mono text-[#A3B8B0] truncate">
-                  Prefrontal Reappraisal
-                </div>
+                <span className="text-[9.5px] font-mono font-bold px-1.5 py-0.5 rounded bg-[#091510]/70 text-[#F2B84B] shrink-0">
+                  {dailyHabitTracker.cognitiveReframingCompleted ? 'Done' : '+Log'}
+                </span>
+              </button>
+              <div
+                role="progressbar"
+                aria-label="Gentle notification Cognitive Reframing daily duration goal progress"
+                aria-valuenow={
+                  dailyHabitTracker.cognitiveReframingCompleted ? 100 : 0
+                }
+                aria-valuemin={0}
+                aria-valuemax={100}
+                data-testid="gentle-toast-progress-bar-reframing"
+                className="w-full h-1.5 rounded-full bg-[#060E0B] overflow-hidden border border-[#233D32]"
+              >
+                <div
+                  className="h-full rounded-full transition-all duration-200"
+                  style={{
+                    width: dailyHabitTracker.cognitiveReframingCompleted
+                      ? '100%'
+                      : '0%',
+                    backgroundColor:
+                      dailyHabitTracker.cognitiveReframingCompleted
+                        ? '#68D391'
+                        : '#B794F4',
+                  }}
+                />
               </div>
-              <span className="text-[9.5px] font-mono font-bold px-1.5 py-0.5 rounded bg-[#091510]/70 text-[#F2B84B] shrink-0">
-                {dailyHabitTracker.cognitiveReframingCompleted ? 'Done' : '+Log'}
-              </span>
-            </button>
+            </div>
           </div>
 
           {/* Usual Daily Practice Time Calibration (+30m Trigger Schedule) */}
