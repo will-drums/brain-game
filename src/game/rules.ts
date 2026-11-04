@@ -576,14 +576,136 @@ export function computeHrvTrendSummary(history: readonly HrvSessionRecord[]): {
 
 /**
  * Cognitive Milestone Badge System & Sanctuary Aesthetic Upgrades
- * Grants visual flora palette & firefly density upgrades based on total 'Neural Trees Grafted'
- * and historical 'Rejuvenation Score' peaks.
+ * Grants visual flora palette & firefly density upgrades based on total 'Neural Trees Grafted',
+ * historical 'Rejuvenation Score' peaks, and consecutive days of 'Zen Mode' usage.
  */
 export type CognitiveMilestoneId =
   | 'sapling_awakening'
   | 'cyan_lotus_bloom'
   | 'amethyst_mycelium'
-  | 'solar_crown_resonance';
+  | 'solar_crown_resonance'
+  | 'zen_mastery';
+
+export const ZEN_MASTERY_REQUIRED_CONSECUTIVE_DAYS = 5;
+export const ZEN_MODE_STREAK_STORAGE_KEY = 'sylvan_synapse_zen_mode_streak_v1';
+
+export interface ZenModeStreakState {
+  consecutiveZenDays: number;
+  longestZenStreak: number;
+  lastZenUsageDateIso: string | null;
+  totalZenDaysLogged: number;
+}
+
+/**
+ * Evaluate persisted Zen Mode streak state when the app loads on `todayIso` (YYYY-MM-DD).
+ * - If lastZenUsageDateIso is today (diff === 0) or yesterday (diff === 1), consecutiveZenDays is preserved.
+ * - If more than 1 calendar day has elapsed (diff > 1), consecutiveZenDays resets to 0.
+ */
+export function evaluateZenModeStreakOnLoad(
+  saved: Partial<ZenModeStreakState> | null | undefined,
+  todayIso: string
+): ZenModeStreakState {
+  if (!saved || !saved.lastZenUsageDateIso) {
+    const fallbackConsecutive = Math.max(
+      0,
+      Math.round(Number(saved?.consecutiveZenDays) || 0)
+    );
+    return {
+      consecutiveZenDays: fallbackConsecutive,
+      longestZenStreak: Math.max(
+        fallbackConsecutive,
+        Math.round(Number(saved?.longestZenStreak) || 0)
+      ),
+      lastZenUsageDateIso: null,
+      totalZenDaysLogged: Math.max(
+        fallbackConsecutive,
+        Math.round(Number(saved?.totalZenDaysLogged) || 0)
+      ),
+    };
+  }
+
+  const diff = getCalendarDayDiff(saved.lastZenUsageDateIso, todayIso);
+  const savedConsecutive = Math.max(0, Math.round(Number(saved.consecutiveZenDays) || 0));
+  const savedLongest = Math.max(
+    savedConsecutive,
+    Math.round(Number(saved.longestZenStreak) || 0)
+  );
+  const savedTotal = Math.max(
+    savedConsecutive,
+    Math.round(Number(saved.totalZenDaysLogged) || 0)
+  );
+
+  if (diff === 0 || diff === 1) {
+    const activeConsecutive = Math.max(1, savedConsecutive);
+    return {
+      consecutiveZenDays: activeConsecutive,
+      longestZenStreak: Math.max(savedLongest, activeConsecutive),
+      lastZenUsageDateIso: saved.lastZenUsageDateIso,
+      totalZenDaysLogged: Math.max(1, savedTotal),
+    };
+  }
+
+  return {
+    consecutiveZenDays: 0,
+    longestZenStreak: savedLongest,
+    lastZenUsageDateIso: saved.lastZenUsageDateIso,
+    totalZenDaysLogged: savedTotal,
+  };
+}
+
+/**
+ * Record a daily Zen Mode practice session on `todayIso` (YYYY-MM-DD).
+ * - Same day (diff === 0): idempotent, preserves consecutiveZenDays (at least 1).
+ * - Consecutive next day (diff === 1): increments consecutiveZenDays and totalZenDaysLogged by 1.
+ * - First session or after a gap (diff > 1): sets consecutiveZenDays to 1 and increments totalZenDaysLogged by 1.
+ */
+export function recordDailyZenModeUsage(
+  saved: Partial<ZenModeStreakState> | null | undefined,
+  todayIso: string
+): ZenModeStreakState {
+  const prevLongest = Math.max(0, Math.round(Number(saved?.longestZenStreak) || 0));
+  const prevTotal = Math.max(0, Math.round(Number(saved?.totalZenDaysLogged) || 0));
+  const prevConsecutive = Math.max(0, Math.round(Number(saved?.consecutiveZenDays) || 0));
+
+  if (!saved || !saved.lastZenUsageDateIso) {
+    const nextConsecutive = Math.max(1, prevConsecutive > 0 ? prevConsecutive : 1);
+    return {
+      consecutiveZenDays: nextConsecutive,
+      longestZenStreak: Math.max(prevLongest, nextConsecutive),
+      lastZenUsageDateIso: todayIso,
+      totalZenDaysLogged: Math.max(1, prevTotal + 1),
+    };
+  }
+
+  const diff = getCalendarDayDiff(saved.lastZenUsageDateIso, todayIso);
+
+  if (diff === 0) {
+    const activeConsecutive = Math.max(1, prevConsecutive);
+    return {
+      consecutiveZenDays: activeConsecutive,
+      longestZenStreak: Math.max(prevLongest, activeConsecutive),
+      lastZenUsageDateIso: todayIso,
+      totalZenDaysLogged: Math.max(1, prevTotal),
+    };
+  }
+
+  if (diff === 1) {
+    const nextConsecutive = Math.max(1, prevConsecutive) + 1;
+    return {
+      consecutiveZenDays: nextConsecutive,
+      longestZenStreak: Math.max(prevLongest, nextConsecutive),
+      lastZenUsageDateIso: todayIso,
+      totalZenDaysLogged: Math.max(1, prevTotal) + 1,
+    };
+  }
+
+  return {
+    consecutiveZenDays: 1,
+    longestZenStreak: Math.max(prevLongest, 1),
+    lastZenUsageDateIso: todayIso,
+    totalZenDaysLogged: prevTotal + 1,
+  };
+}
 
 export interface SanctuaryAestheticUpgrade {
   id: CognitiveMilestoneId;
@@ -603,6 +725,7 @@ export interface CognitiveMilestoneBadge {
   subtitle: string;
   requiredTotalTreesGrafted: number;
   requiredPeakRejuvenationScore: number;
+  requiredConsecutiveZenDays?: number;
   aestheticDescription: string;
   upgrade: SanctuaryAestheticUpgrade;
 }
@@ -612,6 +735,7 @@ export const COGNITIVE_MILESTONE_STORAGE_KEY = 'sylvan_synapse_cognitive_milesto
 export interface LifetimeCognitiveProgress {
   totalTreesGrafted: number;
   peakRejuvenationScore: number;
+  consecutiveZenModeDays?: number;
   selectedMilestoneId: CognitiveMilestoneId;
 }
 
@@ -692,43 +816,93 @@ export const COGNITIVE_MILESTONE_BADGES: CognitiveMilestoneBadge[] = [
       fireflyColorHex: '#FEFCBF',
     },
   },
+  {
+    id: 'zen_mastery',
+    title: 'V. Zen Mastery',
+    subtitle: '5 Consecutive Days of Zen Mode Usage · 96 Jade-Lotus Fireflies',
+    requiredTotalTreesGrafted: 0,
+    requiredPeakRejuvenationScore: 0,
+    requiredConsecutiveZenDays: ZEN_MASTERY_REQUIRED_CONSECUTIVE_DAYS,
+    aestheticDescription:
+      'Unlocked after achieving 5 consecutive days of Zen Mode usage. Bathes the sanctuary in serene jade-lotus vagal resonance with 96 harmonic fireflies.',
+    upgrade: {
+      id: 'zen_mastery',
+      themeName: 'Zen Mastery Vagal Flora',
+      canopyPrimaryHex: '#134E4A',
+      canopyHighlightHex: '#68D391',
+      canopyGlowRgba: 'rgba(104, 211, 145, 0.56)',
+      myceliumBridgeHex: '#38B2AC',
+      bloomPetalHex: '#B2F5EA',
+      fireflyCount: 96,
+      fireflyColorHex: '#9AE6B4',
+    },
+  },
 ];
 
 /**
- * Determine which Cognitive Milestone badges are unlocked given lifetime total trees grafted
- * and historical peak rejuvenation score.
+ * Determine which Cognitive Milestone badges are unlocked given lifetime total trees grafted,
+ * historical peak rejuvenation score, and consecutive days of Zen Mode usage.
  */
 export function evaluateCognitiveMilestones(progress: {
   totalTreesGrafted: number;
   peakRejuvenationScore: number;
+  consecutiveZenModeDays?: number;
 }): {
   unlockedBadges: CognitiveMilestoneBadge[];
   highestUnlockedBadge: CognitiveMilestoneBadge;
   nextLockedBadge: CognitiveMilestoneBadge | null;
+  zenMasteryUnlocked: boolean;
+  consecutiveZenModeDays: number;
+  zenMasteryProgressPct: number;
+  remainingZenDaysToUnlock: number;
 } {
-  const unlockedBadges = COGNITIVE_MILESTONE_BADGES.filter(
-    (b) =>
-      progress.totalTreesGrafted >= b.requiredTotalTreesGrafted &&
-      progress.peakRejuvenationScore >= b.requiredPeakRejuvenationScore
+  const consecutiveZenModeDays = Math.max(
+    0,
+    Math.round(Number(progress.consecutiveZenModeDays) || 0)
+  );
+  const zenMasteryUnlocked =
+    consecutiveZenModeDays >= ZEN_MASTERY_REQUIRED_CONSECUTIVE_DAYS;
+  const zenMasteryProgressPct = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(
+        (consecutiveZenModeDays / ZEN_MASTERY_REQUIRED_CONSECUTIVE_DAYS) * 100
+      )
+    )
+  );
+  const remainingZenDaysToUnlock = Math.max(
+    0,
+    ZEN_MASTERY_REQUIRED_CONSECUTIVE_DAYS - consecutiveZenModeDays
   );
 
-  // Also unlock if either threshold is met for Tier II+ so players feel rewarded by either deep single-run mastery or cumulative tree grafting
-  const flexibleUnlocked = COGNITIVE_MILESTONE_BADGES.filter(
-    (b) =>
+  const isBadgeUnlocked = (b: CognitiveMilestoneBadge): boolean => {
+    if (b.requiredConsecutiveZenDays && b.requiredConsecutiveZenDays > 0) {
+      return consecutiveZenModeDays >= b.requiredConsecutiveZenDays;
+    }
+    return (
       b.id === 'sapling_awakening' ||
       progress.totalTreesGrafted >= b.requiredTotalTreesGrafted ||
       progress.peakRejuvenationScore >= b.requiredPeakRejuvenationScore
-  );
+    );
+  };
 
-  const finalUnlocked = flexibleUnlocked.length > 0 ? flexibleUnlocked : unlockedBadges;
-  const highestUnlockedBadge = finalUnlocked[finalUnlocked.length - 1] || COGNITIVE_MILESTONE_BADGES[0];
+  const finalUnlocked = COGNITIVE_MILESTONE_BADGES.filter(isBadgeUnlocked);
+  const highestUnlockedBadge =
+    finalUnlocked[finalUnlocked.length - 1] || COGNITIVE_MILESTONE_BADGES[0];
   const nextLockedBadge =
-    COGNITIVE_MILESTONE_BADGES.find((b) => !finalUnlocked.some((u) => u.id === b.id)) || null;
+    COGNITIVE_MILESTONE_BADGES.find(
+      (b) => !finalUnlocked.some((u) => u.id === b.id)
+    ) || null;
 
   return {
     unlockedBadges: finalUnlocked,
     highestUnlockedBadge,
     nextLockedBadge,
+    zenMasteryUnlocked,
+    consecutiveZenModeDays,
+    zenMasteryProgressPct,
+    remainingZenDaysToUnlock,
   };
 }
 
@@ -2192,7 +2366,7 @@ export function buildEnterpriseClinicalExportBundle(params: {
     `SYLVAN SYNAPSE DTx · CLINICAL TELEMETRY REPORT (${params.exportedAtIso})`,
     `Composite Cognitive Reserve Index: ${domainProfile.compositeReserveIndex}/100 (+${domainProfile.estimatedPlasticityGainPct}% Est. Plasticity Gain)`,
     `Daily Practice Streak: ${params.currentStreakDays}d | Hippocampal Trees Grafted: ${params.totalTreesGrafted} | Peak Score: ${params.peakRejuvenationScore}`,
-    `10-Session Vagal HRV Coherence Mean: ${hrvTrend.averageCoherence}% (Peak ${hrvTrend.peakCoherence}%, Trend ${hrvTrend.deltaFromFirst >= 0 ? '+' : ''}${hrvTrend.deltaFromFirst}%)`,
+    `10-Session Vagal HRV Coherence Mean: ${hrvTrend.averageCoherence}% (Peak ${hrvTrend.peakCoherence}%, Trend ${hrvTrend.trendDelta >= 0 ? '+' : ''}${hrvTrend.trendDelta}%)`,
     `Daily Neuro-Habits Today: NSDR=${nsdrCompletedToday ? 'COMPLETED' : 'PENDING'}, Cognitive Reframing=${cognitiveReframingCompletedToday ? 'COMPLETED' : 'PENDING'}`,
     `Recorded Post-Session Neural Logs: ${params.neuralLogs.length}`,
   ].join('\n');
@@ -2857,7 +3031,7 @@ export function computeWeeklyCognitiveGoalsProgress(params: {
   });
 
   const workingMemoryScore =
-    domainProfile.domains.find((d) => d.id === 'working_memory')?.scorePct ?? 78;
+    domainProfile.domains.find((d) => d.id === 'nback_memory')?.scorePct ?? 78;
   const ufovDomainScore =
     domainProfile.domains.find((d) => d.id === 'ufov_speed')?.scorePct ?? 75;
 

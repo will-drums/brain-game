@@ -8,6 +8,10 @@ import {
   DEFAULT_HRV_HISTORY_SEED,
   COGNITIVE_MILESTONE_STORAGE_KEY,
   COGNITIVE_MILESTONE_BADGES,
+  ZEN_MASTERY_REQUIRED_CONSECUTIVE_DAYS,
+  ZEN_MODE_STREAK_STORAGE_KEY,
+  evaluateZenModeStreakOnLoad,
+  recordDailyZenModeUsage,
   evaluateCognitiveMilestones,
   getSanctuaryAestheticConfig,
   formatLocalDateIso,
@@ -62,6 +66,7 @@ import {
   type HrvSessionRecord,
   type CognitiveMilestoneId,
   type LifetimeCognitiveProgress,
+  type ZenModeStreakState,
   type GameState,
   type GameOutcome,
   type ProtocolId,
@@ -333,11 +338,39 @@ export default function App() {
     });
   }, []);
 
+  // 5-Day Consecutive Zen Mode Usage Streak for 'Zen Mastery' Milestone Badge
+  const [zenModeStreak, setZenModeStreak] = useState<ZenModeStreakState>(() => {
+    const todayIso = formatLocalDateIso();
+    const defaultZenSeed: ZenModeStreakState = {
+      consecutiveZenDays: 4,
+      longestZenStreak: 4,
+      lastZenUsageDateIso: null,
+      totalZenDaysLogged: 4,
+    };
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = window.localStorage.getItem(ZEN_MODE_STREAK_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as Partial<ZenModeStreakState>;
+          return evaluateZenModeStreakOnLoad(parsed, todayIso);
+        }
+        window.localStorage.setItem(
+          ZEN_MODE_STREAK_STORAGE_KEY,
+          JSON.stringify(defaultZenSeed)
+        );
+      } catch {
+        // Ignore storage errors
+      }
+    }
+    return defaultZenSeed;
+  });
+
   // Lifetime Cognitive Milestone Progression persisted in localStorage
   const [lifetimeProgress, setLifetimeProgress] = useState<LifetimeCognitiveProgress>(() => {
     const defaultSeed: LifetimeCognitiveProgress = {
       totalTreesGrafted: 4,
       peakRejuvenationScore: 1420,
+      consecutiveZenModeDays: 4,
       selectedMilestoneId: 'cyan_lotus_bloom',
     };
     if (typeof window !== 'undefined') {
@@ -352,6 +385,10 @@ export default function App() {
             return {
               totalTreesGrafted: Math.max(0, parsed.totalTreesGrafted),
               peakRejuvenationScore: Math.max(0, parsed.peakRejuvenationScore),
+              consecutiveZenModeDays:
+                typeof parsed.consecutiveZenModeDays === 'number'
+                  ? Math.max(0, parsed.consecutiveZenModeDays)
+                  : 4,
               selectedMilestoneId: parsed.selectedMilestoneId || 'cyan_lotus_bloom',
             };
           }
@@ -364,9 +401,15 @@ export default function App() {
     return defaultSeed;
   });
 
+  const effectiveConsecutiveZenDays = Math.max(
+    zenModeStreak.consecutiveZenDays,
+    lifetimeProgress.consecutiveZenModeDays ?? 0
+  );
+
   const milestoneEval = evaluateCognitiveMilestones({
     totalTreesGrafted: lifetimeProgress.totalTreesGrafted,
     peakRejuvenationScore: lifetimeProgress.peakRejuvenationScore,
+    consecutiveZenModeDays: effectiveConsecutiveZenDays,
   });
 
   const activeAesthetic = getSanctuaryAestheticConfig(lifetimeProgress.selectedMilestoneId);
@@ -388,6 +431,102 @@ export default function App() {
     });
   }, []);
 
+  const handleRecordConsecutiveZenDay = useCallback(
+    (incrementByOneDay = false) => {
+      const todayIso = formatLocalDateIso();
+      setZenModeStreak((prevZen) => {
+        const currentDays = Math.max(
+          prevZen.consecutiveZenDays,
+          lifetimeProgress.consecutiveZenModeDays ?? 0
+        );
+        const nextDays = incrementByOneDay
+          ? currentDays + 1
+          : prevZen.lastZenUsageDateIso === todayIso
+          ? Math.max(1, currentDays)
+          : currentDays + 1;
+        const nextZen: ZenModeStreakState = {
+          consecutiveZenDays: nextDays,
+          longestZenStreak: Math.max(prevZen.longestZenStreak, nextDays),
+          lastZenUsageDateIso: todayIso,
+          totalZenDaysLogged: prevZen.totalZenDaysLogged + 1,
+        };
+        if (typeof window !== 'undefined') {
+          try {
+            window.localStorage.setItem(
+              ZEN_MODE_STREAK_STORAGE_KEY,
+              JSON.stringify(nextZen)
+            );
+          } catch {
+            // Ignore storage errors
+          }
+        }
+        setLifetimeProgress((prevProg) => {
+          const wasZenMasteryUnlocked =
+            (prevProg.consecutiveZenModeDays ?? currentDays) >=
+            ZEN_MASTERY_REQUIRED_CONSECUTIVE_DAYS;
+          const isNowZenMasteryUnlocked =
+            nextDays >= ZEN_MASTERY_REQUIRED_CONSECUTIVE_DAYS;
+          const updatedProg: LifetimeCognitiveProgress = {
+            ...prevProg,
+            consecutiveZenModeDays: nextDays,
+            selectedMilestoneId:
+              !wasZenMasteryUnlocked && isNowZenMasteryUnlocked
+                ? 'zen_mastery'
+                : prevProg.selectedMilestoneId,
+          };
+          if (typeof window !== 'undefined') {
+            try {
+              window.localStorage.setItem(
+                COGNITIVE_MILESTONE_STORAGE_KEY,
+                JSON.stringify(updatedProg)
+              );
+            } catch {
+              // Ignore storage errors
+            }
+          }
+          return updatedProg;
+        });
+        return nextZen;
+      });
+    },
+    [lifetimeProgress.consecutiveZenModeDays]
+  );
+
+  const handleResetZenModeStreak = useCallback(() => {
+    const resetZen: ZenModeStreakState = {
+      consecutiveZenDays: 0,
+      longestZenStreak: zenModeStreak.longestZenStreak,
+      lastZenUsageDateIso: null,
+      totalZenDaysLogged: zenModeStreak.totalZenDaysLogged,
+    };
+    setZenModeStreak(resetZen);
+    setLifetimeProgress((prev) => {
+      const updated: LifetimeCognitiveProgress = {
+        ...prev,
+        consecutiveZenModeDays: 0,
+        selectedMilestoneId:
+          prev.selectedMilestoneId === 'zen_mastery'
+            ? 'cyan_lotus_bloom'
+            : prev.selectedMilestoneId,
+      };
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(
+            ZEN_MODE_STREAK_STORAGE_KEY,
+            JSON.stringify(resetZen)
+          );
+          window.localStorage.setItem(
+            COGNITIVE_MILESTONE_STORAGE_KEY,
+            JSON.stringify(updated)
+          );
+        } catch {
+          // Ignore storage errors
+        }
+      }
+      return updated;
+    });
+  }, [zenModeStreak.longestZenStreak, zenModeStreak.totalZenDaysLogged]);
+
   const handleTreeGraftedIncrement = useCallback(() => {
     setLifetimeProgress((prev) => {
       const nextTrees = prev.totalTreesGrafted + 1;
@@ -395,6 +534,7 @@ export default function App() {
       const nextEval = evaluateCognitiveMilestones({
         totalTreesGrafted: nextTrees,
         peakRejuvenationScore: prev.peakRejuvenationScore,
+        consecutiveZenModeDays: prev.consecutiveZenModeDays,
       });
       // Automatically equip newly unlocked milestone tier if player just crossed a threshold!
       const newlyUnlocked =
@@ -967,6 +1107,7 @@ export default function App() {
         const nextEval = evaluateCognitiveMilestones({
           totalTreesGrafted: prev.totalTreesGrafted,
           peakRejuvenationScore: nextPeak,
+          consecutiveZenModeDays: prev.consecutiveZenModeDays,
         });
         const newlyUnlocked =
           nextEval.highestUnlockedBadge.id !== prevEval.highestUnlockedBadge.id
@@ -1026,7 +1167,14 @@ export default function App() {
 
   const handleToggleZenMode = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.currentTarget.blur();
-    setIsZenMode((prev) => !prev);
+    setIsZenMode((prev) => {
+      const next = !prev;
+      if (next) {
+        handleRecordConsecutiveZenDay(false);
+        soundEngine.playLightNote(528.0, 0.14);
+      }
+      return next;
+    });
   };
 
   const handleToggleSanctuaryBloom = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -1222,7 +1370,13 @@ export default function App() {
       }
       if (e.code === 'KeyZ' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
-        setIsZenMode((prev) => !prev);
+        setIsZenMode((prev) => {
+          const next = !prev;
+          if (next) {
+            handleRecordConsecutiveZenDay(false);
+          }
+          return next;
+        });
       } else if (e.code === 'KeyB' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
         setIsSanctuaryBloomActive((prev) => !prev);
@@ -1230,7 +1384,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onZenKey);
     return () => window.removeEventListener('keydown', onZenKey);
-  }, [gameState, isCodexOpen]);
+  }, [gameState, isCodexOpen, handleRecordConsecutiveZenDay]);
 
   const handleToggleFullscreen = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.currentTarget.blur();
@@ -1431,6 +1585,9 @@ export default function App() {
             {/* Cognitive Milestone Badge System & Sanctuary Aesthetic Upgrade Selector */}
             <div
               data-testid="cognitive-milestone-panel"
+              data-zen-mastery-unlocked={milestoneEval.zenMasteryUnlocked ? 'true' : 'false'}
+              data-consecutive-zen-days={milestoneEval.consecutiveZenModeDays}
+              data-selected-milestone-id={lifetimeProgress.selectedMilestoneId}
               className="p-3.5 rounded-xl bg-[#0D2018] border border-[#264538] space-y-2.5"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1446,9 +1603,17 @@ export default function App() {
                 <div className="text-right font-mono text-[11px] text-[#A3B8B0] tabular-nums">
                   <div>
                     Trees Grafted: <span className="text-[#B794F4] font-semibold">{lifetimeProgress.totalTreesGrafted}</span>
+                    {' · '}
+                    Peak Score: <span className="text-[#4FD1C5] font-semibold">{lifetimeProgress.peakRejuvenationScore}</span>
                   </div>
                   <div>
-                    Peak Score: <span className="text-[#4FD1C5] font-semibold">{lifetimeProgress.peakRejuvenationScore}</span>
+                    Zen Mode Streak:{' '}
+                    <span
+                      data-testid="milestone-zen-streak-count"
+                      className="text-[#68D391] font-semibold"
+                    >
+                      {milestoneEval.consecutiveZenModeDays}/{ZEN_MASTERY_REQUIRED_CONSECUTIVE_DAYS} Consecutive Days
+                    </span>
                   </div>
                 </div>
               </div>
@@ -1457,18 +1622,27 @@ export default function App() {
                 {COGNITIVE_MILESTONE_BADGES.map((badge) => {
                   const isUnlocked = milestoneEval.unlockedBadges.some((u) => u.id === badge.id);
                   const isSelected = lifetimeProgress.selectedMilestoneId === badge.id;
+                  const isZenMasteryBadge = badge.id === 'zen_mastery';
+                  const lockRequirementText = isZenMasteryBadge
+                    ? `${milestoneEval.consecutiveZenModeDays}/${ZEN_MASTERY_REQUIRED_CONSECUTIVE_DAYS}d ZEN`
+                    : `${badge.requiredTotalTreesGrafted}T / ${badge.requiredPeakRejuvenationScore}P`;
+
                   return (
                     <button
                       key={badge.id}
                       type="button"
                       data-testid={`milestone-badge-${badge.id}`}
+                      data-badge-unlocked={isUnlocked ? 'true' : 'false'}
+                      data-badge-selected={isSelected ? 'true' : 'false'}
                       onClick={() => handleSelectMilestoneBadge(badge.id)}
                       className={`p-2.5 rounded-lg text-left transition-colors cursor-pointer border ${
+                        isZenMasteryBadge ? 'col-span-2' : ''
+                      } ${
                         isSelected
                           ? 'bg-[#17382B] border-[#68D391]'
                           : isUnlocked
                           ? 'bg-[#10261D] border-[#264538] hover:border-[#4FD1C5]'
-                          : 'bg-[#0B1913] border-[#1A3026] opacity-80 hover:opacity-100'
+                          : 'bg-[#0B1913] border-[#1A3026] opacity-85 hover:opacity-100'
                       }`}
                     >
                       <div className="flex items-center justify-between gap-1.5">
@@ -1477,37 +1651,109 @@ export default function App() {
                             className="w-2.5 h-2.5 rounded-full shrink-0"
                             style={{ backgroundColor: badge.upgrade.myceliumBridgeHex }}
                           />
-                          {badge.title}
+                          <span>{badge.title}</span>
+                          {isZenMasteryBadge && (
+                            <span className="text-[10px] font-mono text-[#4FD1C5] font-normal">
+                              · 5-Day Consecutive Zen Mode Milestone
+                            </span>
+                          )}
                         </span>
                         <span
-                          className={`text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 ${
+                          data-testid={`milestone-badge-status-${badge.id}`}
+                          className={`text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 tabular-nums ${
                             isSelected
                               ? 'bg-[#68D391] text-[#091510] font-bold'
                               : isUnlocked
-                              ? 'bg-[#1D4032] text-[#68D391]'
-                              : 'bg-[#162921] text-[#A3B8B0]'
+                              ? 'bg-[#1D4032] text-[#68D391] font-semibold'
+                              : 'bg-[#162921] text-[#F2B84B]'
                           }`}
                         >
-                          {isSelected ? 'ACTIVE' : isUnlocked ? 'UNLOCKED' : `${badge.requiredTotalTreesGrafted}T / ${badge.requiredPeakRejuvenationScore}P`}
+                          {isSelected ? 'ACTIVE' : isUnlocked ? 'UNLOCKED' : lockRequirementText}
                         </span>
                       </div>
                       <div className="text-[10px] font-mono text-[#A3B8B0] mt-1 truncate">
                         {badge.upgrade.fireflyCount} Fireflies · {badge.upgrade.themeName}
+                        {isZenMasteryBadge
+                          ? ` · ${
+                              milestoneEval.zenMasteryUnlocked
+                                ? '✓ 5 Consecutive Zen Days Achieved'
+                                : `${milestoneEval.remainingZenDaysToUnlock} more consecutive Zen day${
+                                    milestoneEval.remainingZenDaysToUnlock === 1 ? '' : 's'
+                                  } to unlock`
+                            }`
+                          : ''}
                       </div>
                     </button>
                   );
                 })}
               </div>
+
+              {/* 5-Day Consecutive Zen Mode Usage Progress & Calibration Strip */}
+              <div
+                data-testid="zen-mastery-streak-tracker"
+                className="p-2.5 rounded-lg bg-[#091510] border border-[#1E3A2F] space-y-1.5"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[10.5px] font-mono">
+                  <span
+                    data-testid="zen-mastery-progress-label"
+                    className="text-[#D5E2DC] font-semibold tabular-nums"
+                  >
+                    {milestoneEval.zenMasteryUnlocked
+                      ? `✓ Zen Mastery Unlocked (${milestoneEval.consecutiveZenModeDays}/${ZEN_MASTERY_REQUIRED_CONSECUTIVE_DAYS} Consecutive Days · 100%)`
+                      : `Zen Mastery Progress: ${milestoneEval.consecutiveZenModeDays}/${ZEN_MASTERY_REQUIRED_CONSECUTIVE_DAYS} Consecutive Days (${milestoneEval.zenMasteryProgressPct}%)`}
+                  </span>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      data-testid="zen-mastery-reset-streak-btn"
+                      onClick={handleResetZenModeStreak}
+                      className="px-2 py-0.5 rounded bg-[#10231C] hover:bg-[#18352A] text-[#A3B8B0] hover:text-[#F4EFE6] border border-[#233D32] text-[10px] font-mono font-semibold cursor-pointer"
+                    >
+                      Reset (0d)
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="zen-mastery-log-day-btn"
+                      onClick={() => handleRecordConsecutiveZenDay(true)}
+                      className="px-2 py-0.5 rounded bg-[#143025] hover:bg-[#1D4434] text-[#68D391] border border-[#2C5E48] text-[10px] font-mono font-semibold cursor-pointer tabular-nums"
+                    >
+                      +1 Zen Day
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  role="progressbar"
+                  aria-label="Zen Mastery 5 consecutive days of Zen Mode usage progress"
+                  aria-valuenow={milestoneEval.zenMasteryProgressPct}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  data-testid="zen-mastery-progress-bar"
+                  className="w-full h-2 rounded-full bg-[#060E0B] overflow-hidden border border-[#233D32]"
+                >
+                  <div
+                    data-testid="zen-mastery-progress-fill"
+                    className="h-full rounded-full transition-all duration-200"
+                    style={{
+                      width: `${milestoneEval.zenMasteryProgressPct}%`,
+                      backgroundColor: milestoneEval.zenMasteryUnlocked
+                        ? '#68D391'
+                        : '#38B2AC',
+                    }}
+                  />
+                </div>
+              </div>
             </div>
 
-            {/* Stage Selector & Sanctuary Atmosphere Soundscape Selector (Side-by-Side) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Stage Selector & Sanctuary Atmosphere Soundscape Selector */}
+            <div className="space-y-2.5">
               {/* Stage Selector */}
               <div className="space-y-1.5">
                 <span className="block text-[11px] font-mono uppercase tracking-wider text-[#A3B8B0]">
                   Select Sanctuary Grove Stage
                 </span>
-                <div className="flex items-center gap-1.5">
+                <div className="grid grid-cols-4 gap-1.5">
                   {SANCTUARY_STAGES.map((st, idx) => {
                     const locked = idx > highestReachedStage && idx > 0;
                     const active = stageIndex === idx;
@@ -1517,7 +1763,7 @@ export default function App() {
                         type="button"
                         disabled={locked}
                         onClick={() => setStageIndex(idx)}
-                        className={`flex-1 px-2 py-1.5 rounded-lg text-xs font-mono transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                        className={`px-2 py-1.5 rounded-lg text-xs font-mono transition-colors whitespace-nowrap text-center cursor-pointer ${
                           active
                             ? 'bg-[#1E4435] text-[#F4EFE6] border border-[#68D391]'
                             : locked
@@ -2856,9 +3102,7 @@ export default function App() {
                     workingMemoryPct: 90,
                     vagalCoherencePct: 86,
                     spatialPlasticityPct: Math.min(100, Math.round((hud.treesGrafted / Math.max(1, hud.targetTrees)) * 100) || 75),
-                    treesGrafted: hud.treesGrafted,
-                    targetTrees: hud.targetTrees,
-                    isVictory: true,
+                    isStageCleared: true,
                   });
                 }}
                 className="w-full py-2.5 rounded-xl bg-[#152E24] hover:bg-[#1E3F32] text-[#B794F4] border border-[#2C4C3E] font-medium text-sm transition-colors cursor-pointer"
@@ -2920,7 +3164,7 @@ export default function App() {
           summary: endSummary,
           treesGrafted: hud.treesGrafted,
           targetTrees: hud.targetTrees,
-          nBackLevel: hud.nBackLevel,
+          nBackLevel: hud.nBackLevel === 2 ? 2 : 1,
           ufovWindowMs: hud.adaptiveUfovWindowMs,
           flowMultiplier: hud.flowMultiplier,
         });

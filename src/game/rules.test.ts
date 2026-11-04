@@ -17,6 +17,9 @@ import {
   appendHrvSessionRecord,
   computeHrvTrendSummary,
   COGNITIVE_MILESTONE_BADGES,
+  ZEN_MASTERY_REQUIRED_CONSECUTIVE_DAYS,
+  evaluateZenModeStreakOnLoad,
+  recordDailyZenModeUsage,
   evaluateCognitiveMilestones,
   getSanctuaryAestheticConfig,
   computeAdaptiveFlowState,
@@ -1289,31 +1292,62 @@ test('Enterprise DTx adaptive psychometric staircase and 4-domain cognitive prof
   assert.ok(domainProfile.estimatedPlasticityGainPct >= 15);
 });
 
-test('Cognitive Milestone badge system unlocks aesthetic flora colors and higher firefly density as trees grafted and peak score grow', () => {
-  assert.equal(COGNITIVE_MILESTONE_BADGES.length, 4);
+test('Cognitive Milestone badge system unlocks aesthetic flora colors, firefly density, and Zen Mastery after 5 consecutive days of Zen Mode usage', () => {
+  assert.equal(COGNITIVE_MILESTONE_BADGES.length, 5);
+  assert.equal(ZEN_MASTERY_REQUIRED_CONSECUTIVE_DAYS, 5);
 
   const baseEval = evaluateCognitiveMilestones({
     totalTreesGrafted: 0,
     peakRejuvenationScore: 200,
+    consecutiveZenModeDays: 0,
   });
   assert.equal(baseEval.unlockedBadges.length, 1);
   assert.equal(baseEval.highestUnlockedBadge.id, 'sapling_awakening');
   assert.equal(baseEval.highestUnlockedBadge.upgrade.fireflyCount, 18);
+  assert.equal(baseEval.zenMasteryUnlocked, false);
+  assert.equal(baseEval.remainingZenDaysToUnlock, 5);
 
   const tier2Eval = evaluateCognitiveMilestones({
     totalTreesGrafted: 4,
     peakRejuvenationScore: 1420,
+    consecutiveZenModeDays: 4,
   });
   assert.equal(tier2Eval.highestUnlockedBadge.id, 'cyan_lotus_bloom');
   assert.equal(tier2Eval.highestUnlockedBadge.upgrade.fireflyCount, 36);
+  assert.equal(tier2Eval.zenMasteryUnlocked, false);
+  assert.equal(tier2Eval.zenMasteryProgressPct, 80);
+  assert.equal(tier2Eval.remainingZenDaysToUnlock, 1);
 
   const tier4Eval = evaluateCognitiveMilestones({
     totalTreesGrafted: 20,
     peakRejuvenationScore: 2800,
+    consecutiveZenModeDays: 4,
   });
   assert.equal(tier4Eval.unlockedBadges.length, 4);
   assert.equal(tier4Eval.highestUnlockedBadge.id, 'solar_crown_resonance');
   assert.equal(getSanctuaryAestheticConfig('solar_crown_resonance').fireflyCount, 80);
+
+  // Achieving 5 consecutive days of Zen Mode usage unlocks Zen Mastery badge (96 fireflies)
+  let zenStreak = evaluateZenModeStreakOnLoad(null, '2026-10-31');
+  assert.equal(zenStreak.consecutiveZenDays, 0);
+  zenStreak = recordDailyZenModeUsage(zenStreak, '2026-10-31');
+  zenStreak = recordDailyZenModeUsage(zenStreak, '2026-11-01');
+  zenStreak = recordDailyZenModeUsage(zenStreak, '2026-11-02');
+  zenStreak = recordDailyZenModeUsage(zenStreak, '2026-11-03');
+  zenStreak = recordDailyZenModeUsage(zenStreak, '2026-11-04');
+  assert.equal(zenStreak.consecutiveZenDays, 5);
+
+  const zenMasteryEval = evaluateCognitiveMilestones({
+    totalTreesGrafted: 4,
+    peakRejuvenationScore: 1420,
+    consecutiveZenModeDays: zenStreak.consecutiveZenDays,
+  });
+  assert.equal(zenMasteryEval.zenMasteryUnlocked, true);
+  assert.equal(zenMasteryEval.zenMasteryProgressPct, 100);
+  assert.equal(zenMasteryEval.remainingZenDaysToUnlock, 0);
+  assert.ok(zenMasteryEval.unlockedBadges.some((b) => b.id === 'zen_mastery'));
+  assert.equal(zenMasteryEval.highestUnlockedBadge.id, 'zen_mastery');
+  assert.equal(getSanctuaryAestheticConfig('zen_mastery').fireflyCount, 96);
 });
 
 test('HRV coherence session history maintains rolling 10 sessions and computes physiological relaxation trend', () => {
