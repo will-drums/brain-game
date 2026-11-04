@@ -71,8 +71,77 @@ import {
   clampHabitDurationGoalMinutes,
   sanitizeDailyHabitDurationGoalsConfig,
   computeDailyHabitDurationProgress,
+  SANCTUARY_BLOOM_CROSSFADE_DURATION_SEC,
+  SANCTUARY_BLOOM_CROSSFADE_DURATION_MS,
+  easeInOutCubicCrossfade,
+  stepSanctuaryBloomCrossfade,
   type ChimeSymbol,
 } from './rules';
+
+test('stepSanctuaryBloomCrossfade and computeSanctuaryBloomEffect smoothly interpolate normal and bioluminescent background states during toggle transitions', () => {
+  assert.equal(SANCTUARY_BLOOM_CROSSFADE_DURATION_SEC, 0.85);
+  assert.equal(SANCTUARY_BLOOM_CROSSFADE_DURATION_MS, 850);
+  assert.equal(easeInOutCubicCrossfade(0), 0);
+  assert.equal(easeInOutCubicCrossfade(0.5), 0.5);
+  assert.equal(easeInOutCubicCrossfade(1), 1);
+
+  // Step 1: Fading in from 0 toward 1 over half the crossfade duration
+  const midFadeIn = stepSanctuaryBloomCrossfade({
+    currentProgress: 0,
+    targetActive: true,
+    dtSec: SANCTUARY_BLOOM_CROSSFADE_DURATION_SEC * 0.5,
+  });
+  assert.equal(midFadeIn.progress, 0.5);
+  assert.equal(midFadeIn.easedCrossfade, 0.5);
+  assert.equal(midFadeIn.normalBackgroundAlpha, 0.5);
+  assert.equal(midFadeIn.bioluminescentBackgroundAlpha, 0.5);
+  assert.equal(midFadeIn.isTransitioning, true);
+  assert.equal(midFadeIn.direction, 'fading_in');
+
+  // Step 2: Completing fade-in reaches steady_bloom at 1.0
+  const fullFadeIn = stepSanctuaryBloomCrossfade({
+    currentProgress: midFadeIn.progress,
+    targetActive: true,
+    dtSec: SANCTUARY_BLOOM_CROSSFADE_DURATION_SEC * 0.6,
+  });
+  assert.equal(fullFadeIn.progress, 1);
+  assert.equal(fullFadeIn.easedCrossfade, 1);
+  assert.equal(fullFadeIn.normalBackgroundAlpha, 0);
+  assert.equal(fullFadeIn.bioluminescentBackgroundAlpha, 1);
+  assert.equal(fullFadeIn.isTransitioning, false);
+  assert.equal(fullFadeIn.direction, 'steady_bloom');
+
+  // Step 3: Fading out when user toggles Sanctuary Bloom OFF (1.0 -> 0.5 -> 0.0)
+  const midFadeOut = stepSanctuaryBloomCrossfade({
+    currentProgress: 1,
+    targetActive: false,
+    dtSec: SANCTUARY_BLOOM_CROSSFADE_DURATION_SEC * 0.5,
+  });
+  assert.equal(midFadeOut.progress, 0.5);
+  assert.equal(midFadeOut.easedCrossfade, 0.5);
+  assert.equal(midFadeOut.isTransitioning, true);
+  assert.equal(midFadeOut.direction, 'fading_out');
+
+  // Verify computeSanctuaryBloomEffect interpolates glade floor colors and alphas smoothly at 50% crossfade even when toggled OFF
+  const fadingOutState = computeSanctuaryBloomEffect({
+    completedStagesCount: 1,
+    isBloomManuallyActive: false,
+    intensityPct: 100,
+    presetId: 'midnight_forest',
+    elapsedSec: 10,
+    crossfadeProgress: 0.5,
+  });
+  assert.equal(fadingOutState.isTriggered, false);
+  assert.equal(fadingOutState.isVisible, true);
+  assert.equal(fadingOutState.isTransitioning, true);
+  assert.equal(fadingOutState.easedCrossfade, 0.5);
+  assert.equal(fadingOutState.normalBackgroundAlpha, 0.5);
+  assert.equal(fadingOutState.bioluminescentBackgroundAlpha, 0.5);
+  assert.equal(fadingOutState.bioluminescenceSaturation, 0.5);
+  assert.ok(fadingOutState.bloomIntensityAlpha > 0.15 && fadingOutState.bloomIntensityAlpha < 0.35);
+  assert.notEqual(fadingOutState.colorPalette.gladeFloorCenterHex, '#163529');
+  assert.ok(fadingOutState.statusBadgeText.includes('FADING OUT'));
+});
 
 test('computeDailyHabitDurationProgress calculates daily duration goals, logged minutes, and progress bar percentages for NSDR and Cognitive Reframing', () => {
   assert.equal(clampHabitDurationGoalMinutes('nsdr_protocol', 25), 25);

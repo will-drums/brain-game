@@ -1717,6 +1717,87 @@ export function clampSanctuaryBloomIntensityPct(
   return Math.max(0, Math.min(100, Math.round(num)));
 }
 
+export const SANCTUARY_BLOOM_CROSSFADE_DURATION_SEC = 0.85;
+export const SANCTUARY_BLOOM_CROSSFADE_DURATION_MS = 850;
+
+export interface SanctuaryBloomCrossfadeStepResult {
+  progress: number; // 0 .. 1 linear progress
+  easedCrossfade: number; // 0 .. 1 cubic ease-in-out factor
+  normalBackgroundAlpha: number; // 1.0 .. 0.0
+  bioluminescentBackgroundAlpha: number; // 0.0 .. 1.0
+  isTransitioning: boolean;
+  direction: 'fading_in' | 'fading_out' | 'steady_bloom' | 'steady_normal';
+}
+
+export function easeInOutCubicCrossfade(rawProgress: number): number {
+  const t = Math.max(0, Math.min(1, Number.isFinite(rawProgress) ? rawProgress : 0));
+  const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  return Math.round(eased * 1000) / 1000;
+}
+
+export function stepSanctuaryBloomCrossfade(params: {
+  currentProgress: number;
+  targetActive: boolean;
+  dtSec: number;
+  durationSec?: number;
+}): SanctuaryBloomCrossfadeStepResult {
+  const current = Math.max(
+    0,
+    Math.min(1, Number.isFinite(params.currentProgress) ? params.currentProgress : 0)
+  );
+  const durationSec = Math.max(
+    0.05,
+    Number.isFinite(params.durationSec) && (params.durationSec as number) > 0
+      ? (params.durationSec as number)
+      : SANCTUARY_BLOOM_CROSSFADE_DURATION_SEC
+  );
+  const safeDt = Math.max(0, Number.isFinite(params.dtSec) ? params.dtSec : 0);
+  const stepDelta = safeDt / durationSec;
+  const target = params.targetActive ? 1 : 0;
+
+  let nextProgress = current;
+  if (params.targetActive) {
+    nextProgress = Math.min(1, current + stepDelta);
+  } else {
+    nextProgress = Math.max(0, current - stepDelta);
+  }
+  nextProgress = Math.round(nextProgress * 10000) / 10000;
+
+  const easedCrossfade = easeInOutCubicCrossfade(nextProgress);
+  const normalBackgroundAlpha = Math.round((1 - easedCrossfade) * 1000) / 1000;
+  const bioluminescentBackgroundAlpha = easedCrossfade;
+  const isTransitioning = nextProgress > 0.0001 && nextProgress < 0.9999;
+
+  let direction: SanctuaryBloomCrossfadeStepResult['direction'] = 'steady_normal';
+  if (isTransitioning) {
+    direction = target === 1 ? 'fading_in' : 'fading_out';
+  } else if (nextProgress >= 0.9999) {
+    direction = 'steady_bloom';
+  }
+
+  return {
+    progress: nextProgress,
+    easedCrossfade,
+    normalBackgroundAlpha,
+    bioluminescentBackgroundAlpha,
+    isTransitioning,
+    direction,
+  };
+}
+
+function interpolateRgbToHex(
+  rgbA: [number, number, number],
+  rgbB: [number, number, number],
+  factor: number
+): string {
+  const t = Math.max(0, Math.min(1, Number.isFinite(factor) ? factor : 0));
+  const r = Math.round(rgbA[0] + (rgbB[0] - rgbA[0]) * t);
+  const g = Math.round(rgbA[1] + (rgbB[1] - rgbA[1]) * t);
+  const b = Math.round(rgbA[2] + (rgbB[2] - rgbA[2]) * t);
+  const toHex = (n: number) => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
+}
+
 export interface SanctuaryBloomColorPalette {
   primaryHex: string;
   secondaryHex: string;
@@ -1728,10 +1809,20 @@ export interface SanctuaryBloomColorPalette {
   coronaInnerRgba: string;
   coronaMidRgba: string;
   tendrilPaletteHex: string[];
+  gladeFloorCenterHex: string;
+  gladeFloorMidHex: string;
+  gladeFloorOuterHex: string;
 }
 
 export interface SanctuaryBloomState {
   isTriggered: boolean;
+  isVisible: boolean;
+  isTransitioning: boolean;
+  crossfadeProgress: number; // 0 .. 1 linear
+  easedCrossfade: number; // 0 .. 1 cubic ease-in-out
+  normalBackgroundAlpha: number; // 1.0 .. 0.0
+  bioluminescentBackgroundAlpha: number; // 0.0 .. 1.0
+  cssCrossfadeOpacity: number; // 0.0 .. 0.88
   completedStagesCount: number;
   totalStages: number;
   presetId: SanctuaryBloomPresetId;
@@ -1752,6 +1843,35 @@ function formatRgbAlpha(rgb: [number, number, number], alpha: number): string {
   return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${clampedAlpha.toFixed(3)})`;
 }
 
+const NORMAL_GLADE_FLOOR_CENTER_RGB: [number, number, number] = [22, 53, 41]; // #163529
+const NORMAL_GLADE_FLOOR_MID_RGB: [number, number, number] = [15, 38, 29]; // #0F261D
+const NORMAL_GLADE_FLOOR_OUTER_RGB: [number, number, number] = [9, 21, 16]; // #091510
+
+const PRESET_BIOLUM_FLOOR_RGB: Record<
+  SanctuaryBloomPresetId,
+  {
+    centerRgb: [number, number, number];
+    midRgb: [number, number, number];
+    outerRgb: [number, number, number];
+  }
+> = {
+  morning_glow: {
+    centerRgb: [58, 52, 26],
+    midRgb: [35, 34, 20],
+    outerRgb: [16, 19, 13],
+  },
+  midnight_forest: {
+    centerRgb: [36, 32, 68],
+    midRgb: [22, 23, 48],
+    outerRgb: [11, 14, 28],
+  },
+  neural_zenith: {
+    centerRgb: [24, 72, 64],
+    midRgb: [16, 48, 43],
+    outerRgb: [9, 25, 22],
+  },
+};
+
 export function computeSanctuaryBloomEffect(params: {
   completedStagesCount: number;
   totalStages?: number;
@@ -1759,6 +1879,7 @@ export function computeSanctuaryBloomEffect(params: {
   intensityPct?: number;
   presetId?: SanctuaryBloomPresetId;
   elapsedSec: number;
+  crossfadeProgress?: number;
 }): SanctuaryBloomState {
   const totalStages = Math.max(1, params.totalStages ?? SANCTUARY_STAGES.length);
   const completedStagesCount = Math.max(
@@ -1774,9 +1895,47 @@ export function computeSanctuaryBloomEffect(params: {
   const isTriggered =
     completedStagesCount >= totalStages || Boolean(params.isBloomManuallyActive);
 
-  if (!isTriggered) {
+  const hasExplicitCrossfade =
+    typeof params.crossfadeProgress === 'number' && Number.isFinite(params.crossfadeProgress);
+  const crossfadeProgress = hasExplicitCrossfade
+    ? Math.max(0, Math.min(1, Math.round((params.crossfadeProgress as number) * 1000) / 1000))
+    : isTriggered
+    ? 1
+    : 0;
+  const easedCrossfade = easeInOutCubicCrossfade(crossfadeProgress);
+  const isTransitioning = crossfadeProgress > 0.001 && crossfadeProgress < 0.999;
+  const isVisible = isTriggered ? easedCrossfade > 0 || !hasExplicitCrossfade : easedCrossfade > 0.001;
+  const normalBackgroundAlpha = Math.round((1 - easedCrossfade) * 1000) / 1000;
+  const bioluminescentBackgroundAlpha = easedCrossfade;
+  const floorBlendFactor = Math.round(easedCrossfade * (0.35 + 0.65 * intensityScale) * 1000) / 1000;
+  const presetFloor = PRESET_BIOLUM_FLOOR_RGB[preset.id];
+
+  const gladeFloorCenterHex = interpolateRgbToHex(
+    NORMAL_GLADE_FLOOR_CENTER_RGB,
+    presetFloor.centerRgb,
+    floorBlendFactor
+  );
+  const gladeFloorMidHex = interpolateRgbToHex(
+    NORMAL_GLADE_FLOOR_MID_RGB,
+    presetFloor.midRgb,
+    floorBlendFactor
+  );
+  const gladeFloorOuterHex = interpolateRgbToHex(
+    NORMAL_GLADE_FLOOR_OUTER_RGB,
+    presetFloor.outerRgb,
+    floorBlendFactor
+  );
+
+  if (!isTriggered && easedCrossfade <= 0.001) {
     return {
       isTriggered: false,
+      isVisible: false,
+      isTransitioning: false,
+      crossfadeProgress: 0,
+      easedCrossfade: 0,
+      normalBackgroundAlpha: 1,
+      bioluminescentBackgroundAlpha: 0,
+      cssCrossfadeOpacity: 0,
       completedStagesCount,
       totalStages,
       presetId: preset.id,
@@ -1799,21 +1958,27 @@ export function computeSanctuaryBloomEffect(params: {
         coronaInnerRgba: formatRgbAlpha(preset.coronaInnerRgb, 0),
         coronaMidRgba: formatRgbAlpha(preset.coronaMidRgb, 0),
         tendrilPaletteHex: preset.tendrilPaletteHex,
+        gladeFloorCenterHex: '#163529',
+        gladeFloorMidHex: '#0F261D',
+        gladeFloorOuterHex: '#091510',
       },
       statusBadgeText: `Sanctuary Stages Completed: ${completedStagesCount}/${totalStages}`,
     };
   }
 
   const safeElapsed = Math.max(0, Number.isFinite(params.elapsedSec) ? params.elapsedSec : 0);
-  // Slow, meditative orbital camera rotation (~0.085 rad/sec = ~4.87 deg/sec)
-  const cameraRotationRad = (safeElapsed * 0.085) % (Math.PI * 2);
+  const effectiveScale = intensityScale * easedCrossfade;
+  // Slow, meditative orbital camera rotation (~0.085 rad/sec = ~4.87 deg/sec), smoothly damped by easedCrossfade
+  const rawRotationRad = (safeElapsed * 0.085) % (Math.PI * 2);
+  const cameraRotationRad = rawRotationRad * easedCrossfade;
   const cameraRotationDeg = Math.round(((cameraRotationRad * 180) / Math.PI) * 10) / 10;
-  const bioluminescenceSaturation = Math.round(intensityScale * 1000) / 1000;
+  const bioluminescenceSaturation = Math.round(effectiveScale * 1000) / 1000;
   const bloomIntensityAlpha =
-    Math.round((0.46 + 0.12 * Math.sin(safeElapsed * 1.35)) * intensityScale * 1000) / 1000;
-  const coronaRayAlpha = Math.round(0.22 * intensityScale * 1000) / 1000;
+    Math.round((0.46 + 0.12 * Math.sin(safeElapsed * 1.35)) * effectiveScale * 1000) / 1000;
+  const coronaRayAlpha = Math.round(0.22 * effectiveScale * 1000) / 1000;
   const chromaticAuroraShift =
-    Math.round((0.5 + 0.5 * Math.sin(safeElapsed * 0.65)) * 1000) / 1000;
+    Math.round((0.5 + 0.5 * Math.sin(safeElapsed * 0.65)) * easedCrossfade * 1000) / 1000;
+  const cssCrossfadeOpacity = Math.round(Math.min(0.88, effectiveScale * 0.78) * 1000) / 1000;
 
   const colorPalette: SanctuaryBloomColorPalette = {
     primaryHex: preset.primaryHex,
@@ -1826,11 +1991,25 @@ export function computeSanctuaryBloomEffect(params: {
     coronaInnerRgba: formatRgbAlpha(preset.coronaInnerRgb, coronaRayAlpha),
     coronaMidRgba: formatRgbAlpha(preset.coronaMidRgb, coronaRayAlpha * 0.41),
     tendrilPaletteHex: preset.tendrilPaletteHex,
+    gladeFloorCenterHex,
+    gladeFloorMidHex,
+    gladeFloorOuterHex,
   };
 
+  const transitionTag = isTransitioning
+    ? ` · CROSSFADE ${Math.round(easedCrossfade * 100)}%`
+    : '';
+
   return {
-    isTriggered: true,
-    completedStagesCount: Math.max(completedStagesCount, totalStages),
+    isTriggered,
+    isVisible,
+    isTransitioning,
+    crossfadeProgress,
+    easedCrossfade,
+    normalBackgroundAlpha,
+    bioluminescentBackgroundAlpha,
+    cssCrossfadeOpacity,
+    completedStagesCount: isTriggered ? Math.max(completedStagesCount, totalStages) : completedStagesCount,
     totalStages,
     presetId: preset.id,
     presetLabel: preset.label,
@@ -1842,7 +2021,9 @@ export function computeSanctuaryBloomEffect(params: {
     coronaRayAlpha,
     chromaticAuroraShift,
     colorPalette,
-    statusBadgeText: `SANCTUARY BLOOM ACTIVE · ${preset.label.toUpperCase()} · ${userIntensityPct}% BIOLUM · ${totalStages}/${totalStages} STAGES`,
+    statusBadgeText: isTriggered
+      ? `SANCTUARY BLOOM ACTIVE · ${preset.label.toUpperCase()} · ${userIntensityPct}% BIOLUM${transitionTag} · ${totalStages}/${totalStages} STAGES`
+      : `SANCTUARY BLOOM FADING OUT · ${preset.label.toUpperCase()} · ${Math.round(easedCrossfade * 100)}% CROSSFADE`,
   };
 }
 

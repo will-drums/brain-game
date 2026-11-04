@@ -1986,7 +1986,11 @@ export default function App() {
                   data-testid="hud-sanctuary-bloom-section"
                   data-active-bloom-preset={sanctuaryBloomPresetId}
                   data-bloom-primary-hex={activeBloomPreset.primaryHex}
-                  className={`flex items-center gap-1.5 px-2 h-8 rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
+                  data-bloom-crossfade-pct={
+                    hud.sanctuaryBloomCrossfadePct ?? (isSanctuaryBloomActive ? 100 : 0)
+                  }
+                  data-bloom-is-transitioning={hud.sanctuaryBloomIsTransitioning ? 'true' : 'false'}
+                  className={`flex items-center gap-1.5 px-2 h-8 rounded-lg border transition-all duration-500 whitespace-nowrap shrink-0 ${
                     isSanctuaryBloomActive
                       ? 'bg-[#171B2A] shadow-md'
                       : 'bg-[#132A21] border-[#2C4C3E]'

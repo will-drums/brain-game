@@ -11,6 +11,11 @@ import {
   createCognitivePulseConfig,
   stepCognitivePulseWave,
   computeSanctuaryBloomEffect,
+  stepSanctuaryBloomCrossfade,
+  SANCTUARY_BLOOM_CROSSFADE_DURATION_SEC,
+  SANCTUARY_BLOOM_CROSSFADE_DURATION_MS,
+  getSanctuaryBloomPresetConfig,
+  clampSanctuaryBloomIntensityPct,
   computeAdaptiveDifficultyScaling,
   createInitialChimeHistoryForNBack,
   computeLocalNBackSuccessRate,
@@ -71,6 +76,8 @@ export interface HudSnapshot {
   sanctuaryBloomSaturation?: number;
   sanctuaryBloomIntensityPct?: number;
   sanctuaryBloomPresetId?: SanctuaryBloomPresetId;
+  sanctuaryBloomCrossfadePct?: number;
+  sanctuaryBloomIsTransitioning?: boolean;
   runningFiveSessionHrvAvg?: number;
   adaptiveScalingTierLabel?: string;
   hrvUfovAdjustmentMs?: number;
@@ -730,6 +737,11 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
     initSanctuaryWorld(stateRef.current.stageIndex);
 
     let currentCameraRotationRad = 0;
+    let currentBloomCrossfadeProgress =
+      (stateRef.current.completedStagesCount ?? 0) >= SANCTUARY_STAGES.length ||
+      Boolean(stateRef.current.isSanctuaryBloomActive)
+        ? 1
+        : 0;
 
     // Helper: Screen to World coordinates (accounting for Sanctuary Bloom camera rotation)
     const screenToWorld = (clientX: number, clientY: number) => {
@@ -1817,6 +1829,17 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       if (chimeHistory.length <= renderAdaptiveScaling.effectiveNBackLevel) {
         chimeHistory = createInitialChimeHistoryForNBack(renderAdaptiveScaling.effectiveNBackLevel);
       }
+      const isTargetBloomActive =
+        (stateRef.current.completedStagesCount ?? 0) >= SANCTUARY_STAGES.length ||
+        Boolean(stateRef.current.isSanctuaryBloomActive);
+      const crossfadeStep = stepSanctuaryBloomCrossfade({
+        currentProgress: currentBloomCrossfadeProgress,
+        targetActive: isTargetBloomActive,
+        dtSec: dt,
+        durationSec: SANCTUARY_BLOOM_CROSSFADE_DURATION_SEC,
+      });
+      currentBloomCrossfadeProgress = crossfadeStep.progress;
+
       const bloomEffect = computeSanctuaryBloomEffect({
         completedStagesCount: stateRef.current.completedStagesCount ?? 0,
         totalStages: SANCTUARY_STAGES.length,
@@ -1824,9 +1847,15 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         intensityPct: stateRef.current.sanctuaryBloomIntensityPct ?? 100,
         presetId: stateRef.current.sanctuaryBloomPresetId,
         elapsedSec: stageElapsedSec,
+        crossfadeProgress: currentBloomCrossfadeProgress,
       });
       currentCameraRotationRad = bloomEffect.cameraRotationRad;
       canvas.dataset.sanctuaryBloom = bloomEffect.isTriggered ? 'active' : 'inactive';
+      canvas.dataset.bloomCrossfadeProgress = String(bloomEffect.crossfadeProgress);
+      canvas.dataset.bloomEasedCrossfade = String(bloomEffect.easedCrossfade);
+      canvas.dataset.bloomCrossfadePct = String(Math.round(bloomEffect.easedCrossfade * 100));
+      canvas.dataset.bloomIsTransitioning = bloomEffect.isTransitioning ? 'true' : 'false';
+      canvas.dataset.bloomDirection = crossfadeStep.direction;
       canvas.dataset.cameraRotationDeg = String(bloomEffect.cameraRotationDeg);
       canvas.dataset.bloomIntensityPct = String(bloomEffect.userIntensityPct);
       canvas.dataset.bloomPresetId = bloomEffect.presetId;
@@ -1848,7 +1877,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
 
       ctx.save();
       ctx.scale(currentDpr, currentDpr);
-      ctx.fillStyle = '#091510';
+      ctx.fillStyle = bloomEffect.colorPalette.gladeFloorOuterHex;
       ctx.fillRect(0, 0, viewWidth, viewHeight);
 
       // Compute Camera Shake (trauma * trauma) + Sanctuary Bloom Slow Orbital Camera Rotation
@@ -1857,20 +1886,35 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       const shakeY = (Math.random() * 2 - 1) * shakeMag;
 
       ctx.translate(viewWidth / 2, viewHeight / 2);
-      if (bloomEffect.isTriggered && bloomEffect.cameraRotationRad !== 0) {
+      if (bloomEffect.isVisible && bloomEffect.cameraRotationRad !== 0) {
         ctx.rotate(bloomEffect.cameraRotationRad);
       }
       ctx.translate(-camera.x + shakeX, -camera.y + shakeY);
 
-      // 1. Sanctuary Mossy Glade Floor & Concentric Topographic Rings
+      // 1. Sanctuary Mossy Glade Floor & Crossfaded Bioluminescent Floor Gradient
       const bgGrad = ctx.createRadialGradient(0, -40, 60, 0, -40, 820);
-      bgGrad.addColorStop(0, '#163529');
-      bgGrad.addColorStop(0.55, '#0F261D');
-      bgGrad.addColorStop(1, '#091510');
+      bgGrad.addColorStop(0, bloomEffect.colorPalette.gladeFloorCenterHex);
+      bgGrad.addColorStop(0.55, bloomEffect.colorPalette.gladeFloorMidHex);
+      bgGrad.addColorStop(1, bloomEffect.colorPalette.gladeFloorOuterHex);
       ctx.fillStyle = bgGrad;
       ctx.beginPath();
       ctx.arc(0, -40, 820, 0, Math.PI * 2);
       ctx.fill();
+
+      // 1A. Smoothly Crossfaded Bioluminescent Sanctuary Glade Horizon Wash
+      if (bloomEffect.isVisible && bloomEffect.easedCrossfade > 0.001) {
+        ctx.save();
+        ctx.globalAlpha = bloomEffect.easedCrossfade * 0.55;
+        const floorBloomGrad = ctx.createRadialGradient(0, -40, 32, 0, -40, 740);
+        floorBloomGrad.addColorStop(0, bloomEffect.colorPalette.radialStop0Rgba);
+        floorBloomGrad.addColorStop(0.5, bloomEffect.colorPalette.radialStop1Rgba);
+        floorBloomGrad.addColorStop(1, 'rgba(9, 21, 16, 0)');
+        ctx.fillStyle = floorBloomGrad;
+        ctx.beginPath();
+        ctx.arc(0, -40, 740, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
 
       // 1B. Background 'Cognitive Rhythm Sync' Bioluminescent Waveform Visualizer
       if (rhythmSyncState.enabled && rhythmSyncState.waveformPoints.length > 1) {
@@ -2623,8 +2667,8 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
 
       ctx.restore();
 
-      // 7B-2. Render 'Sanctuary Bloom' Full-Canvas Bioluminescence Post-Processing Pass (When All 4 Stages Completed)
-      if (bloomEffect.isTriggered) {
+      // 7B-2. Render 'Sanctuary Bloom' Full-Canvas Bioluminescence Post-Processing Pass (Smoothly Crossfaded)
+      if (bloomEffect.isVisible && bloomEffect.easedCrossfade > 0.001) {
         ctx.save();
         ctx.globalCompositeOperation = 'screen';
 
@@ -2861,6 +2905,8 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
           sanctuaryBloomSaturation: bloomEffect.bioluminescenceSaturation,
           sanctuaryBloomIntensityPct: bloomEffect.userIntensityPct,
           sanctuaryBloomPresetId: bloomEffect.presetId,
+          sanctuaryBloomCrossfadePct: Math.round(bloomEffect.easedCrossfade * 100),
+          sanctuaryBloomIsTransitioning: bloomEffect.isTransitioning,
           runningFiveSessionHrvAvg: renderAdaptiveScaling.runningFiveSessionHrvAvg,
           adaptiveScalingTierLabel: renderAdaptiveScaling.tierLabel,
           hrvUfovAdjustmentMs: renderAdaptiveScaling.hrvUfovAdjustmentMs,
@@ -2890,14 +2936,43 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
     };
   }, [resetSignal]);
 
+  const activeBloomPresetConfig = getSanctuaryBloomPresetConfig(sanctuaryBloomPresetId);
+  const clampedIntensityPct = clampSanctuaryBloomIntensityPct(sanctuaryBloomIntensityPct, 100);
+  const isBloomModeTargetActive =
+    (completedStagesCount ?? 0) >= SANCTUARY_STAGES.length || Boolean(isSanctuaryBloomActive);
+  const targetCssCrossfadeOpacity = isBloomModeTargetActive
+    ? Math.round(Math.min(0.42, (clampedIntensityPct / 100) * 0.36) * 1000) / 1000
+    : 0;
+
   return (
-    <div ref={containerRef} className="fixed inset-0 w-full h-full overflow-hidden bg-[#091510]">
+    <div
+      ref={containerRef}
+      data-testid="sanctuary-canvas-container"
+      data-bloom-active={isBloomModeTargetActive ? 'true' : 'false'}
+      data-bloom-preset={activeBloomPresetConfig.id}
+      className="fixed inset-0 w-full h-full overflow-hidden bg-[#091510] transition-colors duration-[850ms] ease-in-out"
+    >
       <canvas
         ref={canvasRef}
         data-testid="sanctuary-canvas"
         tabIndex={0}
         aria-label="Sylvan Synapse Interactive Botanical Sanctuary Canvas"
         className="block w-full h-full outline-none cursor-crosshair"
+      />
+      {/* Coordinated CSS Crossfade Bioluminescent Background Atmosphere Overlay */}
+      <div
+        aria-hidden="true"
+        data-testid="sanctuary-bloom-crossfade-overlay"
+        data-bloom-active={isBloomModeTargetActive ? 'true' : 'false'}
+        data-preset-id={activeBloomPresetConfig.id}
+        data-target-opacity={targetCssCrossfadeOpacity}
+        data-transition-duration-ms={SANCTUARY_BLOOM_CROSSFADE_DURATION_MS}
+        className="pointer-events-none fixed inset-0 z-[1] mix-blend-screen transition-opacity duration-[850ms] ease-in-out"
+        style={{
+          opacity: targetCssCrossfadeOpacity,
+          background: `radial-gradient(circle at 50% 46%, rgba(${activeBloomPresetConfig.stop0Rgb.join(', ')}, 0.52) 0%, rgba(${activeBloomPresetConfig.stop1Rgb.join(', ')}, 0.32) 44%, rgba(${activeBloomPresetConfig.stop2Rgb.join(', ')}, 0.14) 76%, rgba(9, 21, 16, 0) 100%)`,
+          transition: `opacity ${SANCTUARY_BLOOM_CROSSFADE_DURATION_MS}ms cubic-bezier(0.65, 0, 0.35, 1), background ${SANCTUARY_BLOOM_CROSSFADE_DURATION_MS}ms cubic-bezier(0.65, 0, 0.35, 1)`,
+        }}
       />
     </div>
   );
