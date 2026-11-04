@@ -76,8 +76,11 @@ import {
   computeDailyHabitDurationProgress,
   SANCTUARY_BLOOM_CROSSFADE_DURATION_SEC,
   SANCTUARY_BLOOM_CROSSFADE_DURATION_MS,
+  SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_SEC,
+  SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_MS,
   easeInOutCubicCrossfade,
   stepSanctuaryBloomCrossfade,
+  stepSanctuaryBloomIntensityTransition,
   DEFAULT_30_DAY_VAGAL_BASELINE_SCORES,
   computeVagalToneTrend30Days,
   DEFAULT_PRIOR_23_DAYS_HABIT_SEED,
@@ -87,6 +90,56 @@ import {
   computeSanctuaryBloomIntensityTrend30Days,
   type ChimeSymbol,
 } from './rules';
+
+test('stepSanctuaryBloomIntensityTransition smoothly interpolates Sanctuary Bloom intensity when selecting a preset or adjusting the slider', () => {
+  assert.equal(SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_SEC, 0.45);
+  assert.equal(SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_MS, 450);
+
+  // Explicit elapsed time cubic ease-in-out curve from 64% (Midnight Forest) to 94% (Neural Zenith)
+  const midStep = stepSanctuaryBloomIntensityTransition({
+    currentIntensityPct: 64,
+    targetIntensityPct: 94,
+    startIntensityPct: 64,
+    elapsedSec: 0,
+    dtSec: 0.225, // 50% of 0.45s
+  });
+  assert.equal(midStep.isTransitioning, true);
+  assert.equal(midStep.progress, 0.5);
+  assert.equal(midStep.easedProgress, 0.5);
+  assert.equal(midStep.currentIntensityPct, 79);
+  assert.equal(midStep.displayIntensityPct, 79);
+
+  // Completing the 450ms transition reaches exact target and stops transitioning
+  const endStep = stepSanctuaryBloomIntensityTransition({
+    currentIntensityPct: midStep.currentIntensityPct,
+    targetIntensityPct: 94,
+    startIntensityPct: 64,
+    elapsedSec: midStep.elapsedSec,
+    dtSec: 0.25,
+  });
+  assert.equal(endStep.isTransitioning, false);
+  assert.equal(endStep.currentIntensityPct, 94);
+  assert.equal(endStep.displayIntensityPct, 94);
+  assert.equal(endStep.progress, 1);
+
+  // Frame-by-frame 60fps canvas stepping from 100% down to 40% fades gradually over multiple frames
+  let current = 100;
+  const intermediateValues: number[] = [];
+  for (let frame = 0; frame < 60; frame++) {
+    const step = stepSanctuaryBloomIntensityTransition({
+      currentIntensityPct: current,
+      targetIntensityPct: 40,
+      startIntensityPct: 100,
+      dtSec: 1 / 60,
+    });
+    current = step.currentIntensityPct;
+    intermediateValues.push(current);
+    if (!step.isTransitioning) break;
+  }
+  assert.ok(intermediateValues.length >= 12);
+  assert.ok(intermediateValues[0] < 100 && intermediateValues[0] > 80);
+  assert.equal(current, 40);
+});
 
 test('computeSanctuaryBloomIntensityTrend30Days plots 30 days of Sanctuary Bloom intensity and correlates with Rejuvenation Scores', () => {
   assert.equal(DEFAULT_30_DAY_BLOOM_INTENSITY_SEED.length, 30);

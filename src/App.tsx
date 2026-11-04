@@ -34,6 +34,9 @@ import {
   SANCTUARY_BLOOM_PRESET_LIST,
   getSanctuaryBloomPresetConfig,
   clampSanctuaryBloomIntensityPct,
+  SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_SEC,
+  SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_MS,
+  stepSanctuaryBloomIntensityTransition,
   COGNITIVE_RHYTHM_SYNC_STORAGE_KEY,
   DEFAULT_COGNITIVE_RHYTHM_SYNC_CONFIG,
   COGNITIVE_RHYTHM_HEART_RATE_PRESETS,
@@ -234,6 +237,57 @@ export default function App() {
     }
     return DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT;
   });
+  const [animatedBloomIntensityPct, setAnimatedBloomIntensityPct] = useState<number>(
+    () => sanctuaryBloomIntensityPct
+  );
+  const [isBloomIntensityTransitioning, setIsBloomIntensityTransitioning] =
+    useState<boolean>(false);
+  const animatedBloomIntensityRef = useRef<number>(sanctuaryBloomIntensityPct);
+
+  useEffect(() => {
+    const startVal = animatedBloomIntensityRef.current;
+    const targetVal = sanctuaryBloomIntensityPct;
+    if (Math.abs(targetVal - startVal) < 0.05) {
+      animatedBloomIntensityRef.current = targetVal;
+      setAnimatedBloomIntensityPct(targetVal);
+      setIsBloomIntensityTransitioning(false);
+      return;
+    }
+
+    setIsBloomIntensityTransitioning(true);
+    let rafId = 0;
+    let lastTimeMs = performance.now();
+    let elapsedSec = 0;
+
+    const tick = (nowMs: number) => {
+      const dtSec = Math.max(0.001, Math.min(0.1, (nowMs - lastTimeMs) / 1000));
+      lastTimeMs = nowMs;
+      const step = stepSanctuaryBloomIntensityTransition({
+        currentIntensityPct: animatedBloomIntensityRef.current,
+        targetIntensityPct: targetVal,
+        startIntensityPct: startVal,
+        elapsedSec,
+        dtSec,
+        durationSec: SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_SEC,
+      });
+      elapsedSec = step.elapsedSec;
+      animatedBloomIntensityRef.current = step.currentIntensityPct;
+      setAnimatedBloomIntensityPct(step.currentIntensityPct);
+      setIsBloomIntensityTransitioning(step.isTransitioning);
+
+      if (step.isTransitioning) {
+        rafId = window.requestAnimationFrame(tick);
+      }
+    };
+
+    rafId = window.requestAnimationFrame(tick);
+    return () => {
+      if (rafId) {
+        window.cancelAnimationFrame(rafId);
+      }
+    };
+  }, [sanctuaryBloomIntensityPct]);
+
   const [rhythmSyncConfig, setRhythmSyncConfig] = useState<CognitiveRhythmSyncConfig>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -1436,7 +1490,7 @@ export default function App() {
         isZenMode={isZenMode}
         completedStagesCount={completedStagesCount}
         isSanctuaryBloomActive={isSanctuaryBloomActive}
-        sanctuaryBloomIntensityPct={sanctuaryBloomIntensityPct}
+        sanctuaryBloomIntensityPct={animatedBloomIntensityPct}
         sanctuaryBloomPresetId={sanctuaryBloomPresetId}
         rhythmSyncConfig={rhythmSyncConfig}
         hrvHistory={hrvHistory}
@@ -2324,6 +2378,14 @@ export default function App() {
 
                   <div
                     data-testid="sanctuary-bloom-slider-wrapper"
+                    data-target-intensity-pct={sanctuaryBloomIntensityPct}
+                    data-animated-intensity-pct={Math.round(animatedBloomIntensityPct)}
+                    data-intensity-is-transitioning={
+                      isBloomIntensityTransitioning ? 'true' : 'false'
+                    }
+                    data-intensity-transition-duration-ms={
+                      SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_MS
+                    }
                     onMouseEnter={() => setIsBloomSliderHovered(true)}
                     onMouseLeave={() => setIsBloomSliderHovered(false)}
                     className="relative flex items-center gap-1 pl-1.5 border-l border-[#2C4C3E]"
@@ -2334,14 +2396,38 @@ export default function App() {
                     >
                       Sanctuary Bloom Bioluminescence Intensity
                     </label>
-                    <div className="relative flex items-center">
+                    <div className="relative flex items-center w-14 h-3">
+                      {/* Smoothly Animated Bioluminescent Slider Track Fill */}
+                      <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 h-1.5 rounded-full bg-[#08130F] overflow-hidden border border-[#1E3A2F]"
+                      >
+                        <div
+                          data-testid="sanctuary-bloom-slider-fill"
+                          data-fill-pct={Math.round(animatedBloomIntensityPct)}
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${sanctuaryBloomIntensityPct}%`,
+                            backgroundColor: activeBloomPreset.primaryHex,
+                            boxShadow: `0 0 8px ${activeBloomPreset.primaryHex}`,
+                            transition: isBloomSliderDragging
+                              ? 'width 120ms ease-out, background-color 300ms ease'
+                              : `width ${SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_MS}ms cubic-bezier(0.65, 0, 0.35, 1), background-color ${SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_MS}ms cubic-bezier(0.65, 0, 0.35, 1), box-shadow ${SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_MS}ms cubic-bezier(0.65, 0, 0.35, 1)`,
+                          }}
+                        />
+                      </div>
+
                       <input
                         id="sanctuary-bloom-intensity-slider"
                         type="range"
                         min={0}
                         max={100}
                         step={1}
-                        value={sanctuaryBloomIntensityPct}
+                        value={
+                          isBloomSliderDragging
+                            ? sanctuaryBloomIntensityPct
+                            : Math.round(animatedBloomIntensityPct)
+                        }
                         onChange={handleChangeBloomIntensity}
                         onPointerDown={() => setIsBloomSliderDragging(true)}
                         onMouseDown={() => setIsBloomSliderDragging(true)}
@@ -2351,7 +2437,7 @@ export default function App() {
                         aria-describedby="sanctuary-bloom-intensity-tooltip"
                         data-testid="sanctuary-bloom-intensity-slider"
                         aria-label="Sanctuary Bloom Bioluminescence Intensity"
-                        className="w-14 h-1.5 bg-[#0B1914] rounded-lg cursor-pointer"
+                        className="relative z-10 w-14 h-1.5 bg-transparent rounded-lg cursor-pointer transition-all duration-300"
                         style={{ accentColor: activeBloomPreset.primaryHex }}
                       />
 
@@ -2363,7 +2449,7 @@ export default function App() {
                           data-testid="sanctuary-bloom-intensity-tooltip"
                           data-intensity-pct={bloomSliderTooltip.intensityPct}
                           data-preset-label={bloomSliderTooltip.presetLabel}
-                          className="absolute top-full mt-2.5 z-50 px-2.5 py-1 rounded-lg bg-[#08130F]/95 border shadow-xl pointer-events-none whitespace-nowrap transition-all duration-75"
+                          className="absolute top-full mt-2.5 z-50 px-2.5 py-1 rounded-lg bg-[#08130F]/95 border shadow-xl pointer-events-none whitespace-nowrap transition-all duration-200 ease-out"
                           style={{
                             left: `${Math.max(10, Math.min(90, bloomSliderTooltip.thumbOffsetPct))}%`,
                             transform: 'translateX(-50%)',
@@ -2400,10 +2486,11 @@ export default function App() {
                     </div>
                     <span
                       data-testid="sanctuary-bloom-intensity-value"
-                      className="text-[10px] font-mono font-semibold tabular-nums w-7 text-right"
+                      data-animated-value={Math.round(animatedBloomIntensityPct)}
+                      className="text-[10px] font-mono font-semibold tabular-nums w-7 text-right transition-colors duration-300"
                       style={{ color: activeBloomPreset.primaryHex }}
                     >
-                      {sanctuaryBloomIntensityPct}%
+                      {Math.round(animatedBloomIntensityPct)}%
                     </span>
                   </div>
                 </div>

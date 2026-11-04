@@ -1959,6 +1959,122 @@ export function stepSanctuaryBloomCrossfade(params: {
   };
 }
 
+export const SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_SEC = 0.45;
+export const SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_MS = 450;
+
+export interface SanctuaryBloomIntensityTransitionState {
+  currentIntensityPct: number; // Continuous 0..100 (rounded to 2 decimal places)
+  displayIntensityPct: number; // Integer 0..100
+  targetIntensityPct: number; // Integer 0..100
+  startIntensityPct: number; // 0..100
+  elapsedSec: number;
+  durationSec: number;
+  progress: number; // 0..1
+  easedProgress: number; // 0..1 cubic ease-in-out
+  isTransitioning: boolean;
+}
+
+/**
+ * Smoothly interpolates Sanctuary Bloom bioluminescence intensity toward targetIntensityPct
+ * over SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_SEC (450ms) when a user selects a preset
+ * or adjusts the intensity slider, so the bioluminescence fades gracefully rather than snapping.
+ */
+export function stepSanctuaryBloomIntensityTransition(params: {
+  currentIntensityPct: number;
+  targetIntensityPct: number;
+  dtSec: number;
+  startIntensityPct?: number;
+  elapsedSec?: number;
+  durationSec?: number;
+}): SanctuaryBloomIntensityTransitionState {
+  const target = clampSanctuaryBloomIntensityPct(
+    params.targetIntensityPct,
+    DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT
+  );
+  const rawCurrent = Number.isFinite(params.currentIntensityPct)
+    ? Math.max(0, Math.min(100, params.currentIntensityPct))
+    : target;
+  const start = Number.isFinite(params.startIntensityPct)
+    ? Math.max(0, Math.min(100, params.startIntensityPct as number))
+    : rawCurrent;
+  const durationSec = Math.max(
+    0.05,
+    Number.isFinite(params.durationSec) && (params.durationSec as number) > 0
+      ? (params.durationSec as number)
+      : SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_SEC
+  );
+  const safeDt = Math.max(0, Number.isFinite(params.dtSec) ? params.dtSec : 0);
+
+  if (Math.abs(target - rawCurrent) < 0.05) {
+    return {
+      currentIntensityPct: target,
+      displayIntensityPct: target,
+      targetIntensityPct: target,
+      startIntensityPct: target,
+      elapsedSec: durationSec,
+      durationSec,
+      progress: 1,
+      easedProgress: 1,
+      isTransitioning: false,
+    };
+  }
+
+  // If explicit elapsedSec & startIntensityPct are provided, use exact cubic ease-in-out curve;
+  // otherwise advance smoothly toward target using critically damped + linear floor step
+  if (typeof params.elapsedSec === 'number' && Number.isFinite(params.elapsedSec)) {
+    const nextElapsed = Math.min(durationSec, Math.max(0, params.elapsedSec + safeDt));
+    const progress = Math.round((nextElapsed / durationSec) * 10000) / 10000;
+    const easedProgress = easeInOutCubicCrossfade(progress);
+    const interpolated =
+      progress >= 0.999
+        ? target
+        : Math.round((start + (target - start) * easedProgress) * 100) / 100;
+    const isTransitioning = Math.abs(target - interpolated) >= 0.05 && progress < 0.999;
+    return {
+      currentIntensityPct: isTransitioning ? interpolated : target,
+      displayIntensityPct: Math.round(isTransitioning ? interpolated : target),
+      targetIntensityPct: target,
+      startIntensityPct: start,
+      elapsedSec: nextElapsed,
+      durationSec,
+      progress: isTransitioning ? progress : 1,
+      easedProgress: isTransitioning ? easedProgress : 1,
+      isTransitioning,
+    };
+  }
+
+  // Frame-by-frame smooth approach for continuous 60fps canvas loop
+  const diff = target - rawCurrent;
+  const maxStepPerSec = 100 / durationSec; // ~222%/sec max linear speed
+  const expFactor = 1 - Math.exp((-safeDt * 6.5) / durationSec);
+  const expDelta = diff * expFactor;
+  const minLinearStep = Math.sign(diff) * Math.min(Math.abs(diff), safeDt * maxStepPerSec * 0.65);
+  const appliedDelta =
+    Math.abs(expDelta) >= Math.abs(minLinearStep) ? expDelta : minLinearStep;
+  const nextVal =
+    Math.abs(diff) <= Math.max(0.15, Math.abs(appliedDelta))
+      ? target
+      : Math.round((rawCurrent + appliedDelta) * 100) / 100;
+  const isTransitioning = Math.abs(target - nextVal) >= 0.05;
+  const totalSpan = Math.max(1, Math.abs(target - start));
+  const rawProg = 1 - Math.abs(target - nextVal) / totalSpan;
+  const progress = isTransitioning
+    ? Math.max(0, Math.min(0.99, Math.round(rawProg * 1000) / 1000))
+    : 1;
+
+  return {
+    currentIntensityPct: isTransitioning ? nextVal : target,
+    displayIntensityPct: Math.round(isTransitioning ? nextVal : target),
+    targetIntensityPct: target,
+    startIntensityPct: start,
+    elapsedSec: Math.round(progress * durationSec * 1000) / 1000,
+    durationSec,
+    progress,
+    easedProgress: easeInOutCubicCrossfade(progress),
+    isTransitioning,
+  };
+}
+
 function interpolateRgbToHex(
   rgbA: [number, number, number],
   rgbB: [number, number, number],
@@ -2065,7 +2181,11 @@ export function computeSanctuaryBloomEffect(params: {
     params.intensityPct,
     preset.defaultIntensityPct
   );
-  const intensityScale = userIntensityPct / 100;
+  const continuousIntensityPct =
+    typeof params.intensityPct === 'number' && Number.isFinite(params.intensityPct)
+      ? Math.max(0, Math.min(100, params.intensityPct))
+      : userIntensityPct;
+  const intensityScale = continuousIntensityPct / 100;
   const isTriggered =
     typeof params.isBloomManuallyActive === 'boolean'
       ? params.isBloomManuallyActive

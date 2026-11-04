@@ -12,8 +12,11 @@ import {
   stepCognitivePulseWave,
   computeSanctuaryBloomEffect,
   stepSanctuaryBloomCrossfade,
+  stepSanctuaryBloomIntensityTransition,
   SANCTUARY_BLOOM_CROSSFADE_DURATION_SEC,
   SANCTUARY_BLOOM_CROSSFADE_DURATION_MS,
+  SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_SEC,
+  SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_MS,
   getSanctuaryBloomPresetConfig,
   clampSanctuaryBloomIntensityPct,
   computeAdaptiveDifficultyScaling,
@@ -743,6 +746,10 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         : (stateRef.current.completedStagesCount ?? 0) >= SANCTUARY_STAGES.length)
         ? 1
         : 0;
+    let currentSmoothedBloomIntensityPct = clampSanctuaryBloomIntensityPct(
+      stateRef.current.sanctuaryBloomIntensityPct,
+      100
+    );
 
     // Helper: Screen to World coordinates (accounting for Sanctuary Bloom camera rotation)
     const screenToWorld = (clientX: number, clientY: number) => {
@@ -1842,11 +1849,23 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       });
       currentBloomCrossfadeProgress = crossfadeStep.progress;
 
+      const targetBloomIntensityPct = clampSanctuaryBloomIntensityPct(
+        stateRef.current.sanctuaryBloomIntensityPct,
+        100
+      );
+      const intensityTransitionStep = stepSanctuaryBloomIntensityTransition({
+        currentIntensityPct: currentSmoothedBloomIntensityPct,
+        targetIntensityPct: targetBloomIntensityPct,
+        dtSec: dt,
+        durationSec: SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_SEC,
+      });
+      currentSmoothedBloomIntensityPct = intensityTransitionStep.currentIntensityPct;
+
       const bloomEffect = computeSanctuaryBloomEffect({
         completedStagesCount: stateRef.current.completedStagesCount ?? 0,
         totalStages: SANCTUARY_STAGES.length,
         isBloomManuallyActive: stateRef.current.isSanctuaryBloomActive,
-        intensityPct: stateRef.current.sanctuaryBloomIntensityPct ?? 100,
+        intensityPct: currentSmoothedBloomIntensityPct,
         presetId: stateRef.current.sanctuaryBloomPresetId,
         elapsedSec: stageElapsedSec,
         crossfadeProgress: currentBloomCrossfadeProgress,
@@ -1864,7 +1883,15 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       setCanvasDataAttr('bloomIsTransitioning', bloomEffect.isTransitioning ? 'true' : 'false');
       setCanvasDataAttr('bloomDirection', crossfadeStep.direction);
       setCanvasDataAttr('cameraRotationDeg', String(Math.round(bloomEffect.cameraRotationDeg)));
-      setCanvasDataAttr('bloomIntensityPct', String(bloomEffect.userIntensityPct));
+      setCanvasDataAttr('bloomIntensityPct', String(targetBloomIntensityPct));
+      setCanvasDataAttr(
+        'bloomSmoothedIntensityPct',
+        String(intensityTransitionStep.displayIntensityPct)
+      );
+      setCanvasDataAttr(
+        'bloomIntensityTransitioning',
+        intensityTransitionStep.isTransitioning ? 'true' : 'false'
+      );
       setCanvasDataAttr('bloomPresetId', bloomEffect.presetId);
       setCanvasDataAttr('bloomPrimaryHex', bloomEffect.colorPalette.primaryHex);
       const rhythmSyncState = computeCognitiveRhythmSyncState({
@@ -2976,11 +3003,12 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         data-preset-id={activeBloomPresetConfig.id}
         data-target-opacity={targetCssCrossfadeOpacity}
         data-transition-duration-ms={SANCTUARY_BLOOM_CROSSFADE_DURATION_MS}
-        className="pointer-events-none fixed inset-0 z-[1] transition-opacity duration-[850ms] ease-in-out"
+        data-intensity-transition-duration-ms={SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_MS}
+        className="pointer-events-none fixed inset-0 z-[1] transition-opacity duration-[450ms] ease-in-out"
         style={{
           opacity: targetCssCrossfadeOpacity,
           background: `radial-gradient(circle at 50% 46%, rgba(${activeBloomPresetConfig.stop0Rgb.join(', ')}, 0.42) 0%, rgba(${activeBloomPresetConfig.stop1Rgb.join(', ')}, 0.24) 44%, rgba(${activeBloomPresetConfig.stop2Rgb.join(', ')}, 0.10) 76%, rgba(9, 21, 16, 0) 100%)`,
-          transition: `opacity ${SANCTUARY_BLOOM_CROSSFADE_DURATION_MS}ms cubic-bezier(0.65, 0, 0.35, 1), background ${SANCTUARY_BLOOM_CROSSFADE_DURATION_MS}ms cubic-bezier(0.65, 0, 0.35, 1)`,
+          transition: `opacity ${SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_MS}ms cubic-bezier(0.65, 0, 0.35, 1), background ${SANCTUARY_BLOOM_CROSSFADE_DURATION_MS}ms cubic-bezier(0.65, 0, 0.35, 1)`,
         }}
       />
     </div>
