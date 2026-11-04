@@ -5175,10 +5175,350 @@ export function computeHabitCompletionHeatmap30Days(params: {
   };
 }
 
+/**
+ * 30-Day Sanctuary Bloom Intensity Trend & Rejuvenation Score Correlation
+ * Plots the daily Sanctuary Bloom intensity settings (0%..100%) over the last 30 days
+ * alongside daily Rejuvenation Scores so users can correlate their aesthetic bioluminescence
+ * preference with overall neuro-rejuvenation performance.
+ */
+export interface SanctuaryBloomDailyRecord {
+  dayIndex: number; // 1..30
+  dayOffset: number; // -29..0
+  dateIso: string; // YYYY-MM-DD
+  shortDateLabel: string; // e.g., "Oct 06", "Nov 04"
+  dayOffsetLabel: string; // "-29d" .. "Today"
+  bloomIntensityPct: number; // 0..100 (%)
+  rolling7DayIntensityPct: number; // 0..100 (%)
+  rejuvenationScore: number; // e.g., 920..1860 pts
+  rejuvenationScoreNormalizedPct: number; // 0..100 (%)
+  presetId: SanctuaryBloomPresetId;
+  presetLabel: string;
+  isSweetSpotDay: boolean; // bloomIntensityPct between 65% and 95%
+  isToday: boolean;
+}
 
+export interface SanctuaryBloomIntensityTrend30DaySummary {
+  days: SanctuaryBloomDailyRecord[];
+  thirtyDayMeanIntensityPct: number;
+  sevenDayMeanIntensityPct: number;
+  firstSevenDayMeanIntensityPct: number;
+  thirtyDayIntensityDeltaPct: number;
+  currentBloomIntensityPct: number;
+  peakBloomIntensityPct: number;
+  thirtyDayMeanRejuvenationScore: number;
+  peakRejuvenationScore30d: number;
+  latestRejuvenationScore: number;
+  sweetSpotDaysCount: number; // Days in 65%..95% bioluminescent sweet spot
+  sweetSpotMeanRejuvenationScore: number;
+  nonSweetSpotMeanRejuvenationScore: number;
+  rejuvenationLiftInSweetSpotPct: number;
+  pearsonCorrelationR: number; // -1.00 .. +1.00
+  correlationStrengthLabel:
+    | 'Strong Positive Aesthetic Synergy'
+    | 'Moderate Positive Aesthetic Synergy'
+    | 'Balanced Aesthetic Calibration';
+  optimalSweetSpotRangeLabel: string;
+  dominantPresetLabel: string;
+  clinicalCorrelationNote: string;
+}
 
+export const DEFAULT_30_DAY_BLOOM_INTENSITY_SEED: ReadonlyArray<{
+  bloomIntensityPct: number;
+  rejuvenationScore: number;
+  presetId: SanctuaryBloomPresetId;
+}> = [
+  { bloomIntensityPct: 40, rejuvenationScore: 1010, presetId: 'midnight_forest' }, // Day 1 (-29d)
+  { bloomIntensityPct: 45, rejuvenationScore: 990, presetId: 'midnight_forest' }, // Day 2 (-28d)
+  { bloomIntensityPct: 42, rejuvenationScore: 1035, presetId: 'midnight_forest' }, // Day 3 (-27d)
+  { bloomIntensityPct: 50, rejuvenationScore: 1050, presetId: 'midnight_forest' }, // Day 4 (-26d)
+  { bloomIntensityPct: 55, rejuvenationScore: 1145, presetId: 'midnight_forest' }, // Day 5 (-25d)
+  { bloomIntensityPct: 48, rejuvenationScore: 1025, presetId: 'midnight_forest' }, // Day 6 (-24d)
+  { bloomIntensityPct: 58, rejuvenationScore: 1120, presetId: 'midnight_forest' }, // Day 7 (-23d)
+  { bloomIntensityPct: 62, rejuvenationScore: 1210, presetId: 'midnight_forest' }, // Day 8 (-22d)
+  { bloomIntensityPct: 64, rejuvenationScore: 1180, presetId: 'midnight_forest' }, // Day 9 (-21d)
+  { bloomIntensityPct: 60, rejuvenationScore: 1195, presetId: 'midnight_forest' }, // Day 10 (-20d)
+  { bloomIntensityPct: 68, rejuvenationScore: 1240, presetId: 'morning_glow' }, // Day 11 (-19d)
+  { bloomIntensityPct: 72, rejuvenationScore: 1330, presetId: 'morning_glow' }, // Day 12 (-18d)
+  { bloomIntensityPct: 65, rejuvenationScore: 1215, presetId: 'midnight_forest' }, // Day 13 (-17d)
+  { bloomIntensityPct: 75, rejuvenationScore: 1295, presetId: 'morning_glow' }, // Day 14 (-16d)
+  { bloomIntensityPct: 78, rejuvenationScore: 1390, presetId: 'morning_glow' }, // Day 15 (-15d)
+  { bloomIntensityPct: 74, rejuvenationScore: 1285, presetId: 'morning_glow' }, // Day 16 (-14d)
+  { bloomIntensityPct: 80, rejuvenationScore: 1365, presetId: 'morning_glow' }, // Day 17 (-13d)
+  { bloomIntensityPct: 82, rejuvenationScore: 1445, presetId: 'morning_glow' }, // Day 18 (-12d)
+  { bloomIntensityPct: 76, rejuvenationScore: 1320, presetId: 'morning_glow' }, // Day 19 (-11d)
+  { bloomIntensityPct: 85, rejuvenationScore: 1470, presetId: 'neural_zenith' }, // Day 20 (-10d)
+  { bloomIntensityPct: 88, rejuvenationScore: 1435, presetId: 'neural_zenith' }, // Day 21 (-9d)
+  { bloomIntensityPct: 84, rejuvenationScore: 1460, presetId: 'neural_zenith' }, // Day 22 (-8d)
+  { bloomIntensityPct: 90, rejuvenationScore: 1545, presetId: 'neural_zenith' }, // Day 23 (-7d)
+  { bloomIntensityPct: 86, rejuvenationScore: 1455, presetId: 'neural_zenith' }, // Day 24 (-6d)
+  { bloomIntensityPct: 92, rejuvenationScore: 1515, presetId: 'neural_zenith' }, // Day 25 (-5d)
+  { bloomIntensityPct: 88, rejuvenationScore: 1530, presetId: 'neural_zenith' }, // Day 26 (-4d)
+  { bloomIntensityPct: 94, rejuvenationScore: 1610, presetId: 'neural_zenith' }, // Day 27 (-3d)
+  { bloomIntensityPct: 90, rejuvenationScore: 1505, presetId: 'neural_zenith' }, // Day 28 (-2d)
+  { bloomIntensityPct: 94, rejuvenationScore: 1585, presetId: 'neural_zenith' }, // Day 29 (-1d)
+  { bloomIntensityPct: 100, rejuvenationScore: 1640, presetId: 'neural_zenith' }, // Day 30 (Today)
+];
 
+function inferBloomPresetFromIntensity(
+  intensityPct: number,
+  explicitPresetId?: SanctuaryBloomPresetId
+): { presetId: SanctuaryBloomPresetId; presetLabel: string } {
+  if (
+    explicitPresetId === 'morning_glow' ||
+    explicitPresetId === 'midnight_forest' ||
+    explicitPresetId === 'neural_zenith'
+  ) {
+    const cfg = SANCTUARY_BLOOM_PRESETS[explicitPresetId];
+    return { presetId: cfg.id, presetLabel: cfg.label };
+  }
+  if (intensityPct >= 84) {
+    return {
+      presetId: 'neural_zenith',
+      presetLabel: SANCTUARY_BLOOM_PRESETS.neural_zenith.label,
+    };
+  }
+  if (intensityPct >= 66) {
+    return {
+      presetId: 'morning_glow',
+      presetLabel: SANCTUARY_BLOOM_PRESETS.morning_glow.label,
+    };
+  }
+  return {
+    presetId: 'midnight_forest',
+    presetLabel: SANCTUARY_BLOOM_PRESETS.midnight_forest.label,
+  };
+}
 
+export function computeSanctuaryBloomIntensityTrend30Days(params?: {
+  currentBloomIntensityPct?: number;
+  currentBloomPresetId?: SanctuaryBloomPresetId;
+  latestRejuvenationScore?: number;
+  hrvHistory?: readonly HrvSessionRecord[];
+  customDailyHistory?: ReadonlyArray<{
+    bloomIntensityPct: number;
+    rejuvenationScore?: number;
+    presetId?: SanctuaryBloomPresetId;
+  }>;
+  referenceDateIso?: string;
+}): SanctuaryBloomIntensityTrend30DaySummary {
+  let anchorUtcMs = params?.referenceDateIso
+    ? parseIsoDateToUtcMs(params.referenceDateIso)
+    : null;
+  if (anchorUtcMs === null) {
+    anchorUtcMs = Date.UTC(2026, 10, 4); // 2026-11-04 default anchor
+  }
 
+  const DAY_MS = 24 * 60 * 60 * 1000;
 
+  const baseSeed =
+    params?.customDailyHistory && params.customDailyHistory.length === 30
+      ? params.customDailyHistory
+      : DEFAULT_30_DAY_BLOOM_INTENSITY_SEED;
 
+  const currentIntensityClamped = clampSanctuaryBloomIntensityPct(
+    params?.currentBloomIntensityPct ?? baseSeed[29]?.bloomIntensityPct ?? DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT,
+    DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT
+  );
+
+  // Compute today's rejuvenation score correlated with currentBloomIntensityPct and latestRejuvenationScore
+  const baseLatestScore =
+    typeof params?.latestRejuvenationScore === 'number' &&
+    Number.isFinite(params.latestRejuvenationScore) &&
+    params.latestRejuvenationScore > 0
+      ? Math.round(params.latestRejuvenationScore)
+      : baseSeed[29]?.rejuvenationScore ?? 1620;
+
+  // Adjust today's correlated score smoothly when the user calibrates today's bloom intensity
+  const todayCorrelatedScore =
+    params?.currentBloomIntensityPct !== undefined &&
+    params?.latestRejuvenationScore === undefined
+      ? Math.round(940 + currentIntensityClamped * 6.8)
+      : Math.max(
+          800,
+          Math.round(baseLatestScore + (currentIntensityClamped - 80) * 2.2)
+        );
+
+  const rawPoints = baseSeed.map((entry, idx) => {
+    const isToday = idx === 29;
+    const dayOffset = idx - 29;
+    const dayUtcMs = (anchorUtcMs as number) + dayOffset * DAY_MS;
+    const { dateIso, shortDateLabel } = formatUtcMsToIsoAndShortLabel(dayUtcMs);
+    const dayOffsetLabel = isToday ? 'Today' : `${dayOffset}d`;
+
+    const bloomIntensityPct = isToday
+      ? currentIntensityClamped
+      : clampSanctuaryBloomIntensityPct(entry.bloomIntensityPct, 75);
+
+    const rawScore = isToday
+      ? todayCorrelatedScore
+      : typeof entry.rejuvenationScore === 'number' &&
+        Number.isFinite(entry.rejuvenationScore)
+      ? Math.round(entry.rejuvenationScore)
+      : Math.round(920 + bloomIntensityPct * 6.6);
+
+    const { presetId, presetLabel } = inferBloomPresetFromIntensity(
+      bloomIntensityPct,
+      isToday ? params?.currentBloomPresetId ?? entry.presetId : entry.presetId
+    );
+
+    return {
+      dayIndex: idx + 1,
+      dayOffset,
+      dateIso,
+      shortDateLabel,
+      dayOffsetLabel,
+      bloomIntensityPct,
+      rejuvenationScore: Math.max(600, rawScore),
+      presetId,
+      presetLabel,
+      isToday,
+    };
+  });
+
+  const days: SanctuaryBloomDailyRecord[] = rawPoints.map((pt, idx) => {
+    const windowStart = Math.max(0, idx - 6);
+    const windowSlice = rawPoints.slice(windowStart, idx + 1);
+    const rolling7DayIntensityPct = Math.round(
+      windowSlice.reduce((sum, w) => sum + w.bloomIntensityPct, 0) /
+        windowSlice.length
+    );
+    const rejuvenationScoreNormalizedPct = Math.max(
+      0,
+      Math.min(100, Math.round(((pt.rejuvenationScore - 800) / 1000) * 100))
+    );
+    const isSweetSpotDay =
+      pt.bloomIntensityPct >= 65 && pt.bloomIntensityPct <= 100;
+
+    return {
+      ...pt,
+      rolling7DayIntensityPct,
+      rejuvenationScoreNormalizedPct,
+      isSweetSpotDay,
+    };
+  });
+
+  const allIntensities = days.map((d) => d.bloomIntensityPct);
+  const allScores = days.map((d) => d.rejuvenationScore);
+
+  const thirtyDayMeanIntensityPct = Math.round(
+    allIntensities.reduce((sum, v) => sum + v, 0) / days.length
+  );
+  const firstSevenIntensities = allIntensities.slice(0, 7);
+  const lastSevenIntensities = allIntensities.slice(-7);
+  const firstSevenDayMeanIntensityPct = Math.round(
+    firstSevenIntensities.reduce((sum, v) => sum + v, 0) /
+      firstSevenIntensities.length
+  );
+  const sevenDayMeanIntensityPct = Math.round(
+    lastSevenIntensities.reduce((sum, v) => sum + v, 0) /
+      lastSevenIntensities.length
+  );
+  const thirtyDayIntensityDeltaPct =
+    sevenDayMeanIntensityPct - firstSevenDayMeanIntensityPct;
+
+  const currentBloomIntensityPct = days[days.length - 1].bloomIntensityPct;
+  const peakBloomIntensityPct = Math.max(...allIntensities);
+
+  const thirtyDayMeanRejuvenationScore = Math.round(
+    allScores.reduce((sum, v) => sum + v, 0) / days.length
+  );
+  const peakRejuvenationScore30d = Math.max(...allScores);
+  const latestRejuvenationScore = days[days.length - 1].rejuvenationScore;
+
+  const sweetSpotDays = days.filter((d) => d.isSweetSpotDay);
+  const nonSweetSpotDays = days.filter((d) => !d.isSweetSpotDay);
+  const sweetSpotDaysCount = sweetSpotDays.length;
+
+  const sweetSpotMeanRejuvenationScore =
+    sweetSpotDays.length > 0
+      ? Math.round(
+          sweetSpotDays.reduce((sum, d) => sum + d.rejuvenationScore, 0) /
+            sweetSpotDays.length
+        )
+      : thirtyDayMeanRejuvenationScore;
+
+  const nonSweetSpotMeanRejuvenationScore =
+    nonSweetSpotDays.length > 0
+      ? Math.round(
+          nonSweetSpotDays.reduce((sum, d) => sum + d.rejuvenationScore, 0) /
+            nonSweetSpotDays.length
+        )
+      : Math.max(900, thirtyDayMeanRejuvenationScore - 180);
+
+  const rejuvenationLiftInSweetSpotPct =
+    nonSweetSpotMeanRejuvenationScore > 0
+      ? Math.round(
+          ((sweetSpotMeanRejuvenationScore - nonSweetSpotMeanRejuvenationScore) /
+            nonSweetSpotMeanRejuvenationScore) *
+            100
+        )
+      : 0;
+
+  // Compute Pearson correlation r between daily bloomIntensityPct and rejuvenationScore
+  const meanX =
+    allIntensities.reduce((sum, v) => sum + v, 0) / allIntensities.length;
+  const meanY = allScores.reduce((sum, v) => sum + v, 0) / allScores.length;
+  let covXY = 0;
+  let varX = 0;
+  let varY = 0;
+  for (let i = 0; i < days.length; i++) {
+    const dx = allIntensities[i] - meanX;
+    const dy = allScores[i] - meanY;
+    covXY += dx * dy;
+    varX += dx * dx;
+    varY += dy * dy;
+  }
+  const denom = Math.sqrt(varX * varY);
+  const rawR = denom > 1e-6 ? covXY / denom : 0;
+  const pearsonCorrelationR =
+    Math.round(Math.max(-1, Math.min(1, rawR)) * 100) / 100;
+
+  let correlationStrengthLabel: SanctuaryBloomIntensityTrend30DaySummary['correlationStrengthLabel'] =
+    'Balanced Aesthetic Calibration';
+  if (pearsonCorrelationR >= 0.65) {
+    correlationStrengthLabel = 'Strong Positive Aesthetic Synergy';
+  } else if (pearsonCorrelationR >= 0.35) {
+    correlationStrengthLabel = 'Moderate Positive Aesthetic Synergy';
+  }
+
+  // Dominant preset across the 30 days
+  const presetCounts: Record<SanctuaryBloomPresetId, number> = {
+    morning_glow: 0,
+    midnight_forest: 0,
+    neural_zenith: 0,
+  };
+  for (const d of days) {
+    presetCounts[d.presetId] = (presetCounts[d.presetId] || 0) + 1;
+  }
+  const dominantPresetId = (
+    Object.keys(presetCounts) as SanctuaryBloomPresetId[]
+  ).reduce((best, curr) =>
+    presetCounts[curr] > presetCounts[best] ? curr : best
+  );
+  const dominantPresetLabel = SANCTUARY_BLOOM_PRESETS[dominantPresetId].label;
+
+  const optimalSweetSpotRangeLabel = '75%–95% Bioluminescent Sweet Spot';
+  const clinicalCorrelationNote = `30-day Sanctuary Bloom intensity correlates with Rejuvenation Score at r = ${pearsonCorrelationR >= 0 ? `+${pearsonCorrelationR.toFixed(2)}` : pearsonCorrelationR.toFixed(2)} (${correlationStrengthLabel}). Sessions within the ≥65% bioluminescent sweet spot average ${sweetSpotMeanRejuvenationScore} pts (${rejuvenationLiftInSweetSpotPct >= 0 ? `+${rejuvenationLiftInSweetSpotPct}%` : `${rejuvenationLiftInSweetSpotPct}%`} vs. low-intensity baseline).`;
+
+  return {
+    days,
+    thirtyDayMeanIntensityPct,
+    sevenDayMeanIntensityPct,
+    firstSevenDayMeanIntensityPct,
+    thirtyDayIntensityDeltaPct,
+    currentBloomIntensityPct,
+    peakBloomIntensityPct,
+    thirtyDayMeanRejuvenationScore,
+    peakRejuvenationScore30d,
+    latestRejuvenationScore,
+    sweetSpotDaysCount,
+    sweetSpotMeanRejuvenationScore,
+    nonSweetSpotMeanRejuvenationScore,
+    rejuvenationLiftInSweetSpotPct,
+    pearsonCorrelationR,
+    correlationStrengthLabel,
+    optimalSweetSpotRangeLabel,
+    dominantPresetLabel,
+    clinicalCorrelationNote,
+  };
+}

@@ -40,6 +40,15 @@ import {
   sanitizeDailyHabitDurationGoalsConfig,
   computeDailyHabitDurationProgress,
   computeHabitCompletionHeatmap30Days,
+  SANCTUARY_BLOOM_INTENSITY_STORAGE_KEY,
+  SANCTUARY_BLOOM_PRESET_STORAGE_KEY,
+  DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT,
+  DEFAULT_SANCTUARY_BLOOM_PRESET_ID,
+  clampSanctuaryBloomIntensityPct,
+  getSanctuaryBloomPresetConfig,
+  computeSanctuaryBloomIntensityTrend30Days,
+  type SanctuaryBloomPresetId,
+  type SanctuaryBloomDailyRecord,
   type HabitHeatmapFilterMode,
   type HabitHeatmapDayTile,
   type VagalToneDailyRecord,
@@ -79,6 +88,9 @@ interface ClinicalCodexModalProps {
     rejuvenationScore: number;
     stageName: string;
   }) => void;
+  sanctuaryBloomIntensityPct?: number;
+  sanctuaryBloomPresetId?: SanctuaryBloomPresetId;
+  onChangeSanctuaryBloomIntensity?: (nextPct: number) => void;
 }
 
 export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
@@ -95,6 +107,9 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
   onToggleDailyHabitExercise,
   neuralLogs = DEFAULT_NEURAL_LOGS_SEED,
   onAddNeuralLog,
+  sanctuaryBloomIntensityPct,
+  sanctuaryBloomPresetId,
+  onChangeSanctuaryBloomIntensity,
 }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const projectionSvgRef = useRef<SVGSVGElement | null>(null);
@@ -455,6 +470,108 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
         : vagalToneTrend.days,
     [vagalToneTrend.days, vagalWindowMode]
   );
+
+  // 30-Day Sanctuary Bloom Intensity Trend & Rejuvenation Score Correlation state
+  const [bloomWindowMode, setBloomWindowMode] = useState<'30d' | '14d'>('30d');
+  const [localBloomIntensityPct, setLocalBloomIntensityPct] = useState<number>(() => {
+    if (typeof sanctuaryBloomIntensityPct === 'number') {
+      return clampSanctuaryBloomIntensityPct(
+        sanctuaryBloomIntensityPct,
+        DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT
+      );
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = window.localStorage.getItem(
+          SANCTUARY_BLOOM_INTENSITY_STORAGE_KEY
+        );
+        if (stored !== null && stored !== '') {
+          return clampSanctuaryBloomIntensityPct(
+            Number(stored),
+            DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT
+          );
+        }
+      } catch {
+        // Ignore storage read errors
+      }
+    }
+    return DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT;
+  });
+
+  useEffect(() => {
+    if (typeof sanctuaryBloomIntensityPct === 'number') {
+      setLocalBloomIntensityPct(
+        clampSanctuaryBloomIntensityPct(
+          sanctuaryBloomIntensityPct,
+          DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT
+        )
+      );
+    }
+  }, [sanctuaryBloomIntensityPct]);
+
+  const resolvedBloomPresetId: SanctuaryBloomPresetId = React.useMemo(() => {
+    if (sanctuaryBloomPresetId) {
+      return getSanctuaryBloomPresetConfig(sanctuaryBloomPresetId).id;
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        const storedPreset = window.localStorage.getItem(
+          SANCTUARY_BLOOM_PRESET_STORAGE_KEY
+        );
+        if (storedPreset) {
+          return getSanctuaryBloomPresetConfig(storedPreset).id;
+        }
+      } catch {
+        // Ignore storage read errors
+      }
+    }
+    return DEFAULT_SANCTUARY_BLOOM_PRESET_ID;
+  }, [sanctuaryBloomPresetId]);
+
+  const handleCalibrateTodayBloomIntensity = (nextPctRaw: number) => {
+    const clamped = clampSanctuaryBloomIntensityPct(
+      nextPctRaw,
+      DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT
+    );
+    setLocalBloomIntensityPct(clamped);
+    if (onChangeSanctuaryBloomIntensity) {
+      onChangeSanctuaryBloomIntensity(clamped);
+    } else if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(
+          SANCTUARY_BLOOM_INTENSITY_STORAGE_KEY,
+          String(clamped)
+        );
+      } catch {
+        // Ignore storage write errors
+      }
+    }
+  };
+
+  const bloomIntensityTrend = React.useMemo(
+    () =>
+      computeSanctuaryBloomIntensityTrend30Days({
+        currentBloomIntensityPct: localBloomIntensityPct,
+        currentBloomPresetId: resolvedBloomPresetId,
+        latestRejuvenationScore: Math.max(1200, peakRejuvenationScore),
+        hrvHistory: sessions,
+      }),
+    [
+      localBloomIntensityPct,
+      resolvedBloomPresetId,
+      peakRejuvenationScore,
+      sessions,
+    ]
+  );
+
+  const displayedBloomDays = React.useMemo(
+    () =>
+      bloomWindowMode === '14d'
+        ? bloomIntensityTrend.days.slice(-14)
+        : bloomIntensityTrend.days,
+    [bloomIntensityTrend.days, bloomWindowMode]
+  );
+
   const domainProfile = computeCognitiveDomainProfile({
     totalTreesGrafted,
     peakRejuvenationScore,
@@ -1586,6 +1703,394 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
               </span>
               <span className="text-[#68D391] tabular-nums">
                 Latest: {vagalToneTrend.latestCoherencePct}% ({vagalToneTrend.latestEstimatedRmssdMs}ms RMSSD)
+              </span>
+            </div>
+          </div>
+        </section>
+
+        {/* 1A-2. RECHARTS 'SANCTUARY BLOOM INTENSITY TREND' — 30-DAY BIOLUMINESCENCE & REJUVENATION SCORE CORRELATION */}
+        <section
+          aria-labelledby="sanctuary-bloom-intensity-trend-heading"
+          data-testid="codex-sanctuary-bloom-intensity-trend-section"
+          data-thirty-day-mean-intensity-pct={bloomIntensityTrend.thirtyDayMeanIntensityPct}
+          data-current-bloom-intensity-pct={bloomIntensityTrend.currentBloomIntensityPct}
+          data-thirty-day-mean-rejuvenation-score={bloomIntensityTrend.thirtyDayMeanRejuvenationScore}
+          data-pearson-correlation-r={bloomIntensityTrend.pearsonCorrelationR}
+          data-sweet-spot-lift-pct={bloomIntensityTrend.rejuvenationLiftInSweetSpotPct}
+          data-displayed-days-count={displayedBloomDays.length}
+          className="mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#2C4C3E] space-y-4 codex-section-cascade"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-mono uppercase tracking-wider text-[#F2B84B]">
+                  30-Day Aesthetic &amp; Neuro-Rejuvenation Telemetry · Recharts Visualization
+                </span>
+                <span
+                  data-testid="bloom-trend-correlation-badge"
+                  className="px-2 py-0.5 rounded bg-[#1F2412] text-[#F2B84B] border border-[#F2B84B]/50 text-[10px] font-mono font-semibold tabular-nums"
+                >
+                  ✦ r = {bloomIntensityTrend.pearsonCorrelationR >= 0 ? `+${bloomIntensityTrend.pearsonCorrelationR.toFixed(2)}` : bloomIntensityTrend.pearsonCorrelationR.toFixed(2)} · {bloomIntensityTrend.correlationStrengthLabel} (+{bloomIntensityTrend.rejuvenationLiftInSweetSpotPct}% Sweet-Spot Lift)
+                </span>
+              </div>
+              <h3
+                id="sanctuary-bloom-intensity-trend-heading"
+                className="text-lg font-display font-semibold text-[#F4EFE6] mt-0.5"
+              >
+                Sanctuary Bloom Intensity Trend — 30-Day Bioluminescence &amp; Rejuvenation Correlation
+              </h3>
+              <p className="text-xs text-[#A3B8B0] mt-0.5">
+                Plots your daily Sanctuary Bloom intensity settings (0%–100%) over the last 30 days alongside daily Rejuvenation Scores so you can correlate aesthetic bioluminescence preference with overall cognitive restoration.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <div className="inline-flex rounded-lg bg-[#10231C] border border-[#233D32] p-0.5 font-mono text-xs">
+                <button
+                  type="button"
+                  data-testid="bloom-trend-window-30d-btn"
+                  aria-pressed={bloomWindowMode === '30d'}
+                  onClick={() => setBloomWindowMode('30d')}
+                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+                    bloomWindowMode === '30d'
+                      ? 'bg-[#1D4032] text-[#F2B84B] font-semibold'
+                      : 'text-[#A3B8B0] hover:text-[#F4EFE6]'
+                  }`}
+                >
+                  30-Day Window (30d)
+                </button>
+                <button
+                  type="button"
+                  data-testid="bloom-trend-window-14d-btn"
+                  aria-pressed={bloomWindowMode === '14d'}
+                  onClick={() => setBloomWindowMode('14d')}
+                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+                    bloomWindowMode === '14d'
+                      ? 'bg-[#1D4032] text-[#4FD1C5] font-semibold'
+                      : 'text-[#A3B8B0] hover:text-[#F4EFE6]'
+                  }`}
+                >
+                  Last 14 Days (14d)
+                </button>
+              </div>
+
+              <div
+                data-testid="bloom-trend-today-presets"
+                className="inline-flex items-center gap-1 rounded-lg bg-[#10231C] border border-[#233D32] p-1 font-mono text-[11px]"
+              >
+                <span className="px-1.5 text-[#A3B8B0]">Today:</span>
+                {[64, 78, 85, 100].map((pct) => {
+                  const isActive = bloomIntensityTrend.currentBloomIntensityPct === pct;
+                  return (
+                    <button
+                      key={pct}
+                      type="button"
+                      data-testid={`bloom-trend-preset-${pct}-btn`}
+                      aria-pressed={isActive}
+                      onClick={() => handleCalibrateTodayBloomIntensity(pct)}
+                      className={`px-2 py-0.5 rounded transition-colors cursor-pointer tabular-nums ${
+                        isActive
+                          ? 'bg-[#2C2410] text-[#F2B84B] border border-[#F2B84B]/60 font-semibold'
+                          : 'text-[#A3B8B0] hover:text-[#F4EFE6] hover:bg-[#163026]'
+                      }`}
+                    >
+                      {pct}%
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* 4 Tabular-Nums 30-Day Sanctuary Bloom Intensity & Rejuvenation Correlation KPIs */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+            <div
+              data-testid="bloom-trend-kpi-mean-intensity"
+              className="p-3 rounded-lg bg-[#10231C] border border-[#1E3A2F]"
+            >
+              <div className="text-[10px] font-mono uppercase text-[#A3B8B0]">
+                30-DAY MEAN BLOOM
+              </div>
+              <div className="flex items-baseline justify-between gap-2 mt-0.5">
+                <span
+                  data-testid="bloom-trend-30d-mean-intensity-value"
+                  className="text-xl font-mono font-bold text-[#4FD1C5] tabular-nums"
+                >
+                  {bloomIntensityTrend.thirtyDayMeanIntensityPct}%
+                </span>
+                <span
+                  data-testid="bloom-trend-today-intensity-value"
+                  className="text-[11px] font-mono text-[#68D391] tabular-nums"
+                >
+                  Today {bloomIntensityTrend.currentBloomIntensityPct}%
+                </span>
+              </div>
+            </div>
+
+            <div
+              data-testid="bloom-trend-kpi-mean-rejuvenation"
+              className="p-3 rounded-lg bg-[#10231C] border border-[#1E3A2F]"
+            >
+              <div className="text-[10px] font-mono uppercase text-[#A3B8B0]">
+                30-DAY MEAN REJUVENATION
+              </div>
+              <div className="flex items-baseline justify-between gap-2 mt-0.5">
+                <span
+                  data-testid="bloom-trend-30d-mean-score-value"
+                  className="text-xl font-mono font-bold text-[#F2B84B] tabular-nums"
+                >
+                  {bloomIntensityTrend.thirtyDayMeanRejuvenationScore}
+                </span>
+                <span className="text-[11px] font-mono text-[#A3B8B0] tabular-nums">
+                  Peak {bloomIntensityTrend.peakRejuvenationScore30d}
+                </span>
+              </div>
+            </div>
+
+            <div
+              data-testid="bloom-trend-kpi-correlation"
+              className="p-3 rounded-lg bg-[#10231C] border border-[#1E3A2F]"
+            >
+              <div className="text-[10px] font-mono uppercase text-[#A3B8B0]">
+                BLOOM ↔ SCORE CORRELATION
+              </div>
+              <div className="flex items-baseline justify-between gap-1.5 mt-0.5">
+                <span
+                  data-testid="bloom-trend-correlation-r-value"
+                  className="text-xl font-mono font-bold text-[#68D391] tabular-nums whitespace-nowrap"
+                >
+                  r={bloomIntensityTrend.pearsonCorrelationR >= 0 ? `+${bloomIntensityTrend.pearsonCorrelationR.toFixed(2)}` : bloomIntensityTrend.pearsonCorrelationR.toFixed(2)}
+                </span>
+                <span className="text-[11px] font-mono text-[#D5E2DC] tabular-nums whitespace-nowrap">
+                  {bloomIntensityTrend.sweetSpotDaysCount}/30d ≥65%
+                </span>
+              </div>
+            </div>
+
+            <div
+              data-testid="bloom-trend-kpi-sweet-spot"
+              className="p-3 rounded-lg bg-[#10231C] border border-[#1E3A2F]"
+            >
+              <div className="text-[10px] font-mono uppercase text-[#A3B8B0]">
+                SWEET-SPOT SCORE LIFT (≥65%)
+              </div>
+              <div className="flex items-baseline justify-between gap-2 mt-0.5">
+                <span
+                  data-testid="bloom-trend-sweet-spot-lift-value"
+                  className="text-xl font-mono font-bold text-[#B794F4] tabular-nums"
+                >
+                  +{bloomIntensityTrend.rejuvenationLiftInSweetSpotPct}%
+                </span>
+                <span className="text-[11px] font-mono text-[#A3B8B0] tabular-nums">
+                  {bloomIntensityTrend.sweetSpotMeanRejuvenationScore} vs {bloomIntensityTrend.nonSweetSpotMeanRejuvenationScore}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Recharts Dual-Axis 30-Day Sanctuary Bloom Intensity & Rejuvenation Score ComposedChart */}
+          <div
+            data-testid="sanctuary-bloom-trend-recharts-container"
+            className="p-4 rounded-xl bg-[#091510] border border-[#1E3A2F] space-y-3"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
+              <div className="flex flex-wrap items-center gap-4">
+                <span className="inline-flex items-center gap-1.5 text-[#4FD1C5]">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#4FD1C5] inline-block" />
+                  <span>Daily Sanctuary Bloom Intensity (%)</span>
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-[#F2B84B]">
+                  <span className="w-3.5 h-0.5 bg-[#F2B84B] inline-block" />
+                  <span>Daily Rejuvenation Score (pts)</span>
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-[#68D391]">
+                  <span className="w-3.5 h-0.5 border-t border-dashed border-[#68D391] inline-block" />
+                  <span>7-Day Rolling Bloom Avg (%)</span>
+                </span>
+              </div>
+              <span className="text-[#A3B8B0] tabular-nums">
+                Range: {displayedBloomDays[0]?.shortDateLabel} →{' '}
+                {displayedBloomDays[displayedBloomDays.length - 1]?.shortDateLabel} (
+                {displayedBloomDays.length} Days · Dominant: {bloomIntensityTrend.dominantPresetLabel})
+              </span>
+            </div>
+
+            <div className="w-full h-[250px]">
+              <ResponsiveContainer width="100%" height={250}>
+                <ComposedChart
+                  data={displayedBloomDays}
+                  margin={{ top: 12, right: 12, left: 0, bottom: 4 }}
+                >
+                  <defs>
+                    <linearGradient
+                      id="sanctuaryBloom30dAreaGradient"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop offset="5%" stopColor="#4FD1C5" stopOpacity={0.4} />
+                      <stop offset="55%" stopColor="#68D391" stopOpacity={0.18} />
+                      <stop offset="95%" stopColor="#091510" stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid
+                    stroke="#1E3A2F"
+                    strokeDasharray="3 3"
+                    vertical={false}
+                  />
+                  <XAxis
+                    dataKey="shortDateLabel"
+                    interval={bloomWindowMode === '30d' ? 3 : 1}
+                    stroke="#A3B8B0"
+                    tick={{ fill: '#D5E2DC', fontSize: 10, fontFamily: 'monospace' }}
+                    tickLine={{ stroke: '#1E3A2F' }}
+                    axisLine={{ stroke: '#233D32' }}
+                  />
+                  <YAxis
+                    yAxisId="intensity"
+                    domain={[0, 100]}
+                    ticks={[0, 25, 50, 75, 100]}
+                    tickFormatter={(val: number) => `${val}%`}
+                    stroke="#4FD1C5"
+                    tick={{ fill: '#4FD1C5', fontSize: 10, fontFamily: 'monospace' }}
+                    tickLine={false}
+                    axisLine={{ stroke: '#233D32' }}
+                    width={44}
+                  />
+                  <YAxis
+                    yAxisId="score"
+                    orientation="right"
+                    domain={[800, 1800]}
+                    ticks={[800, 1050, 1300, 1550, 1800]}
+                    tickFormatter={(val: number) => `${val}`}
+                    stroke="#F2B84B"
+                    tick={{ fill: '#F2B84B', fontSize: 10, fontFamily: 'monospace' }}
+                    tickLine={false}
+                    axisLine={{ stroke: '#233D32' }}
+                    width={46}
+                  />
+                  <ReferenceLine
+                    yAxisId="intensity"
+                    y={75}
+                    stroke="#68D391"
+                    strokeDasharray="5 4"
+                    strokeWidth={1.25}
+                    label={({ viewBox }: { viewBox?: { x?: number; y?: number } }) => (
+                      <text
+                        x={(viewBox?.x ?? 46) + 8}
+                        y={(viewBox?.y ?? 60) - 6}
+                        fill="#68D391"
+                        fontSize={10}
+                        fontFamily="JetBrains Mono, monospace"
+                        textAnchor="start"
+                      >
+                        75% Bioluminescent Sweet Spot
+                      </text>
+                    )}
+                  />
+                  <RechartsTooltip
+                    content={({ active, payload }) => {
+                      if (!active || !payload || payload.length === 0) {
+                        return null;
+                      }
+                      const dayRec = payload[0]?.payload as
+                        | SanctuaryBloomDailyRecord
+                        | undefined;
+                      if (!dayRec) return null;
+                      return (
+                        <div
+                          data-testid="bloom-intensity-trend-tooltip"
+                          className="p-3 rounded-xl bg-[#07120E]/95 border border-[#4FD1C5]/60 shadow-xl font-mono text-xs space-y-1.5"
+                        >
+                          <div className="flex items-center justify-between gap-4 border-b border-[#1E3A2F] pb-1">
+                            <span className="font-bold text-[#F4EFE6]">
+                              Day {dayRec.dayIndex} · {dayRec.shortDateLabel} ({dayRec.dayOffsetLabel})
+                            </span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#143326] text-[#68D391] tabular-nums">
+                              {dayRec.presetLabel}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-4 text-[#4FD1C5] tabular-nums">
+                            <span>Sanctuary Bloom Intensity:</span>
+                            <span className="font-bold">{dayRec.bloomIntensityPct}%</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-4 text-[#F2B84B] tabular-nums">
+                            <span>Rejuvenation Score:</span>
+                            <span className="font-bold">{dayRec.rejuvenationScore} pts</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-4 text-[#68D391] tabular-nums">
+                            <span>7-Day Rolling Bloom Avg:</span>
+                            <span className="font-semibold">{dayRec.rolling7DayIntensityPct}%</span>
+                          </div>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Area
+                    yAxisId="intensity"
+                    type="monotone"
+                    dataKey="bloomIntensityPct"
+                    name="Daily Sanctuary Bloom Intensity (%)"
+                    stroke="#4FD1C5"
+                    strokeWidth={2.5}
+                    fill="url(#sanctuaryBloom30dAreaGradient)"
+                    isAnimationActive={false}
+                    dot={{
+                      r: 3,
+                      fill: '#4FD1C5',
+                      stroke: '#091510',
+                      strokeWidth: 1.2,
+                    }}
+                    activeDot={{
+                      r: 5,
+                      fill: '#4FD1C5',
+                      stroke: '#F4EFE6',
+                      strokeWidth: 2,
+                    }}
+                  />
+                  <Line
+                    yAxisId="intensity"
+                    type="monotone"
+                    dataKey="rolling7DayIntensityPct"
+                    name="7-Day Rolling Bloom Intensity (%)"
+                    stroke="#68D391"
+                    strokeWidth={1.75}
+                    strokeDasharray="4 3"
+                    dot={false}
+                    isAnimationActive={false}
+                  />
+                  <Line
+                    yAxisId="score"
+                    type="monotone"
+                    dataKey="rejuvenationScore"
+                    name="Daily Rejuvenation Score (pts)"
+                    stroke="#F2B84B"
+                    strokeWidth={2.25}
+                    isAnimationActive={false}
+                    dot={{
+                      r: 2.5,
+                      fill: '#F2B84B',
+                      stroke: '#091510',
+                      strokeWidth: 1,
+                    }}
+                    activeDot={{
+                      r: 5,
+                      fill: '#F2B84B',
+                      stroke: '#F4EFE6',
+                      strokeWidth: 2,
+                    }}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#1E3A2F] text-[11px] font-mono text-[#A3B8B0]">
+              <span data-testid="bloom-trend-clinical-summary">
+                {bloomIntensityTrend.clinicalCorrelationNote}
+              </span>
+              <span className="text-[#F2B84B] tabular-nums">
+                Today: {bloomIntensityTrend.currentBloomIntensityPct}% Bloom → {bloomIntensityTrend.latestRejuvenationScore} pts
               </span>
             </div>
           </div>

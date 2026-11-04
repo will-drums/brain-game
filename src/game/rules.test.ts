@@ -83,8 +83,35 @@ import {
   DEFAULT_PRIOR_23_DAYS_HABIT_SEED,
   resolveHabitHeatmapTileVisuals,
   computeHabitCompletionHeatmap30Days,
+  DEFAULT_30_DAY_BLOOM_INTENSITY_SEED,
+  computeSanctuaryBloomIntensityTrend30Days,
   type ChimeSymbol,
 } from './rules';
+
+test('computeSanctuaryBloomIntensityTrend30Days plots 30 days of Sanctuary Bloom intensity and correlates with Rejuvenation Scores', () => {
+  assert.equal(DEFAULT_30_DAY_BLOOM_INTENSITY_SEED.length, 30);
+  const summary = computeSanctuaryBloomIntensityTrend30Days({
+    currentBloomIntensityPct: 85,
+    currentBloomPresetId: 'neural_zenith',
+    latestRejuvenationScore: 1580,
+    referenceDateIso: '2026-11-04',
+  });
+
+  assert.equal(summary.days.length, 30);
+  assert.equal(summary.days[0].dayIndex, 1);
+  assert.equal(summary.days[0].dayOffset, -29);
+  assert.equal(summary.days[29].dayIndex, 30);
+  assert.equal(summary.days[29].isToday, true);
+  assert.equal(summary.days[29].bloomIntensityPct, 85);
+  assert.equal(summary.currentBloomIntensityPct, 85);
+  assert.ok(summary.thirtyDayMeanIntensityPct >= 65 && summary.thirtyDayMeanIntensityPct <= 85);
+  assert.ok(summary.thirtyDayMeanRejuvenationScore >= 1200 && summary.thirtyDayMeanRejuvenationScore <= 1500);
+  assert.ok(summary.pearsonCorrelationR >= 0.8);
+  assert.equal(summary.correlationStrengthLabel, 'Strong Positive Aesthetic Synergy');
+  assert.ok(summary.sweetSpotMeanRejuvenationScore > summary.nonSweetSpotMeanRejuvenationScore);
+  assert.ok(summary.rejuvenationLiftInSweetSpotPct >= 15);
+  assert.ok(summary.clinicalCorrelationNote.includes('r = +'));
+});
 
 test('computeHabitCompletionHeatmap30Days builds 30 color-coded day tiles for NSDR and Cognitive Reframing compliance and syncs Today', () => {
   assert.equal(DEFAULT_PRIOR_23_DAYS_HABIT_SEED.length, 23);

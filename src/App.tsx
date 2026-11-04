@@ -3421,6 +3421,33 @@ export default function App() {
         onToggleDailyHabitExercise={handleToggleDailyHabitExercise}
         neuralLogs={neuralLogs}
         onAddNeuralLog={handleAddNeuralLog}
+        sanctuaryBloomIntensityPct={sanctuaryBloomIntensityPct}
+        sanctuaryBloomPresetId={sanctuaryBloomPresetId}
+        onChangeSanctuaryBloomIntensity={(nextPct) => {
+          const clamped = clampSanctuaryBloomIntensityPct(
+            nextPct,
+            DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT
+          );
+          setSanctuaryBloomIntensityPct(clamped);
+          if (typeof window !== 'undefined') {
+            try {
+              window.localStorage.setItem(
+                SANCTUARY_BLOOM_INTENSITY_STORAGE_KEY,
+                String(clamped)
+              );
+              window.localStorage.setItem(
+                SANCTUARY_BLOOM_STORAGE_KEY,
+                JSON.stringify({
+                  completedStagesCount,
+                  bloomIntensityPct: clamped,
+                  bloomPresetId: sanctuaryBloomPresetId,
+                })
+              );
+            } catch {
+              // Ignore storage errors
+            }
+          }
+        }}
         onRecordSimulatedSession={() => {
           commitDailyPractice();
           const lastScore = hrvHistory[hrvHistory.length - 1]?.coherenceScore ?? 85;
