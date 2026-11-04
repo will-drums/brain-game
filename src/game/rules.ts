@@ -3870,6 +3870,268 @@ export function computeWeeklyHabitCompliance(params: {
   };
 }
 
+/**
+ * Daily Duration Goals & Visual Progress Bar Tracking for NSDR and Cognitive Reframing
+ * Allows users to configure personal daily duration targets (in minutes) for Non-Sleep Deep Rest (NSDR)
+ * and Daily Cognitive Reframing and tracks progress toward each daily goal.
+ */
+export const DAILY_HABIT_DURATION_GOALS_STORAGE_KEY =
+  'sylvan_synapse_daily_habit_duration_goals_v1';
+
+export const DEFAULT_NSDR_DURATION_GOAL_MINUTES = 20;
+export const MIN_NSDR_DURATION_GOAL_MINUTES = 5;
+export const MAX_NSDR_DURATION_GOAL_MINUTES = 40;
+export const NSDR_DURATION_GOAL_PRESETS_MINUTES: readonly number[] = [10, 15, 20, 30];
+
+export const DEFAULT_REFRAMING_DURATION_GOAL_MINUTES = 5;
+export const MIN_REFRAMING_DURATION_GOAL_MINUTES = 3;
+export const MAX_REFRAMING_DURATION_GOAL_MINUTES = 20;
+export const REFRAMING_DURATION_GOAL_PRESETS_MINUTES: readonly number[] = [3, 5, 10, 15];
+
+export interface DailyHabitDurationGoalsConfig {
+  nsdrGoalMinutes: number;
+  cognitiveReframingGoalMinutes: number;
+  nsdrLoggedMinutes?: number;
+  cognitiveReframingLoggedMinutes?: number;
+}
+
+export const DEFAULT_DAILY_HABIT_DURATION_GOALS: DailyHabitDurationGoalsConfig = {
+  nsdrGoalMinutes: DEFAULT_NSDR_DURATION_GOAL_MINUTES,
+  cognitiveReframingGoalMinutes: DEFAULT_REFRAMING_DURATION_GOAL_MINUTES,
+};
+
+export interface DailyHabitDurationProgressItem {
+  exerciseId: DailyHabitExerciseId;
+  goalMinutes: number;
+  loggedMinutes: number;
+  remainingMinutes: number;
+  progressPct: number; // 0..100
+  isGoalMet: boolean;
+  statusLabel: string;
+  deltaSummaryText: string;
+  minGoalMinutes: number;
+  maxGoalMinutes: number;
+  stepMinutes: number;
+  incrementMinutes: number;
+  goalPresetsMinutes: readonly number[];
+  accentHex: string;
+}
+
+export interface DailyHabitDurationProgressSummary {
+  nsdr: DailyHabitDurationProgressItem;
+  cognitiveReframing: DailyHabitDurationProgressItem;
+  byExerciseId: Record<DailyHabitExerciseId, DailyHabitDurationProgressItem>;
+  totalGoalMinutes: number;
+  totalLoggedMinutes: number;
+  combinedProgressPct: number;
+  bothGoalsMet: boolean;
+}
+
+export function clampHabitDurationGoalMinutes(
+  exerciseId: DailyHabitExerciseId,
+  rawMinutes: unknown
+): number {
+  const num = typeof rawMinutes === 'number' ? rawMinutes : Number(rawMinutes);
+  if (exerciseId === 'nsdr_protocol') {
+    if (!Number.isFinite(num)) {
+      return DEFAULT_NSDR_DURATION_GOAL_MINUTES;
+    }
+    return Math.max(
+      MIN_NSDR_DURATION_GOAL_MINUTES,
+      Math.min(MAX_NSDR_DURATION_GOAL_MINUTES, Math.round(num))
+    );
+  }
+
+  if (!Number.isFinite(num)) {
+    return DEFAULT_REFRAMING_DURATION_GOAL_MINUTES;
+  }
+  return Math.max(
+    MIN_REFRAMING_DURATION_GOAL_MINUTES,
+    Math.min(MAX_REFRAMING_DURATION_GOAL_MINUTES, Math.round(num))
+  );
+}
+
+export function sanitizeDailyHabitDurationGoalsConfig(
+  raw?: Partial<DailyHabitDurationGoalsConfig> | null
+): DailyHabitDurationGoalsConfig {
+  const nsdrGoalMinutes = clampHabitDurationGoalMinutes(
+    'nsdr_protocol',
+    raw?.nsdrGoalMinutes
+  );
+  const cognitiveReframingGoalMinutes = clampHabitDurationGoalMinutes(
+    'cognitive_reframing',
+    raw?.cognitiveReframingGoalMinutes
+  );
+
+  const result: DailyHabitDurationGoalsConfig = {
+    nsdrGoalMinutes,
+    cognitiveReframingGoalMinutes,
+  };
+
+  if (
+    typeof raw?.nsdrLoggedMinutes === 'number' &&
+    Number.isFinite(raw.nsdrLoggedMinutes)
+  ) {
+    result.nsdrLoggedMinutes = Math.max(
+      0,
+      Math.min(MAX_NSDR_DURATION_GOAL_MINUTES, Math.round(raw.nsdrLoggedMinutes))
+    );
+  }
+
+  if (
+    typeof raw?.cognitiveReframingLoggedMinutes === 'number' &&
+    Number.isFinite(raw.cognitiveReframingLoggedMinutes)
+  ) {
+    result.cognitiveReframingLoggedMinutes = Math.max(
+      0,
+      Math.min(
+        MAX_REFRAMING_DURATION_GOAL_MINUTES,
+        Math.round(raw.cognitiveReframingLoggedMinutes)
+      )
+    );
+  }
+
+  return result;
+}
+
+export function computeDailyHabitDurationProgress(params: {
+  nsdrCompleted: boolean;
+  cognitiveReframingCompleted: boolean;
+  nsdrGoalMinutes?: unknown;
+  cognitiveReframingGoalMinutes?: unknown;
+  nsdrLoggedMinutes?: unknown;
+  cognitiveReframingLoggedMinutes?: unknown;
+}): DailyHabitDurationProgressSummary {
+  const nsdrGoalMinutes = clampHabitDurationGoalMinutes(
+    'nsdr_protocol',
+    params.nsdrGoalMinutes
+  );
+  const cognitiveReframingGoalMinutes = clampHabitDurationGoalMinutes(
+    'cognitive_reframing',
+    params.cognitiveReframingGoalMinutes
+  );
+
+  const resolveLoggedMinutes = (
+    rawLogged: unknown,
+    isCompleted: boolean,
+    goalMin: number,
+    maxAllowed: number
+  ): number => {
+    const parsed = typeof rawLogged === 'number' ? rawLogged : Number(rawLogged);
+    if (rawLogged !== undefined && rawLogged !== null && Number.isFinite(parsed)) {
+      return Math.max(0, Math.min(maxAllowed, Math.round(parsed)));
+    }
+    return isCompleted ? goalMin : 0;
+  };
+
+  const nsdrLoggedMinutes = resolveLoggedMinutes(
+    params.nsdrLoggedMinutes,
+    Boolean(params.nsdrCompleted),
+    nsdrGoalMinutes,
+    MAX_NSDR_DURATION_GOAL_MINUTES
+  );
+
+  const cognitiveReframingLoggedMinutes = resolveLoggedMinutes(
+    params.cognitiveReframingLoggedMinutes,
+    Boolean(params.cognitiveReframingCompleted),
+    cognitiveReframingGoalMinutes,
+    MAX_REFRAMING_DURATION_GOAL_MINUTES
+  );
+
+  const buildItem = (
+    exerciseId: DailyHabitExerciseId,
+    goalMinutes: number,
+    loggedMinutes: number,
+    minGoalMinutes: number,
+    maxGoalMinutes: number,
+    stepMinutes: number,
+    incrementMinutes: number,
+    goalPresetsMinutes: readonly number[],
+    accentHex: string
+  ): DailyHabitDurationProgressItem => {
+    const progressPct = Math.max(
+      0,
+      Math.min(100, Math.round((loggedMinutes / Math.max(1, goalMinutes)) * 100))
+    );
+    const remainingMinutes = Math.max(0, goalMinutes - loggedMinutes);
+    const isGoalMet = loggedMinutes >= goalMinutes;
+
+    const statusLabel = isGoalMet
+      ? `Daily Goal Met · ${loggedMinutes}/${goalMinutes} min (100%)`
+      : loggedMinutes > 0
+      ? `In Progress · ${loggedMinutes}/${goalMinutes} min (${progressPct}%)`
+      : `0/${goalMinutes} min Logged (0%)`;
+
+    const deltaSummaryText = isGoalMet
+      ? `✓ Target duration achieved (${loggedMinutes}m logged vs. ${goalMinutes}m goal)`
+      : `${remainingMinutes} min remaining to reach ${goalMinutes} min daily goal`;
+
+    return {
+      exerciseId,
+      goalMinutes,
+      loggedMinutes,
+      remainingMinutes,
+      progressPct,
+      isGoalMet,
+      statusLabel,
+      deltaSummaryText,
+      minGoalMinutes,
+      maxGoalMinutes,
+      stepMinutes,
+      incrementMinutes,
+      goalPresetsMinutes,
+      accentHex,
+    };
+  };
+
+  const nsdr = buildItem(
+    'nsdr_protocol',
+    nsdrGoalMinutes,
+    nsdrLoggedMinutes,
+    MIN_NSDR_DURATION_GOAL_MINUTES,
+    MAX_NSDR_DURATION_GOAL_MINUTES,
+    5,
+    5,
+    NSDR_DURATION_GOAL_PRESETS_MINUTES,
+    '#4FD1C5'
+  );
+
+  const cognitiveReframing = buildItem(
+    'cognitive_reframing',
+    cognitiveReframingGoalMinutes,
+    cognitiveReframingLoggedMinutes,
+    MIN_REFRAMING_DURATION_GOAL_MINUTES,
+    MAX_REFRAMING_DURATION_GOAL_MINUTES,
+    1,
+    2,
+    REFRAMING_DURATION_GOAL_PRESETS_MINUTES,
+    '#B794F4'
+  );
+
+  const totalGoalMinutes = nsdr.goalMinutes + cognitiveReframing.goalMinutes;
+  const totalLoggedMinutes =
+    Math.min(nsdr.goalMinutes, nsdr.loggedMinutes) +
+    Math.min(cognitiveReframing.goalMinutes, cognitiveReframing.loggedMinutes);
+  const combinedProgressPct = Math.max(
+    0,
+    Math.min(100, Math.round((totalLoggedMinutes / Math.max(1, totalGoalMinutes)) * 100))
+  );
+
+  return {
+    nsdr,
+    cognitiveReframing,
+    byExerciseId: {
+      nsdr_protocol: nsdr,
+      cognitive_reframing: cognitiveReframing,
+    },
+    totalGoalMinutes,
+    totalLoggedMinutes,
+    combinedProgressPct,
+    bothGoalsMet: nsdr.isGoalMet && cognitiveReframing.isGoalMet,
+  };
+}
+
+
 
 
 

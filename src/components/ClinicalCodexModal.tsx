@@ -31,6 +31,12 @@ import {
   computeCodexModalAnimationState,
   DEFAULT_PRIOR_SIX_DAYS_HABIT_HISTORY,
   computeWeeklyHabitCompliance,
+  DAILY_HABIT_DURATION_GOALS_STORAGE_KEY,
+  DEFAULT_DAILY_HABIT_DURATION_GOALS,
+  clampHabitDurationGoalMinutes,
+  sanitizeDailyHabitDurationGoalsConfig,
+  computeDailyHabitDurationProgress,
+  type DailyHabitDurationGoalsConfig,
   type PriorDayHabitRecord,
   type CodexModalTransitionPhase,
   type WeeklyCognitiveGoalsConfig,
@@ -183,7 +189,70 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
     dailyHabitTracker?.syncedStreakDays ?? currentStreakDays
   );
 
-  const handleExerciseToggleClick = (exerciseId: DailyHabitExerciseId) => {
+  // Daily Duration Goals for NSDR (5-40m, default 20m) and Cognitive Reframing (3-20m, default 5m)
+  const [habitDurationGoalsConfig, setHabitDurationGoalsConfig] =
+    useState<DailyHabitDurationGoalsConfig>(() => {
+      if (typeof window !== 'undefined') {
+        try {
+          const stored = window.localStorage.getItem(
+            DAILY_HABIT_DURATION_GOALS_STORAGE_KEY
+          );
+          if (stored) {
+            return sanitizeDailyHabitDurationGoalsConfig(
+              JSON.parse(stored) as Partial<DailyHabitDurationGoalsConfig>
+            );
+          }
+        } catch {
+          // Ignore storage read errors
+        }
+      }
+      return DEFAULT_DAILY_HABIT_DURATION_GOALS;
+    });
+
+  const persistHabitDurationGoals = (
+    updater: (
+      prev: DailyHabitDurationGoalsConfig
+    ) => Partial<DailyHabitDurationGoalsConfig>
+  ) => {
+    setHabitDurationGoalsConfig((prev) => {
+      const next = sanitizeDailyHabitDurationGoalsConfig({
+        ...prev,
+        ...updater(prev),
+      });
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(
+            DAILY_HABIT_DURATION_GOALS_STORAGE_KEY,
+            JSON.stringify(next)
+          );
+        } catch {
+          // Ignore storage write errors
+        }
+      }
+      return next;
+    });
+  };
+
+  const habitDurationProgress = React.useMemo(
+    () =>
+      computeDailyHabitDurationProgress({
+        nsdrCompleted: activeNsdrCompleted,
+        cognitiveReframingCompleted: activeReframingCompleted,
+        nsdrGoalMinutes: habitDurationGoalsConfig.nsdrGoalMinutes,
+        cognitiveReframingGoalMinutes:
+          habitDurationGoalsConfig.cognitiveReframingGoalMinutes,
+        nsdrLoggedMinutes: habitDurationGoalsConfig.nsdrLoggedMinutes,
+        cognitiveReframingLoggedMinutes:
+          habitDurationGoalsConfig.cognitiveReframingLoggedMinutes,
+      }),
+    [
+      activeNsdrCompleted,
+      activeReframingCompleted,
+      habitDurationGoalsConfig,
+    ]
+  );
+
+  const rawToggleExercise = (exerciseId: DailyHabitExerciseId) => {
     if (onToggleDailyHabitExercise) {
       onToggleDailyHabitExercise(exerciseId);
     } else {
@@ -196,6 +265,88 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
             ? !prev.cognitiveReframingCompleted
             : prev.cognitiveReframingCompleted,
       }));
+    }
+  };
+
+  const handleExerciseToggleClick = (exerciseId: DailyHabitExerciseId) => {
+    const isCurrentlyDone =
+      exerciseId === 'nsdr_protocol'
+        ? activeNsdrCompleted
+        : activeReframingCompleted;
+    const itemProg = habitDurationProgress.byExerciseId[exerciseId];
+    const willComplete = !isCurrentlyDone || !itemProg.isGoalMet;
+
+    persistHabitDurationGoals(() =>
+      exerciseId === 'nsdr_protocol'
+        ? { nsdrLoggedMinutes: willComplete ? itemProg.goalMinutes : 0 }
+        : {
+            cognitiveReframingLoggedMinutes: willComplete
+              ? itemProg.goalMinutes
+              : 0,
+          }
+    );
+
+    if (willComplete !== isCurrentlyDone) {
+      rawToggleExercise(exerciseId);
+    }
+  };
+
+  const handleUpdateHabitDurationGoal = (
+    exerciseId: DailyHabitExerciseId,
+    nextGoalMinutesRaw: number
+  ) => {
+    const clampedGoal = clampHabitDurationGoalMinutes(
+      exerciseId,
+      nextGoalMinutesRaw
+    );
+    const currentItem = habitDurationProgress.byExerciseId[exerciseId];
+    persistHabitDurationGoals((prev) =>
+      exerciseId === 'nsdr_protocol'
+        ? {
+            nsdrGoalMinutes: clampedGoal,
+            nsdrLoggedMinutes:
+              prev.nsdrLoggedMinutes !== undefined
+                ? prev.nsdrLoggedMinutes
+                : currentItem.loggedMinutes,
+          }
+        : {
+            cognitiveReframingGoalMinutes: clampedGoal,
+            cognitiveReframingLoggedMinutes:
+              prev.cognitiveReframingLoggedMinutes !== undefined
+                ? prev.cognitiveReframingLoggedMinutes
+                : currentItem.loggedMinutes,
+          }
+    );
+  };
+
+  const handleAdjustHabitLoggedMinutes = (
+    exerciseId: DailyHabitExerciseId,
+    deltaMinutes: number
+  ) => {
+    const currentItem = habitDurationProgress.byExerciseId[exerciseId];
+    const nextLogged = Math.max(
+      0,
+      Math.min(
+        currentItem.maxGoalMinutes,
+        currentItem.loggedMinutes + deltaMinutes
+      )
+    );
+    const isCurrentlyDone =
+      exerciseId === 'nsdr_protocol'
+        ? activeNsdrCompleted
+        : activeReframingCompleted;
+
+    persistHabitDurationGoals(() =>
+      exerciseId === 'nsdr_protocol'
+        ? { nsdrLoggedMinutes: nextLogged }
+        : { cognitiveReframingLoggedMinutes: nextLogged }
+    );
+
+    const shouldBeCompleted = nextLogged >= currentItem.goalMinutes;
+    if (shouldBeCompleted && !isCurrentlyDone) {
+      rawToggleExercise(exerciseId);
+    } else if (nextLogged === 0 && isCurrentlyDone) {
+      rawToggleExercise(exerciseId);
     }
   };
 
@@ -2101,6 +2252,8 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
                   exercise.id === 'nsdr_protocol'
                     ? activeNsdrCompleted
                     : activeReframingCompleted;
+                const itemProgress =
+                  habitDurationProgress.byExerciseId[exercise.id];
                 const tooltipData = getDailyHabitClinicalTooltip(exercise.id);
                 const isTooltipOpen =
                   hoveredHabitTooltipId === exercise.id ||
@@ -2119,12 +2272,12 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
                       )
                     }
                     className={`relative p-4 rounded-xl border transition-colors flex flex-col justify-between space-y-3 ${
-                      isExerciseDone
+                      itemProgress.isGoalMet || isExerciseDone
                         ? 'bg-[#132E23] border-[#68D391]'
                         : 'bg-[#10231C] border-[#1E3A2F]'
                     }`}
                   >
-                    <div className="space-y-2">
+                    <div className="space-y-2.5">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <span
@@ -2134,7 +2287,7 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
                             {exercise.protocolBadge}
                           </span>
                           <span className="text-[10px] font-mono text-[#A3B8B0]">
-                            {exercise.durationLabel}
+                            Goal: {itemProgress.goalMinutes} Min/Day
                           </span>
                         </div>
 
@@ -2169,20 +2322,166 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
                           <button
                             type="button"
                             data-testid={`habit-exercise-toggle-${exercise.id}`}
-                            aria-pressed={isExerciseDone}
+                            aria-pressed={itemProgress.isGoalMet}
                             aria-describedby={tooltipDomId}
                             title={tooltipData.formattedTooltipText}
                             onClick={() => handleExerciseToggleClick(exercise.id)}
                             className={`px-3 py-1 rounded-md text-[10px] font-mono font-semibold transition-colors cursor-pointer border ${
-                              isExerciseDone
+                              itemProgress.isGoalMet
                                 ? 'bg-[#68D391] text-[#091510] border-[#68D391]'
                                 : 'bg-[#0B1914] text-[#F2B84B] border-[#F2B84B]/50 hover:bg-[#163025] hover:text-[#F4EFE6]'
                             }`}
                           >
-                            {isExerciseDone
+                            {itemProgress.isGoalMet
                               ? '✓ Completed & Synced with Streak'
                               : `+ Log ${exercise.shortLabel}`}
                           </button>
+                        </div>
+                      </div>
+
+                      {/* VISUAL PROGRESS BAR & DAILY DURATION GOAL SETTER BENEATH HABIT LOG BUTTON */}
+                      <div
+                        data-testid={`habit-duration-goal-panel-${exercise.id}`}
+                        className="p-3 rounded-xl bg-[#091510]/90 border border-[#1E3A2F] space-y-2"
+                      >
+                        <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
+                          <span
+                            data-testid={`habit-duration-status-${exercise.id}`}
+                            className="font-semibold text-[#F4EFE6] tabular-nums"
+                          >
+                            {itemProgress.statusLabel}
+                          </span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              data-testid={`habit-duration-sub-${exercise.id}`}
+                              onClick={() =>
+                                handleAdjustHabitLoggedMinutes(
+                                  exercise.id,
+                                  -itemProgress.incrementMinutes
+                                )
+                              }
+                              className="px-1.5 py-0.5 rounded bg-[#10231C] hover:bg-[#18352A] text-[#A3B8B0] hover:text-[#F4EFE6] border border-[#233D32] text-[10px] font-mono font-semibold cursor-pointer tabular-nums"
+                              title={`Subtract ${itemProgress.incrementMinutes} minutes logged`}
+                            >
+                              -{itemProgress.incrementMinutes}m
+                            </button>
+                            <button
+                              type="button"
+                              data-testid={`habit-duration-add-${exercise.id}`}
+                              onClick={() =>
+                                handleAdjustHabitLoggedMinutes(
+                                  exercise.id,
+                                  itemProgress.incrementMinutes
+                                )
+                              }
+                              className="px-1.5 py-0.5 rounded bg-[#143025] hover:bg-[#1D4434] text-[#68D391] border border-[#2C5E48] text-[10px] font-mono font-semibold cursor-pointer tabular-nums"
+                              title={`Log +${itemProgress.incrementMinutes} minutes toward daily duration goal`}
+                            >
+                              +{itemProgress.incrementMinutes}m
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Visual Progress Bar Beneath Habit Log Button */}
+                        <div
+                          role="progressbar"
+                          aria-label={`${exercise.shortLabel} daily duration goal progress`}
+                          aria-valuenow={itemProgress.progressPct}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          data-testid={`habit-duration-progress-bar-${exercise.id}`}
+                          className="w-full h-2.5 rounded-full bg-[#060E0B] overflow-hidden border border-[#233D32]"
+                        >
+                          <div
+                            data-testid={`habit-duration-progress-fill-${exercise.id}`}
+                            className="h-full rounded-full transition-all duration-200"
+                            style={{
+                              width: `${itemProgress.progressPct}%`,
+                              backgroundColor: itemProgress.isGoalMet
+                                ? '#68D391'
+                                : exercise.accentHex,
+                            }}
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 text-[10px] font-mono text-[#A3B8B0] tabular-nums">
+                          <span data-testid={`habit-duration-delta-${exercise.id}`}>
+                            {itemProgress.deltaSummaryText}
+                          </span>
+                          <span
+                            data-testid={`habit-duration-pct-badge-${exercise.id}`}
+                            className="font-bold"
+                            style={{
+                              color: itemProgress.isGoalMet
+                                ? '#68D391'
+                                : exercise.accentHex,
+                            }}
+                          >
+                            {itemProgress.progressPct}%
+                          </span>
+                        </div>
+
+                        {/* Interactive Daily Duration Goal Setter (Slider + Quick Presets) */}
+                        <div className="pt-1.5 border-t border-[#162C23] space-y-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <label
+                              htmlFor={`habit-duration-goal-slider-${exercise.id}`}
+                              className="text-[10.5px] font-mono text-[#D5E2DC]"
+                            >
+                              Set Daily Duration Goal (min)
+                            </label>
+                            <span
+                              data-testid={`habit-duration-goal-value-${exercise.id}`}
+                              className="text-[11px] font-mono font-bold tabular-nums"
+                              style={{ color: exercise.accentHex }}
+                            >
+                              {itemProgress.goalMinutes} min/day
+                            </span>
+                          </div>
+                          <input
+                            id={`habit-duration-goal-slider-${exercise.id}`}
+                            data-testid={`habit-duration-goal-slider-${exercise.id}`}
+                            type="range"
+                            min={itemProgress.minGoalMinutes}
+                            max={itemProgress.maxGoalMinutes}
+                            step={itemProgress.stepMinutes}
+                            value={itemProgress.goalMinutes}
+                            onChange={(e) =>
+                              handleUpdateHabitDurationGoal(
+                                exercise.id,
+                                Number(e.target.value)
+                              )
+                            }
+                            className="w-full cursor-pointer"
+                            style={{ accentColor: exercise.accentHex }}
+                          />
+                          <div className="grid grid-cols-4 gap-1.5">
+                            {itemProgress.goalPresetsMinutes.map((presetMin) => {
+                              const isPresetSelected =
+                                itemProgress.goalMinutes === presetMin;
+                              return (
+                                <button
+                                  key={presetMin}
+                                  type="button"
+                                  data-testid={`habit-goal-preset-${exercise.id}-${presetMin}`}
+                                  onClick={() =>
+                                    handleUpdateHabitDurationGoal(
+                                      exercise.id,
+                                      presetMin
+                                    )
+                                  }
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold border transition-colors cursor-pointer text-center tabular-nums ${
+                                    isPresetSelected
+                                      ? 'bg-[#17382C] text-[#F4EFE6] border-[#68D391]'
+                                      : 'bg-[#0D1E18] text-[#A3B8B0] border-[#1E3A2F] hover:text-[#F4EFE6]'
+                                  }`}
+                                >
+                                  {presetMin}m Goal
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
                       </div>
 

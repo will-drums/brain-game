@@ -68,8 +68,70 @@ import {
   computeBloomSliderTooltipState,
   DEFAULT_PRIOR_SIX_DAYS_HABIT_HISTORY,
   computeWeeklyHabitCompliance,
+  clampHabitDurationGoalMinutes,
+  sanitizeDailyHabitDurationGoalsConfig,
+  computeDailyHabitDurationProgress,
   type ChimeSymbol,
 } from './rules';
+
+test('computeDailyHabitDurationProgress calculates daily duration goals, logged minutes, and progress bar percentages for NSDR and Cognitive Reframing', () => {
+  assert.equal(clampHabitDurationGoalMinutes('nsdr_protocol', 25), 25);
+  assert.equal(clampHabitDurationGoalMinutes('nsdr_protocol', 1), 5);
+  assert.equal(clampHabitDurationGoalMinutes('nsdr_protocol', 99), 40);
+  assert.equal(clampHabitDurationGoalMinutes('cognitive_reframing', 10), 10);
+  assert.equal(clampHabitDurationGoalMinutes('cognitive_reframing', 0), 3);
+  assert.equal(clampHabitDurationGoalMinutes('cognitive_reframing', 45), 20);
+
+  const sanitized = sanitizeDailyHabitDurationGoalsConfig({
+    nsdrGoalMinutes: 30,
+    cognitiveReframingGoalMinutes: 10,
+    nsdrLoggedMinutes: 15,
+    cognitiveReframingLoggedMinutes: 5,
+  });
+  assert.equal(sanitized.nsdrGoalMinutes, 30);
+  assert.equal(sanitized.cognitiveReframingGoalMinutes, 10);
+  assert.equal(sanitized.nsdrLoggedMinutes, 15);
+  assert.equal(sanitized.cognitiveReframingLoggedMinutes, 5);
+
+  // Partial progress toward custom goals (15/30 min NSDR = 50%, 5/10 min Reframing = 50%)
+  const partialProgress = computeDailyHabitDurationProgress({
+    nsdrCompleted: false,
+    cognitiveReframingCompleted: false,
+    nsdrGoalMinutes: 30,
+    cognitiveReframingGoalMinutes: 10,
+    nsdrLoggedMinutes: 15,
+    cognitiveReframingLoggedMinutes: 5,
+  });
+  assert.equal(partialProgress.nsdr.goalMinutes, 30);
+  assert.equal(partialProgress.nsdr.loggedMinutes, 15);
+  assert.equal(partialProgress.nsdr.progressPct, 50);
+  assert.equal(partialProgress.nsdr.remainingMinutes, 15);
+  assert.equal(partialProgress.nsdr.isGoalMet, false);
+  assert.ok(partialProgress.nsdr.statusLabel.includes('15/30 min (50%)'));
+
+  assert.equal(partialProgress.cognitiveReframing.goalMinutes, 10);
+  assert.equal(partialProgress.cognitiveReframing.loggedMinutes, 5);
+  assert.equal(partialProgress.cognitiveReframing.progressPct, 50);
+  assert.equal(partialProgress.cognitiveReframing.isGoalMet, false);
+  assert.equal(partialProgress.combinedProgressPct, 50);
+  assert.equal(partialProgress.bothGoalsMet, false);
+
+  // Full goal completion when habits are toggled complete
+  const completedProgress = computeDailyHabitDurationProgress({
+    nsdrCompleted: true,
+    cognitiveReframingCompleted: true,
+    nsdrGoalMinutes: 25,
+    cognitiveReframingGoalMinutes: 8,
+  });
+  assert.equal(completedProgress.nsdr.loggedMinutes, 25);
+  assert.equal(completedProgress.nsdr.progressPct, 100);
+  assert.equal(completedProgress.nsdr.isGoalMet, true);
+  assert.equal(completedProgress.cognitiveReframing.loggedMinutes, 8);
+  assert.equal(completedProgress.cognitiveReframing.progressPct, 100);
+  assert.equal(completedProgress.cognitiveReframing.isGoalMet, true);
+  assert.equal(completedProgress.combinedProgressPct, 100);
+  assert.equal(completedProgress.bothGoalsMet, true);
+});
 
 test('computeWeeklyHabitCompliance builds 7-day NSDR and Cognitive Reframing compliance series and syncs Day 7 with today state', () => {
   assert.equal(DEFAULT_PRIOR_SIX_DAYS_HABIT_HISTORY.length, 6);
