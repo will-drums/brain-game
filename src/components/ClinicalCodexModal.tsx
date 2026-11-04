@@ -3,8 +3,10 @@ import * as d3 from 'd3';
 import {
   ResponsiveContainer,
   ComposedChart,
+  Area,
   Bar,
   Line,
+  ReferenceLine,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -15,6 +17,7 @@ import {
   HRV_HISTORY_STORAGE_KEY,
   DEFAULT_HRV_HISTORY_SEED,
   computeHrvTrendSummary,
+  computeVagalToneTrend30Days,
   computeCognitiveDomainProfile,
   NEURO_NUTRITION_SLEEP_TIPS,
   filterNeuroNutritionTips,
@@ -36,6 +39,7 @@ import {
   clampHabitDurationGoalMinutes,
   sanitizeDailyHabitDurationGoalsConfig,
   computeDailyHabitDurationProgress,
+  type VagalToneDailyRecord,
   type DailyHabitDurationGoalsConfig,
   type PriorDayHabitRecord,
   type CodexModalTransitionPhase,
@@ -387,6 +391,18 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
 
   const sessions = resolvedHistory;
   const trendSummary = computeHrvTrendSummary(sessions);
+  const [vagalWindowMode, setVagalWindowMode] = useState<'30d' | '14d'>('30d');
+  const vagalToneTrend = React.useMemo(
+    () => computeVagalToneTrend30Days({ hrvHistory: sessions }),
+    [sessions]
+  );
+  const displayedVagalDays = React.useMemo(
+    () =>
+      vagalWindowMode === '14d'
+        ? vagalToneTrend.days.slice(-14)
+        : vagalToneTrend.days,
+    [vagalToneTrend.days, vagalWindowMode]
+  );
   const domainProfile = computeCognitiveDomainProfile({
     totalTreesGrafted,
     peakRejuvenationScore,
@@ -1169,6 +1185,358 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
               </div>
             </div>
           )}
+        </section>
+
+        {/* 1A. RECHARTS 'VAGAL TONE TREND' — 30-DAY PARASYMPATHETIC NERVOUS SYSTEM & DAILY VAGAL COHERENCE */}
+        <section
+          aria-labelledby="vagal-tone-trend-heading"
+          data-testid="codex-vagal-tone-trend-section"
+          data-thirty-day-mean-pct={vagalToneTrend.thirtyDayMeanCoherencePct}
+          data-seven-day-mean-pct={vagalToneTrend.sevenDayMeanCoherencePct}
+          data-thirty-day-growth-delta-pct={vagalToneTrend.thirtyDayGrowthDeltaPct}
+          data-resonant-days-count={vagalToneTrend.resonantDaysCount}
+          data-latest-coherence-pct={vagalToneTrend.latestCoherencePct}
+          data-displayed-days-count={displayedVagalDays.length}
+          className="mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#2C4C3E] space-y-4 codex-section-cascade"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-mono uppercase tracking-wider text-[#68D391]">
+                  30-Day Longitudinal Parasympathetic Telemetry · Recharts Visualization
+                </span>
+                <span
+                  data-testid="vagal-tone-tier-badge"
+                  className="px-2 py-0.5 rounded bg-[#142D23] text-[#68D391] border border-[#68D391]/50 text-[10px] font-mono font-semibold tabular-nums"
+                >
+                  ✦ {vagalToneTrend.parasympatheticTierLabel} (
+                  {vagalToneTrend.thirtyDayGrowthDeltaPct >= 0
+                    ? `+${vagalToneTrend.thirtyDayGrowthDeltaPct}%`
+                    : `${vagalToneTrend.thirtyDayGrowthDeltaPct}%`}{' '}
+                  vs. Week 1)
+                </span>
+              </div>
+              <h3
+                id="vagal-tone-trend-heading"
+                className="text-lg font-display font-semibold text-[#F4EFE6] mt-0.5"
+              >
+                Vagal Tone Trend — 30-Day Daily Vagal Coherence &amp; Parasympathetic Trajectory
+              </h3>
+              <p className="text-xs text-[#A3B8B0] mt-0.5">
+                Plots daily Vagal Coherence scores from your HRV history across the last 30 days alongside your 7-day rolling parasympathetic average and the 75% clinical 0.1 Hz resonance threshold.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <div className="inline-flex rounded-lg bg-[#10231C] border border-[#233D32] p-0.5 font-mono text-xs">
+                <button
+                  type="button"
+                  data-testid="vagal-trend-window-30d-btn"
+                  aria-pressed={vagalWindowMode === '30d'}
+                  onClick={() => setVagalWindowMode('30d')}
+                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+                    vagalWindowMode === '30d'
+                      ? 'bg-[#1D4032] text-[#68D391] font-semibold'
+                      : 'text-[#A3B8B0] hover:text-[#F4EFE6]'
+                  }`}
+                >
+                  30-Day Window (30d)
+                </button>
+                <button
+                  type="button"
+                  data-testid="vagal-trend-window-14d-btn"
+                  aria-pressed={vagalWindowMode === '14d'}
+                  onClick={() => setVagalWindowMode('14d')}
+                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+                    vagalWindowMode === '14d'
+                      ? 'bg-[#1D4032] text-[#4FD1C5] font-semibold'
+                      : 'text-[#A3B8B0] hover:text-[#F4EFE6]'
+                  }`}
+                >
+                  Last 14 Days (14d)
+                </button>
+              </div>
+
+              {onRecordSimulatedSession && (
+                <button
+                  type="button"
+                  data-testid="vagal-trend-log-checkin-btn"
+                  onClick={onRecordSimulatedSession}
+                  className="px-3 py-1.5 rounded-lg bg-[#152E24] hover:bg-[#1E3F32] text-xs font-mono font-semibold text-[#4FD1C5] border border-[#2C4C3E] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  + Log Daily Vagal Check-In
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 4 Tabular-Nums 30-Day Vagal Tone Summary KPIs */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+            <div
+              data-testid="vagal-trend-kpi-30d-mean"
+              className="p-3 rounded-lg bg-[#10231C] border border-[#1E3A2F]"
+            >
+              <div className="text-[10px] font-mono uppercase text-[#A3B8B0]">
+                30-DAY VAGAL MEAN
+              </div>
+              <div className="flex items-baseline justify-between gap-2 mt-0.5">
+                <span
+                  data-testid="vagal-trend-30d-mean-value"
+                  className="text-xl font-mono font-bold text-[#68D391] tabular-nums"
+                >
+                  {vagalToneTrend.thirtyDayMeanCoherencePct}%
+                </span>
+                <span className="text-[11px] font-mono text-[#A3B8B0] tabular-nums">
+                  Peak {vagalToneTrend.peakCoherencePct}%
+                </span>
+              </div>
+            </div>
+
+            <div
+              data-testid="vagal-trend-kpi-7d-rolling"
+              className="p-3 rounded-lg bg-[#10231C] border border-[#1E3A2F]"
+            >
+              <div className="text-[10px] font-mono uppercase text-[#A3B8B0]">
+                7-DAY ROLLING TONE
+              </div>
+              <div className="flex items-baseline justify-between gap-2 mt-0.5">
+                <span
+                  data-testid="vagal-trend-7d-mean-value"
+                  className="text-xl font-mono font-bold text-[#4FD1C5] tabular-nums"
+                >
+                  {vagalToneTrend.sevenDayMeanCoherencePct}%
+                </span>
+                <span className="text-[11px] font-mono text-[#68D391] tabular-nums">
+                  {vagalToneTrend.thirtyDayGrowthDeltaPct >= 0
+                    ? `+${vagalToneTrend.thirtyDayGrowthDeltaPct}%`
+                    : `${vagalToneTrend.thirtyDayGrowthDeltaPct}%`}{' '}
+                  vs W1
+                </span>
+              </div>
+            </div>
+
+            <div
+              data-testid="vagal-trend-kpi-resonant-days"
+              className="p-3 rounded-lg bg-[#10231C] border border-[#1E3A2F]"
+            >
+              <div className="text-[10px] font-mono uppercase text-[#A3B8B0]">
+                RESONANT DAYS (≥75%)
+              </div>
+              <div className="flex items-baseline justify-between gap-2 mt-0.5">
+                <span
+                  data-testid="vagal-trend-resonant-days-value"
+                  className="text-xl font-mono font-bold text-[#F2B84B] tabular-nums"
+                >
+                  {vagalToneTrend.resonantDaysCount}/30d
+                </span>
+                <span className="text-[11px] font-mono text-[#D5E2DC] tabular-nums">
+                  {vagalToneTrend.resonantDaysPct}% In-Zone
+                </span>
+              </div>
+            </div>
+
+            <div
+              data-testid="vagal-trend-kpi-rmssd"
+              className="p-3 rounded-lg bg-[#10231C] border border-[#1E3A2F]"
+            >
+              <div className="text-[10px] font-mono uppercase text-[#A3B8B0]">
+                EST. VAGAL RMSSD PROXY
+              </div>
+              <div className="flex items-baseline justify-between gap-2 mt-0.5">
+                <span
+                  data-testid="vagal-trend-rmssd-value"
+                  className="text-xl font-mono font-bold text-[#B794F4] tabular-nums"
+                >
+                  {vagalToneTrend.latestEstimatedRmssdMs}ms
+                </span>
+                <span className="text-[11px] font-mono text-[#A3B8B0] tabular-nums">
+                  30d Avg {vagalToneTrend.meanEstimatedRmssdMs}ms
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Recharts 30-Day Vagal Tone Trend ComposedChart Container */}
+          <div
+            data-testid="vagal-tone-trend-recharts-container"
+            className="p-4 rounded-xl bg-[#091510] border border-[#1E3A2F] space-y-3"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
+              <div className="flex flex-wrap items-center gap-4">
+                <span className="inline-flex items-center gap-1.5 text-[#68D391]">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#68D391] inline-block" />
+                  <span>Daily Vagal Coherence Score (%)</span>
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-[#4FD1C5]">
+                  <span className="w-3.5 h-0.5 bg-[#4FD1C5] inline-block" />
+                  <span>7-Day Rolling Parasympathetic Avg (%)</span>
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-[#F2B84B]">
+                  <span className="w-3.5 h-0.5 border-t border-dashed border-[#F2B84B] inline-block" />
+                  <span>0.1 Hz Clinical Vagal Target (75%)</span>
+                </span>
+              </div>
+              <span className="text-[#A3B8B0] tabular-nums">
+                Range: {displayedVagalDays[0]?.shortDateLabel} →{' '}
+                {displayedVagalDays[displayedVagalDays.length - 1]?.shortDateLabel} (
+                {displayedVagalDays.length} Days)
+              </span>
+            </div>
+
+            <div className="w-full h-[240px]">
+              <ResponsiveContainer width="100%" height={240}>
+                <ComposedChart
+                  data={displayedVagalDays}
+                  margin={{ top: 12, right: 16, left: 0, bottom: 4 }}
+                >
+                  <defs>
+                    <linearGradient
+                      id="vagalTone30dAreaGradient"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop offset="5%" stopColor="#68D391" stopOpacity={0.42} />
+                      <stop offset="60%" stopColor="#4FD1C5" stopOpacity={0.16} />
+                      <stop offset="95%" stopColor="#091510" stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid
+                    stroke="#1E3A2F"
+                    strokeDasharray="3 3"
+                    vertical={false}
+                  />
+                  <XAxis
+                    dataKey="shortDateLabel"
+                    interval={vagalWindowMode === '30d' ? 3 : 1}
+                    stroke="#A3B8B0"
+                    tick={{ fill: '#D5E2DC', fontSize: 10, fontFamily: 'monospace' }}
+                    tickLine={{ stroke: '#1E3A2F' }}
+                    axisLine={{ stroke: '#233D32' }}
+                  />
+                  <YAxis
+                    domain={[40, 100]}
+                    ticks={[40, 55, 70, 85, 100]}
+                    tickFormatter={(val: number) => `${val}%`}
+                    stroke="#68D391"
+                    tick={{ fill: '#A3B8B0', fontSize: 10, fontFamily: 'monospace' }}
+                    tickLine={false}
+                    axisLine={{ stroke: '#233D32' }}
+                    width={46}
+                  />
+                  <ReferenceLine
+                    y={75}
+                    stroke="#F2B84B"
+                    strokeDasharray="5 4"
+                    strokeWidth={1.5}
+                    label={({ viewBox }: { viewBox?: { x?: number; y?: number } }) => (
+                      <text
+                        x={(viewBox?.x ?? 46) + 8}
+                        y={(viewBox?.y ?? 60) - 6}
+                        fill="#F2B84B"
+                        fontSize={10}
+                        fontFamily="JetBrains Mono, monospace"
+                        textAnchor="start"
+                      >
+                        75% Clinical Vagal Target
+                      </text>
+                    )}
+                  />
+                  <RechartsTooltip
+                    content={({ active, payload }) => {
+                      if (!active || !payload || payload.length === 0) {
+                        return null;
+                      }
+                      const dayRec = payload[0]?.payload as
+                        | VagalToneDailyRecord
+                        | undefined;
+                      if (!dayRec) return null;
+                      return (
+                        <div
+                          data-testid="vagal-tone-trend-tooltip"
+                          className="p-3 rounded-xl bg-[#07120E]/95 border border-[#68D391]/60 shadow-xl font-mono text-xs space-y-1.5"
+                        >
+                          <div className="flex items-center justify-between gap-4 border-b border-[#1E3A2F] pb-1">
+                            <span className="font-bold text-[#F4EFE6]">
+                              Day {dayRec.dayIndex} · {dayRec.shortDateLabel} ({dayRec.dayOffsetLabel})
+                            </span>
+                            <span
+                              className={`text-[10px] px-1.5 py-0.5 rounded tabular-nums ${
+                                dayRec.isResonantDay
+                                  ? 'bg-[#143326] text-[#68D391]'
+                                  : 'bg-[#10231C] text-[#4FD1C5]'
+                              }`}
+                            >
+                              {dayRec.isResonantDay ? '✓ Resonant (≥75%)' : 'Calibrating'}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-4 text-[#68D391] tabular-nums">
+                            <span>Daily Vagal Coherence:</span>
+                            <span className="font-bold">{dayRec.vagalCoherenceScore}%</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-4 text-[#4FD1C5] tabular-nums">
+                            <span>7-Day Rolling Parasympathetic:</span>
+                            <span className="font-semibold">{dayRec.rolling7DayAvgScore}%</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-4 text-[#B794F4] tabular-nums">
+                            <span>Est. Vagal RMSSD Proxy:</span>
+                            <span className="font-semibold">{dayRec.estimatedRmssdMs} ms</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-4 text-[#A3B8B0] pt-1 border-t border-[#1E3A2F] tabular-nums">
+                            <span>0.1 Hz Paced Breath:</span>
+                            <span>
+                              {dayRec.coherenceSeconds.toFixed(1)}s ({dayRec.sessionCount} sess)
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="vagalCoherenceScore"
+                    name="Daily Vagal Coherence (%)"
+                    stroke="#68D391"
+                    strokeWidth={2.5}
+                    fill="url(#vagalTone30dAreaGradient)"
+                    isAnimationActive={false}
+                    dot={{
+                      r: 3,
+                      fill: '#68D391',
+                      stroke: '#091510',
+                      strokeWidth: 1.2,
+                    }}
+                    activeDot={{
+                      r: 5,
+                      fill: '#68D391',
+                      stroke: '#F4EFE6',
+                      strokeWidth: 2,
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="rolling7DayAvgScore"
+                    name="7-Day Rolling Parasympathetic Avg (%)"
+                    stroke="#4FD1C5"
+                    strokeWidth={2}
+                    strokeDasharray="4 3"
+                    dot={false}
+                    isAnimationActive={false}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#1E3A2F] text-[11px] font-mono text-[#A3B8B0]">
+              <span data-testid="vagal-tone-clinical-summary">
+                {vagalToneTrend.clinicalSummaryNote}
+              </span>
+              <span className="text-[#68D391] tabular-nums">
+                Latest: {vagalToneTrend.latestCoherencePct}% ({vagalToneTrend.latestEstimatedRmssdMs}ms RMSSD)
+              </span>
+            </div>
+          </div>
         </section>
 
         {/* 1B. D3.js 'Neuro-Projection Graph' — 6-Month Cognitive Reserve Growth Trajectory */}

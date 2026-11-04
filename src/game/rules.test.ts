@@ -75,8 +75,59 @@ import {
   SANCTUARY_BLOOM_CROSSFADE_DURATION_MS,
   easeInOutCubicCrossfade,
   stepSanctuaryBloomCrossfade,
+  DEFAULT_30_DAY_VAGAL_BASELINE_SCORES,
+  computeVagalToneTrend30Days,
   type ChimeSymbol,
 } from './rules';
+
+test('computeVagalToneTrend30Days aggregates 30-day daily Vagal Coherence scores, 7-day rolling parasympathetic average, and resonant days from HRV history', () => {
+  assert.equal(DEFAULT_30_DAY_VAGAL_BASELINE_SCORES.length, 30);
+
+  // 1. Default 30-day trend using DEFAULT_HRV_HISTORY_SEED
+  const trend = computeVagalToneTrend30Days({
+    hrvHistory: DEFAULT_HRV_HISTORY_SEED,
+    referenceDateIso: '2026-11-02',
+  });
+
+  assert.equal(trend.days.length, 30);
+  assert.equal(trend.days[0].dayIndex, 1);
+  assert.equal(trend.days[0].dayOffset, -29);
+  assert.equal(trend.days[0].dateIso, '2026-10-04');
+  assert.equal(trend.days[0].shortDateLabel, 'Oct 04');
+  assert.equal(trend.days[29].dayIndex, 30);
+  assert.equal(trend.days[29].dayOffset, 0);
+  assert.equal(trend.days[29].dateIso, '2026-11-02');
+  assert.equal(trend.days[29].shortDateLabel, 'Nov 02');
+  assert.equal(trend.days[29].dayOffsetLabel, 'Today');
+  assert.equal(trend.days[29].vagalCoherenceScore, 92);
+  assert.equal(trend.days[29].source, 'logged_hrv_history');
+
+  assert.equal(trend.latestCoherencePct, 92);
+  assert.equal(trend.peakCoherencePct, 92);
+  assert.equal(trend.loggedHistoryDaysCount, 10);
+  assert.ok(trend.sevenDayMeanCoherencePct > trend.firstSevenDayMeanCoherencePct);
+  assert.ok(trend.thirtyDayGrowthDeltaPct >= 20);
+  assert.ok(trend.resonantDaysCount >= 5);
+  assert.equal(trend.parasympatheticTierLabel, 'Optimal Vagal Brake');
+
+  // 2. Appending a new high-coherence HRV session on 2026-11-03 shifts the 30-day window forward and updates Day 30
+  const updatedHistory = appendHrvSessionRecord(DEFAULT_HRV_HISTORY_SEED, {
+    coherenceScore: 96,
+    coherenceSeconds: 18.4,
+    recordedAtIso: '2026-11-03',
+    stageName: 'Stage IV · The Apex Synaptic Sanctuary',
+  });
+  const updatedTrend = computeVagalToneTrend30Days({
+    hrvHistory: updatedHistory,
+  });
+  assert.equal(updatedTrend.days.length, 30);
+  assert.equal(updatedTrend.days[29].dateIso, '2026-11-03');
+  assert.equal(updatedTrend.days[29].shortDateLabel, 'Nov 03');
+  assert.equal(updatedTrend.days[29].vagalCoherenceScore, 96);
+  assert.equal(updatedTrend.latestCoherencePct, 96);
+  assert.equal(updatedTrend.peakCoherencePct, 96);
+  assert.ok(updatedTrend.latestEstimatedRmssdMs > 65);
+});
 
 test('stepSanctuaryBloomCrossfade and computeSanctuaryBloomEffect smoothly interpolate normal and bioluminescent background states during toggle transitions', () => {
   assert.equal(SANCTUARY_BLOOM_CROSSFADE_DURATION_SEC, 0.85);

@@ -4314,6 +4314,327 @@ export function computeDailyHabitDurationProgress(params: {
   };
 }
 
+/**
+ * 30-Day Vagal Tone Trend (Longitudinal HRV Coherence & Parasympathetic Nervous System Progress)
+ * Aggregates daily Vagal Coherence scores from the user's HRV history over a 30-day window
+ * for the Recharts 'Vagal Tone Trend' visualization in the Clinical Evidence Codex modal.
+ */
+export interface VagalToneDailyRecord {
+  dayIndex: number; // 1..30
+  dayOffset: number; // -29..0
+  dateIso: string; // YYYY-MM-DD
+  shortDateLabel: string; // e.g., "Oct 04", "Nov 02"
+  dayOffsetLabel: string; // "-29d" .. "Today"
+  vagalCoherenceScore: number; // 0..100 (%)
+  rolling7DayAvgScore: number; // 0..100 (%)
+  clinicalTargetScore: number; // 75 (%)
+  coherenceSeconds: number; // Daily 0.1 Hz resonance breath duration (s)
+  estimatedRmssdMs: number; // Vagally-mediated HRV RMSSD proxy (ms)
+  sessionCount: number;
+  isResonantDay: boolean; // vagalCoherenceScore >= 75
+  source: 'logged_hrv_history' | 'longitudinal_baseline';
+}
+
+export interface VagalToneTrend30DaySummary {
+  days: VagalToneDailyRecord[];
+  thirtyDayMeanCoherencePct: number;
+  sevenDayMeanCoherencePct: number;
+  firstSevenDayMeanCoherencePct: number;
+  thirtyDayGrowthDeltaPct: number; // Last 7d mean minus First 7d mean
+  latestCoherencePct: number;
+  peakCoherencePct: number;
+  resonantDaysCount: number; // Days >= 75% clinical vagal target
+  resonantDaysPct: number; // 0..100
+  meanEstimatedRmssdMs: number;
+  latestEstimatedRmssdMs: number;
+  loggedHistoryDaysCount: number;
+  parasympatheticTierLabel:
+    | 'Optimal Vagal Brake'
+    | 'Ascending Parasympathetic Tone'
+    | 'Autonomic Calibration';
+  clinicalSummaryNote: string;
+}
+
+/**
+ * 30-day longitudinal parasympathetic progression baseline (Days 1..30).
+ * Days 21..30 align with DEFAULT_HRV_HISTORY_SEED (62% -> 92%), while Days 1..20
+ * represent the preceding 20 days of autonomic baroreflex calibration (52% -> 65%).
+ */
+export const DEFAULT_30_DAY_VAGAL_BASELINE_SCORES: readonly number[] = [
+  52, 54, 53, 56, 55, 58, 57, 59, 58, 61,
+  60, 62, 61, 63, 62, 65, 64, 66, 65, 63,
+  62, 66, 64, 71, 75, 73, 79, 84, 88, 92,
+];
+
+const SHORT_MONTH_NAMES = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+] as const;
+
+function parseIsoDateToUtcMs(dateIso: string): number | null {
+  if (!dateIso || typeof dateIso !== 'string') return null;
+  const parts = dateIso.trim().split('-').map(Number);
+  if (parts.length !== 3) return null;
+  const [y, m, d] = parts;
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+  return Date.UTC(y, m - 1, d);
+}
+
+function formatUtcMsToIsoAndShortLabel(utcMs: number): {
+  dateIso: string;
+  shortDateLabel: string;
+} {
+  const dt = new Date(utcMs);
+  const year = dt.getUTCFullYear();
+  const monthIdx = dt.getUTCMonth();
+  const day = dt.getUTCDate();
+  const monthStr = String(monthIdx + 1).padStart(2, '0');
+  const dayStr = String(day).padStart(2, '0');
+  const shortMonth = SHORT_MONTH_NAMES[monthIdx] || 'Nov';
+  return {
+    dateIso: `${year}-${monthStr}-${dayStr}`,
+    shortDateLabel: `${shortMonth} ${dayStr}`,
+  };
+}
+
+export function computeVagalToneTrend30Days(params?: {
+  hrvHistory?: readonly HrvSessionRecord[];
+  referenceDateIso?: string;
+}): VagalToneTrend30DaySummary {
+  const history =
+    params?.hrvHistory && params.hrvHistory.length > 0
+      ? params.hrvHistory
+      : DEFAULT_HRV_HISTORY_SEED;
+
+  // Determine anchor end date (Day 30) from explicit referenceDateIso or latest recordedAtIso in history
+  let anchorUtcMs: number | null = params?.referenceDateIso
+    ? parseIsoDateToUtcMs(params.referenceDateIso)
+    : null;
+
+  if (anchorUtcMs === null) {
+    for (let i = history.length - 1; i >= 0; i--) {
+      const parsed = parseIsoDateToUtcMs(history[i].recordedAtIso);
+      if (parsed !== null) {
+        if (anchorUtcMs === null || parsed > anchorUtcMs) {
+          anchorUtcMs = parsed;
+        }
+      }
+    }
+  }
+
+  if (anchorUtcMs === null) {
+    anchorUtcMs = Date.UTC(2026, 10, 2); // 2026-11-02 fallback
+  }
+
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  // Group hrvHistory records by YYYY-MM-DD
+  const byDateMap = new Map<
+    string,
+    { scores: number[]; seconds: number[] }
+  >();
+
+  for (const rec of history) {
+    if (!rec || typeof rec.coherenceScore !== 'number') continue;
+    const clampedScore = Math.max(0, Math.min(100, Math.round(rec.coherenceScore)));
+    const clampedSec = Math.max(0, Number(rec.coherenceSeconds) || 10);
+    const key = (rec.recordedAtIso || '').trim();
+    if (!key) continue;
+    const existing = byDateMap.get(key);
+    if (existing) {
+      existing.scores.push(clampedScore);
+      existing.seconds.push(clampedSec);
+    } else {
+      byDateMap.set(key, { scores: [clampedScore], seconds: [clampedSec] });
+    }
+  }
+
+  // Also build a trailing fallback map for history records whose dates might not align with referenceDateIso
+  // so that any custom or simulated hrvHistory array always reflects its latest N records at the tail of the 30-day window
+  const rawDailyPoints: Array<{
+    dayIndex: number;
+    dayOffset: number;
+    dateIso: string;
+    shortDateLabel: string;
+    dayOffsetLabel: string;
+    vagalCoherenceScore: number;
+    coherenceSeconds: number;
+    sessionCount: number;
+    source: 'logged_hrv_history' | 'longitudinal_baseline';
+  }> = [];
+
+  for (let idx = 0; idx < 30; idx++) {
+    const dayOffset = idx - 29; // -29 .. 0
+    const dayUtcMs = anchorUtcMs + dayOffset * DAY_MS;
+    const { dateIso, shortDateLabel } = formatUtcMsToIsoAndShortLabel(dayUtcMs);
+    const dayOffsetLabel = dayOffset === 0 ? 'Today' : `${dayOffset}d`;
+    const baselineScore = DEFAULT_30_DAY_VAGAL_BASELINE_SCORES[idx] ?? 65;
+
+    const matched = byDateMap.get(dateIso);
+    if (matched && matched.scores.length > 0) {
+      // Use the average score of sessions logged on that date (weighted with latest session if multiple check-ins occurred today)
+      const latestOnDay = matched.scores[matched.scores.length - 1];
+      const meanOnDay =
+        matched.scores.reduce((acc, s) => acc + s, 0) / matched.scores.length;
+      const resolvedScore =
+        matched.scores.length > 1
+          ? Math.round(meanOnDay * 0.4 + latestOnDay * 0.6)
+          : Math.round(meanOnDay);
+      const meanSec =
+        matched.seconds.reduce((acc, s) => acc + s, 0) / matched.seconds.length;
+
+      rawDailyPoints.push({
+        dayIndex: idx + 1,
+        dayOffset,
+        dateIso,
+        shortDateLabel,
+        dayOffsetLabel,
+        vagalCoherenceScore: Math.max(0, Math.min(100, resolvedScore)),
+        coherenceSeconds: Math.round(meanSec * 10) / 10,
+        sessionCount: matched.scores.length,
+        source: 'logged_hrv_history',
+      });
+    } else {
+      const estSeconds = Math.round((6.5 + ((baselineScore - 50) / 45) * 9.5) * 10) / 10;
+      rawDailyPoints.push({
+        dayIndex: idx + 1,
+        dayOffset,
+        dateIso,
+        shortDateLabel,
+        dayOffsetLabel,
+        vagalCoherenceScore: baselineScore,
+        coherenceSeconds: Math.max(5, estSeconds),
+        sessionCount: 1,
+        source: 'longitudinal_baseline',
+      });
+    }
+  }
+
+  // If none of the history dates matched the 30-day window (e.g. synthetic test records without matching dates),
+  // overlay the trailing history records onto the final days of the 30-day series
+  const matchedAnyDate = rawDailyPoints.some((p) => p.source === 'logged_hrv_history');
+  if (!matchedAnyDate && history.length > 0) {
+    const slice = history.slice(-30);
+    const startIdx = 30 - slice.length;
+    for (let i = 0; i < slice.length; i++) {
+      const rec = slice[i];
+      const targetIdx = startIdx + i;
+      if (targetIdx >= 0 && targetIdx < 30) {
+        const clampedScore = Math.max(0, Math.min(100, Math.round(rec.coherenceScore)));
+        rawDailyPoints[targetIdx] = {
+          ...rawDailyPoints[targetIdx],
+          vagalCoherenceScore: clampedScore,
+          coherenceSeconds: Math.max(0, Math.round((Number(rec.coherenceSeconds) || 10) * 10) / 10),
+          sessionCount: 1,
+          source: 'logged_hrv_history',
+        };
+      }
+    }
+  }
+
+  // Compute 7-day trailing rolling average & RMSSD proxy for each of the 30 days
+  const CLINICAL_TARGET_SCORE = 75;
+  const days: VagalToneDailyRecord[] = rawDailyPoints.map((pt, idx) => {
+    const windowStart = Math.max(0, idx - 6);
+    const windowSlice = rawDailyPoints.slice(windowStart, idx + 1);
+    const rolling7DayAvgScore = Math.round(
+      windowSlice.reduce((sum, w) => sum + w.vagalCoherenceScore, 0) /
+        windowSlice.length
+    );
+    const estimatedRmssdMs = Math.max(
+      18,
+      Math.min(95, Math.round(22 + (pt.vagalCoherenceScore - 45) * 0.92))
+    );
+
+    return {
+      dayIndex: pt.dayIndex,
+      dayOffset: pt.dayOffset,
+      dateIso: pt.dateIso,
+      shortDateLabel: pt.shortDateLabel,
+      dayOffsetLabel: pt.dayOffsetLabel,
+      vagalCoherenceScore: pt.vagalCoherenceScore,
+      rolling7DayAvgScore,
+      clinicalTargetScore: CLINICAL_TARGET_SCORE,
+      coherenceSeconds: pt.coherenceSeconds,
+      estimatedRmssdMs,
+      sessionCount: pt.sessionCount,
+      isResonantDay: pt.vagalCoherenceScore >= CLINICAL_TARGET_SCORE,
+      source: pt.source,
+    };
+  });
+
+  const allScores = days.map((d) => d.vagalCoherenceScore);
+  const thirtyDayMeanCoherencePct = Math.round(
+    allScores.reduce((acc, s) => acc + s, 0) / days.length
+  );
+  const firstSevenScores = days.slice(0, 7).map((d) => d.vagalCoherenceScore);
+  const lastSevenScores = days.slice(-7).map((d) => d.vagalCoherenceScore);
+
+  const firstSevenDayMeanCoherencePct = Math.round(
+    firstSevenScores.reduce((acc, s) => acc + s, 0) / firstSevenScores.length
+  );
+  const sevenDayMeanCoherencePct = Math.round(
+    lastSevenScores.reduce((acc, s) => acc + s, 0) / lastSevenScores.length
+  );
+  const thirtyDayGrowthDeltaPct =
+    sevenDayMeanCoherencePct - firstSevenDayMeanCoherencePct;
+
+  const latestCoherencePct = days[days.length - 1].vagalCoherenceScore;
+  const peakCoherencePct = Math.max(...allScores);
+  const resonantDaysCount = days.filter((d) => d.isResonantDay).length;
+  const resonantDaysPct = Math.round((resonantDaysCount / days.length) * 100);
+
+  const meanEstimatedRmssdMs = Math.round(
+    days.reduce((acc, d) => acc + d.estimatedRmssdMs, 0) / days.length
+  );
+  const latestEstimatedRmssdMs = days[days.length - 1].estimatedRmssdMs;
+  const loggedHistoryDaysCount = days.filter(
+    (d) => d.source === 'logged_hrv_history'
+  ).length;
+
+  let parasympatheticTierLabel: VagalToneTrend30DaySummary['parasympatheticTierLabel'] =
+    'Autonomic Calibration';
+  if (sevenDayMeanCoherencePct >= 75) {
+    parasympatheticTierLabel = 'Optimal Vagal Brake';
+  } else if (sevenDayMeanCoherencePct >= 62 || thirtyDayGrowthDeltaPct >= 8) {
+    parasympatheticTierLabel = 'Ascending Parasympathetic Tone';
+  }
+
+  const clinicalSummaryNote =
+    parasympatheticTierLabel === 'Optimal Vagal Brake'
+      ? `7-day vagal coherence average (${sevenDayMeanCoherencePct}%) exceeds the 75% clinical 0.1 Hz baroreflex resonance threshold (${thirtyDayGrowthDeltaPct >= 0 ? `+${thirtyDayGrowthDeltaPct}%` : `${thirtyDayGrowthDeltaPct}%`} vs. Week 1; est. RMSSD ${latestEstimatedRmssdMs}ms).`
+      : `30-day vagal coherence average is ${thirtyDayMeanCoherencePct}% with ${resonantDaysCount}/30 resonant days (≥75%). Sustained 0.1 Hz breathing strengthens prefrontal-amygdala vagal brake tone.`;
+
+  return {
+    days,
+    thirtyDayMeanCoherencePct,
+    sevenDayMeanCoherencePct,
+    firstSevenDayMeanCoherencePct,
+    thirtyDayGrowthDeltaPct,
+    latestCoherencePct,
+    peakCoherencePct,
+    resonantDaysCount,
+    resonantDaysPct,
+    meanEstimatedRmssdMs,
+    latestEstimatedRmssdMs,
+    loggedHistoryDaysCount,
+    parasympatheticTierLabel,
+    clinicalSummaryNote,
+  };
+}
+
+
 
 
 
