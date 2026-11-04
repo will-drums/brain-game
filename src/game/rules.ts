@@ -1893,7 +1893,9 @@ export function computeSanctuaryBloomEffect(params: {
   );
   const intensityScale = userIntensityPct / 100;
   const isTriggered =
-    completedStagesCount >= totalStages || Boolean(params.isBloomManuallyActive);
+    typeof params.isBloomManuallyActive === 'boolean'
+      ? params.isBloomManuallyActive
+      : completedStagesCount >= totalStages;
 
   const hasExplicitCrossfade =
     typeof params.crossfadeProgress === 'number' && Number.isFinite(params.crossfadeProgress);

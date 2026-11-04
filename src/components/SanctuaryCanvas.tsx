@@ -738,8 +738,9 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
 
     let currentCameraRotationRad = 0;
     let currentBloomCrossfadeProgress =
-      (stateRef.current.completedStagesCount ?? 0) >= SANCTUARY_STAGES.length ||
-      Boolean(stateRef.current.isSanctuaryBloomActive)
+      (typeof stateRef.current.isSanctuaryBloomActive === 'boolean'
+        ? stateRef.current.isSanctuaryBloomActive
+        : (stateRef.current.completedStagesCount ?? 0) >= SANCTUARY_STAGES.length)
         ? 1
         : 0;
 
@@ -1830,8 +1831,9 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         chimeHistory = createInitialChimeHistoryForNBack(renderAdaptiveScaling.effectiveNBackLevel);
       }
       const isTargetBloomActive =
-        (stateRef.current.completedStagesCount ?? 0) >= SANCTUARY_STAGES.length ||
-        Boolean(stateRef.current.isSanctuaryBloomActive);
+        typeof stateRef.current.isSanctuaryBloomActive === 'boolean'
+          ? stateRef.current.isSanctuaryBloomActive
+          : (stateRef.current.completedStagesCount ?? 0) >= SANCTUARY_STAGES.length;
       const crossfadeStep = stepSanctuaryBloomCrossfade({
         currentProgress: currentBloomCrossfadeProgress,
         targetActive: isTargetBloomActive,
@@ -1850,30 +1852,35 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         crossfadeProgress: currentBloomCrossfadeProgress,
       });
       currentCameraRotationRad = bloomEffect.cameraRotationRad;
-      canvas.dataset.sanctuaryBloom = bloomEffect.isTriggered ? 'active' : 'inactive';
-      canvas.dataset.bloomCrossfadeProgress = String(bloomEffect.crossfadeProgress);
-      canvas.dataset.bloomEasedCrossfade = String(bloomEffect.easedCrossfade);
-      canvas.dataset.bloomCrossfadePct = String(Math.round(bloomEffect.easedCrossfade * 100));
-      canvas.dataset.bloomIsTransitioning = bloomEffect.isTransitioning ? 'true' : 'false';
-      canvas.dataset.bloomDirection = crossfadeStep.direction;
-      canvas.dataset.cameraRotationDeg = String(bloomEffect.cameraRotationDeg);
-      canvas.dataset.bloomIntensityPct = String(bloomEffect.userIntensityPct);
-      canvas.dataset.bloomPresetId = bloomEffect.presetId;
-      canvas.dataset.bloomPrimaryHex = bloomEffect.colorPalette.primaryHex;
+      const setCanvasDataAttr = (key: string, val: string) => {
+        if (canvas.dataset[key] !== val) {
+          canvas.dataset[key] = val;
+        }
+      };
+      setCanvasDataAttr('sanctuaryBloom', bloomEffect.isTriggered ? 'active' : 'inactive');
+      setCanvasDataAttr('bloomCrossfadeProgress', String(bloomEffect.crossfadeProgress));
+      setCanvasDataAttr('bloomEasedCrossfade', String(bloomEffect.easedCrossfade));
+      setCanvasDataAttr('bloomCrossfadePct', String(Math.round(bloomEffect.easedCrossfade * 100)));
+      setCanvasDataAttr('bloomIsTransitioning', bloomEffect.isTransitioning ? 'true' : 'false');
+      setCanvasDataAttr('bloomDirection', crossfadeStep.direction);
+      setCanvasDataAttr('cameraRotationDeg', String(Math.round(bloomEffect.cameraRotationDeg)));
+      setCanvasDataAttr('bloomIntensityPct', String(bloomEffect.userIntensityPct));
+      setCanvasDataAttr('bloomPresetId', bloomEffect.presetId);
+      setCanvasDataAttr('bloomPrimaryHex', bloomEffect.colorPalette.primaryHex);
       const rhythmSyncState = computeCognitiveRhythmSyncState({
         config: stateRef.current.rhythmSyncConfig,
         elapsedSec: stageElapsedSec,
         defaultChimeIntervalSec: CHIME_INTERVAL_SEC,
         sampleCount: 56,
       });
-      canvas.dataset.effectiveNbackLevel = String(renderAdaptiveScaling.effectiveNBackLevel);
-      canvas.dataset.effectiveUfovWindowMs = String(renderAdaptiveScaling.effectiveUfovWindowMs);
-      canvas.dataset.runningFiveHrvAvg = String(renderAdaptiveScaling.runningFiveSessionHrvAvg);
-      canvas.dataset.rhythmSyncEnabled = rhythmSyncState.enabled ? 'true' : 'false';
-      canvas.dataset.rhythmSyncSource = rhythmSyncState.syncSource;
-      canvas.dataset.rhythmChimeIntervalSec = String(rhythmSyncState.effectiveChimeIntervalSec);
-      canvas.dataset.rhythmHeartRateBpm = String(rhythmSyncState.restingHeartRateBpm);
-      canvas.dataset.rhythmBreathingBpm = String(rhythmSyncState.breathingCadenceBpm);
+      setCanvasDataAttr('effectiveNbackLevel', String(renderAdaptiveScaling.effectiveNBackLevel));
+      setCanvasDataAttr('effectiveUfovWindowMs', String(renderAdaptiveScaling.effectiveUfovWindowMs));
+      setCanvasDataAttr('runningFiveHrvAvg', String(renderAdaptiveScaling.runningFiveSessionHrvAvg));
+      setCanvasDataAttr('rhythmSyncEnabled', rhythmSyncState.enabled ? 'true' : 'false');
+      setCanvasDataAttr('rhythmSyncSource', rhythmSyncState.syncSource);
+      setCanvasDataAttr('rhythmChimeIntervalSec', String(rhythmSyncState.effectiveChimeIntervalSec));
+      setCanvasDataAttr('rhythmHeartRateBpm', String(rhythmSyncState.restingHeartRateBpm));
+      setCanvasDataAttr('rhythmBreathingBpm', String(rhythmSyncState.breathingCadenceBpm));
 
       ctx.save();
       ctx.scale(currentDpr, currentDpr);
@@ -2939,7 +2946,9 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
   const activeBloomPresetConfig = getSanctuaryBloomPresetConfig(sanctuaryBloomPresetId);
   const clampedIntensityPct = clampSanctuaryBloomIntensityPct(sanctuaryBloomIntensityPct, 100);
   const isBloomModeTargetActive =
-    (completedStagesCount ?? 0) >= SANCTUARY_STAGES.length || Boolean(isSanctuaryBloomActive);
+    typeof isSanctuaryBloomActive === 'boolean'
+      ? isSanctuaryBloomActive
+      : (completedStagesCount ?? 0) >= SANCTUARY_STAGES.length;
   const targetCssCrossfadeOpacity = isBloomModeTargetActive
     ? Math.round(Math.min(0.42, (clampedIntensityPct / 100) * 0.36) * 1000) / 1000
     : 0;
@@ -2967,10 +2976,10 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         data-preset-id={activeBloomPresetConfig.id}
         data-target-opacity={targetCssCrossfadeOpacity}
         data-transition-duration-ms={SANCTUARY_BLOOM_CROSSFADE_DURATION_MS}
-        className="pointer-events-none fixed inset-0 z-[1] mix-blend-screen transition-opacity duration-[850ms] ease-in-out"
+        className="pointer-events-none fixed inset-0 z-[1] transition-opacity duration-[850ms] ease-in-out"
         style={{
           opacity: targetCssCrossfadeOpacity,
-          background: `radial-gradient(circle at 50% 46%, rgba(${activeBloomPresetConfig.stop0Rgb.join(', ')}, 0.52) 0%, rgba(${activeBloomPresetConfig.stop1Rgb.join(', ')}, 0.32) 44%, rgba(${activeBloomPresetConfig.stop2Rgb.join(', ')}, 0.14) 76%, rgba(9, 21, 16, 0) 100%)`,
+          background: `radial-gradient(circle at 50% 46%, rgba(${activeBloomPresetConfig.stop0Rgb.join(', ')}, 0.42) 0%, rgba(${activeBloomPresetConfig.stop1Rgb.join(', ')}, 0.24) 44%, rgba(${activeBloomPresetConfig.stop2Rgb.join(', ')}, 0.10) 76%, rgba(9, 21, 16, 0) 100%)`,
           transition: `opacity ${SANCTUARY_BLOOM_CROSSFADE_DURATION_MS}ms cubic-bezier(0.65, 0, 0.35, 1), background ${SANCTUARY_BLOOM_CROSSFADE_DURATION_MS}ms cubic-bezier(0.65, 0, 0.35, 1)`,
         }}
       />

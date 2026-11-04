@@ -122,9 +122,9 @@ test('stepSanctuaryBloomCrossfade and computeSanctuaryBloomEffect smoothly inter
   assert.equal(midFadeOut.isTransitioning, true);
   assert.equal(midFadeOut.direction, 'fading_out');
 
-  // Verify computeSanctuaryBloomEffect interpolates glade floor colors and alphas smoothly at 50% crossfade even when toggled OFF
+  // Verify computeSanctuaryBloomEffect interpolates glade floor colors and alphas smoothly at 50% crossfade even when toggled OFF after 4 stages
   const fadingOutState = computeSanctuaryBloomEffect({
-    completedStagesCount: 1,
+    completedStagesCount: 4,
     isBloomManuallyActive: false,
     intensityPct: 100,
     presetId: 'midnight_forest',
