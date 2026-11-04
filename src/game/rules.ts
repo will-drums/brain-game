@@ -3603,5 +3603,64 @@ export function computeCognitiveBloomImpactBreakdown(
   };
 }
 
+/**
+ * Interactive Tooltip State for the Sanctuary Bloom Intensity Slider
+ * Displays the exact intensity value (e.g., 'Intensity: 50%') and active preset context
+ * when the user hovers, drags, or focuses the Sanctuary Bloom intensity slider.
+ */
+export interface BloomSliderTooltipState {
+  isVisible: boolean;
+  intensityPct: number;
+  thumbOffsetPct: number;
+  primaryLabel: string;
+  presetLabel: string;
+  intensityTierLabel:
+    | 'Off (0%)'
+    | 'Subtle Glow'
+    | 'Balanced Bioluminescence'
+    | 'Vivid Saturation';
+  accentHex: string;
+  secondaryHex: string;
+}
+
+export function computeBloomSliderTooltipState(params: {
+  intensityPct: unknown;
+  presetId?: SanctuaryBloomPresetId | null;
+  isHovered?: boolean;
+  isDragging?: boolean;
+  isFocused?: boolean;
+}): BloomSliderTooltipState {
+  const intensityPct = clampSanctuaryBloomIntensityPct(
+    params.intensityPct,
+    DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT
+  );
+  const preset = getSanctuaryBloomPresetConfig(
+    params.presetId ?? DEFAULT_SANCTUARY_BLOOM_PRESET_ID
+  );
+  const isVisible = Boolean(params.isHovered || params.isDragging || params.isFocused);
+
+  let intensityTierLabel: BloomSliderTooltipState['intensityTierLabel'] =
+    'Balanced Bioluminescence';
+  if (intensityPct === 0) {
+    intensityTierLabel = 'Off (0%)';
+  } else if (intensityPct < 40) {
+    intensityTierLabel = 'Subtle Glow';
+  } else if (intensityPct >= 80) {
+    intensityTierLabel = 'Vivid Saturation';
+  }
+
+  return {
+    isVisible,
+    intensityPct,
+    thumbOffsetPct: intensityPct,
+    primaryLabel: `Intensity: ${intensityPct}%`,
+    presetLabel: preset.label,
+    intensityTierLabel,
+    accentHex: preset.primaryHex,
+    secondaryHex: preset.secondaryHex,
+  };
+}
+
+
 
 

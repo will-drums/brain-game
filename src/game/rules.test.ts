@@ -65,8 +65,52 @@ import {
   sanitizeGentleNotificationConfig,
   evaluateGentleHabitNotification,
   computeCognitiveBloomImpactBreakdown,
+  computeBloomSliderTooltipState,
   type ChimeSymbol,
 } from './rules';
+
+test('computeBloomSliderTooltipState formats Intensity: X% tooltip and tracks hover, drag, and focus states', () => {
+  const idle = computeBloomSliderTooltipState({
+    intensityPct: 50,
+    presetId: 'morning_glow',
+    isHovered: false,
+    isDragging: false,
+    isFocused: false,
+  });
+  assert.equal(idle.isVisible, false);
+  assert.equal(idle.primaryLabel, 'Intensity: 50%');
+  assert.equal(idle.thumbOffsetPct, 50);
+  assert.equal(idle.presetLabel, 'Morning Glow');
+  assert.equal(idle.intensityTierLabel, 'Balanced Bioluminescence');
+  assert.equal(idle.accentHex, '#F6E05E');
+
+  const hovered = computeBloomSliderTooltipState({
+    intensityPct: 50,
+    presetId: 'midnight_forest',
+    isHovered: true,
+  });
+  assert.equal(hovered.isVisible, true);
+  assert.equal(hovered.primaryLabel, 'Intensity: 50%');
+  assert.equal(hovered.presetLabel, 'Midnight Forest');
+  assert.equal(hovered.accentHex, '#9F7AEA');
+
+  const draggingHigh = computeBloomSliderTooltipState({
+    intensityPct: 92,
+    presetId: 'neural_zenith',
+    isDragging: true,
+  });
+  assert.equal(draggingHigh.isVisible, true);
+  assert.equal(draggingHigh.primaryLabel, 'Intensity: 92%');
+  assert.equal(draggingHigh.intensityTierLabel, 'Vivid Saturation');
+
+  const zeroState = computeBloomSliderTooltipState({
+    intensityPct: 0,
+    isFocused: true,
+  });
+  assert.equal(zeroState.isVisible, true);
+  assert.equal(zeroState.primaryLabel, 'Intensity: 0%');
+  assert.equal(zeroState.intensityTierLabel, 'Off (0%)');
+});
 
 test('computeCognitiveBloomImpactBreakdown deconstructs how N-Back accuracy vs UFOV response times and other mechanics contributed to the final Rejuvenation Score', () => {
   // 1. N-Back Dominant Session (High 2-Back accuracy 95% vs slower 1350ms UFOV response)

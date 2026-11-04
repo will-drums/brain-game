@@ -48,6 +48,7 @@ import {
   sanitizeGentleNotificationConfig,
   evaluateGentleHabitNotification,
   computeCognitiveBloomImpactBreakdown,
+  computeBloomSliderTooltipState,
   type GentleNotificationConfig,
   type SanctuaryBloomPresetId,
   type CognitiveRhythmSyncConfig,
@@ -1053,6 +1054,31 @@ export default function App() {
     });
   };
 
+  const [isBloomSliderHovered, setIsBloomSliderHovered] = useState(false);
+  const [isBloomSliderDragging, setIsBloomSliderDragging] = useState(false);
+  const [isBloomSliderFocused, setIsBloomSliderFocused] = useState(false);
+
+  useEffect(() => {
+    if (!isBloomSliderDragging) return;
+    const handlePointerEnd = () => setIsBloomSliderDragging(false);
+    window.addEventListener('pointerup', handlePointerEnd);
+    window.addEventListener('mouseup', handlePointerEnd);
+    window.addEventListener('touchend', handlePointerEnd);
+    return () => {
+      window.removeEventListener('pointerup', handlePointerEnd);
+      window.removeEventListener('mouseup', handlePointerEnd);
+      window.removeEventListener('touchend', handlePointerEnd);
+    };
+  }, [isBloomSliderDragging]);
+
+  const bloomSliderTooltip = computeBloomSliderTooltipState({
+    intensityPct: sanctuaryBloomIntensityPct,
+    presetId: sanctuaryBloomPresetId,
+    isHovered: isBloomSliderHovered,
+    isDragging: isBloomSliderDragging,
+    isFocused: isBloomSliderFocused,
+  });
+
   const handleChangeBloomIntensity = (e: React.ChangeEvent<HTMLInputElement>) => {
     const nextPct = clampSanctuaryBloomIntensityPct(
       Number(e.target.value),
@@ -2047,8 +2073,10 @@ export default function App() {
                   </div>
 
                   <div
-                    className="flex items-center gap-1 pl-1.5 border-l border-[#2C4C3E]"
-                    title={`Sanctuary Bloom Bioluminescence Intensity: ${sanctuaryBloomIntensityPct}% (${activeBloomPreset.label} · Persisted in localStorage)`}
+                    data-testid="sanctuary-bloom-slider-wrapper"
+                    onMouseEnter={() => setIsBloomSliderHovered(true)}
+                    onMouseLeave={() => setIsBloomSliderHovered(false)}
+                    className="relative flex items-center gap-1 pl-1.5 border-l border-[#2C4C3E]"
                   >
                     <label
                       htmlFor="sanctuary-bloom-intensity-slider"
@@ -2056,19 +2084,70 @@ export default function App() {
                     >
                       Sanctuary Bloom Bioluminescence Intensity
                     </label>
-                    <input
-                      id="sanctuary-bloom-intensity-slider"
-                      type="range"
-                      min={0}
-                      max={100}
-                      step={1}
-                      value={sanctuaryBloomIntensityPct}
-                      onChange={handleChangeBloomIntensity}
-                      data-testid="sanctuary-bloom-intensity-slider"
-                      aria-label="Sanctuary Bloom Bioluminescence Intensity"
-                      className="w-12 h-1.5 bg-[#0B1914] rounded-lg cursor-pointer"
-                      style={{ accentColor: activeBloomPreset.primaryHex }}
-                    />
+                    <div className="relative flex items-center">
+                      <input
+                        id="sanctuary-bloom-intensity-slider"
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={sanctuaryBloomIntensityPct}
+                        onChange={handleChangeBloomIntensity}
+                        onPointerDown={() => setIsBloomSliderDragging(true)}
+                        onMouseDown={() => setIsBloomSliderDragging(true)}
+                        onTouchStart={() => setIsBloomSliderDragging(true)}
+                        onFocus={() => setIsBloomSliderFocused(true)}
+                        onBlur={() => setIsBloomSliderFocused(false)}
+                        aria-describedby="sanctuary-bloom-intensity-tooltip"
+                        data-testid="sanctuary-bloom-intensity-slider"
+                        aria-label="Sanctuary Bloom Bioluminescence Intensity"
+                        className="w-14 h-1.5 bg-[#0B1914] rounded-lg cursor-pointer"
+                        style={{ accentColor: activeBloomPreset.primaryHex }}
+                      />
+
+                      {/* Interactive Floating Tooltip on Hover / Drag / Focus */}
+                      {bloomSliderTooltip.isVisible && (
+                        <div
+                          id="sanctuary-bloom-intensity-tooltip"
+                          role="tooltip"
+                          data-testid="sanctuary-bloom-intensity-tooltip"
+                          data-intensity-pct={bloomSliderTooltip.intensityPct}
+                          data-preset-label={bloomSliderTooltip.presetLabel}
+                          className="absolute top-full mt-2.5 z-50 px-2.5 py-1 rounded-lg bg-[#08130F]/95 border shadow-xl pointer-events-none whitespace-nowrap transition-all duration-75"
+                          style={{
+                            left: `${Math.max(10, Math.min(90, bloomSliderTooltip.thumbOffsetPct))}%`,
+                            transform: 'translateX(-50%)',
+                            borderColor: bloomSliderTooltip.accentHex,
+                          }}
+                        >
+                          <span
+                            className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-[#08130F]"
+                            style={{
+                              borderTop: `1px solid ${bloomSliderTooltip.accentHex}`,
+                              borderLeft: `1px solid ${bloomSliderTooltip.accentHex}`,
+                            }}
+                          />
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className="w-1.5 h-1.5 rounded-full shrink-0"
+                              style={{ backgroundColor: bloomSliderTooltip.accentHex }}
+                            />
+                            <span
+                              data-testid="bloom-slider-tooltip-label"
+                              className="text-[10.5px] font-mono font-bold tabular-nums text-[#F4EFE6]"
+                            >
+                              {bloomSliderTooltip.primaryLabel}
+                            </span>
+                          </div>
+                          <div
+                            data-testid="bloom-slider-tooltip-subtitle"
+                            className="text-[9px] font-mono text-[#A3B8B0]"
+                          >
+                            {bloomSliderTooltip.presetLabel} · {bloomSliderTooltip.intensityTierLabel}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                     <span
                       data-testid="sanctuary-bloom-intensity-value"
                       className="text-[10px] font-mono font-semibold tabular-nums w-7 text-right"
