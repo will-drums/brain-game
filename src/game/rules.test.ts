@@ -59,8 +59,81 @@ import {
   DEFAULT_COGNITIVE_RHYTHM_SYNC_CONFIG,
   sanitizeCognitiveRhythmSyncConfig,
   computeCognitiveRhythmSyncState,
+  GENTLE_NOTIFICATION_REMINDER_DELAY_MINUTES,
+  parseTimeHmToMinutes,
+  formatMinutesToTimeHm,
+  sanitizeGentleNotificationConfig,
+  evaluateGentleHabitNotification,
   type ChimeSymbol,
 } from './rules';
+
+test('evaluateGentleHabitNotification triggers 30 minutes after usual practice time when NSDR or Cognitive Reframing is unlogged and hides once completed', () => {
+  assert.equal(GENTLE_NOTIFICATION_REMINDER_DELAY_MINUTES, 30);
+  assert.equal(parseTimeHmToMinutes('15:00'), 900);
+  assert.equal(formatMinutesToTimeHm(930), '15:30');
+
+  // 1. 15 minutes after 15:00 usual practice (15:15 = 915m) -> should NOT trigger yet (15m remaining until +30m trigger)
+  const before30Min = evaluateGentleHabitNotification({
+    config: { enabled: true, usualPracticeTimeHm: '15:00', reminderDelayMinutes: 30 },
+    tracker: { dateIso: '2026-11-03', nsdrCompleted: false, cognitiveReframingCompleted: false },
+    todayIso: '2026-11-03',
+    currentMinutesOfDay: 15 * 60 + 15,
+  });
+  assert.equal(before30Min.isPastThirtyMinTrigger, false);
+  assert.equal(before30Min.shouldShowToast, false);
+  assert.equal(before30Min.triggerTimeHm, '15:30');
+  assert.equal(before30Min.minutesUntilTrigger, 15);
+  assert.equal(before30Min.missingExercises.length, 2);
+
+  // 2. Exactly 30 minutes after 15:00 usual practice (15:30 = 930m) with unlogged habits -> triggers toast!
+  const at30Min = evaluateGentleHabitNotification({
+    config: { enabled: true, usualPracticeTimeHm: '15:00', reminderDelayMinutes: 30 },
+    tracker: { dateIso: '2026-11-03', nsdrCompleted: false, cognitiveReframingCompleted: false },
+    todayIso: '2026-11-03',
+    currentMinutesOfDay: 15 * 60 + 30,
+  });
+  assert.equal(at30Min.isPastThirtyMinTrigger, true);
+  assert.equal(at30Min.shouldShowToast, true);
+  assert.deepEqual(at30Min.missingExercises, ['nsdr_protocol', 'cognitive_reframing']);
+  assert.ok(at30Min.toastMessage.includes('30+ min past your usual 15:00 practice time'));
+
+  // 3. When NSDR is logged, only Cognitive Reframing remains in missingExercises
+  const onlyReframingLeft = evaluateGentleHabitNotification({
+    config: { enabled: true, usualPracticeTimeHm: '15:00', reminderDelayMinutes: 30 },
+    tracker: { dateIso: '2026-11-03', nsdrCompleted: true, cognitiveReframingCompleted: false },
+    todayIso: '2026-11-03',
+    currentMinutesOfDay: 15 * 60 + 45,
+  });
+  assert.equal(onlyReframingLeft.shouldShowToast, true);
+  assert.deepEqual(onlyReframingLeft.missingExercises, ['cognitive_reframing']);
+  assert.ok(onlyReframingLeft.toastMessage.includes('Daily Cognitive Reframing'));
+
+  // 4. Once both NSDR and Cognitive Reframing are logged, shouldShowToast becomes false automatically
+  const allLogged = evaluateGentleHabitNotification({
+    config: { enabled: true, usualPracticeTimeHm: '15:00', reminderDelayMinutes: 30 },
+    tracker: { dateIso: '2026-11-03', nsdrCompleted: true, cognitiveReframingCompleted: true },
+    todayIso: '2026-11-03',
+    currentMinutesOfDay: 16 * 60,
+  });
+  assert.equal(allLogged.allHabitsLogged, true);
+  assert.equal(allLogged.shouldShowToast, false);
+
+  // 5. Dismissing for today suppresses the toast for todayIso
+  const dismissedToday = evaluateGentleHabitNotification({
+    config: {
+      enabled: true,
+      usualPracticeTimeHm: '15:00',
+      reminderDelayMinutes: 30,
+      dismissedForDateIso: '2026-11-03',
+    },
+    tracker: { dateIso: '2026-11-03', nsdrCompleted: false, cognitiveReframingCompleted: false },
+    todayIso: '2026-11-03',
+    currentMinutesOfDay: 16 * 60,
+  });
+  assert.equal(dismissedToday.isDismissedToday, true);
+  assert.equal(dismissedToday.shouldShowToast, false);
+  assert.ok(sanitizeGentleNotificationConfig({ usualPracticeTimeHm: '9:05' }).usualPracticeTimeHm === '09:05');
+});
 
 test('computeCognitiveRhythmSyncState calibrates N-Back chime interval to resting heart rate or breathing cadence and generates background waveform points', () => {
   // 1. Disabled state uses default 3.80s chime interval

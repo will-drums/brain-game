@@ -41,6 +41,13 @@ import {
   computeRunningFiveSessionHrvAverage,
   syncDailyHabitTrackerWithStreak,
   toggleDailyHabitExercise,
+  GENTLE_NOTIFICATION_STORAGE_KEY,
+  DEFAULT_GENTLE_NOTIFICATION_CONFIG,
+  USUAL_PRACTICE_TIME_PRESETS,
+  formatMinutesToTimeHm,
+  sanitizeGentleNotificationConfig,
+  evaluateGentleHabitNotification,
+  type GentleNotificationConfig,
   type SanctuaryBloomPresetId,
   type CognitiveRhythmSyncConfig,
   type CognitiveRhythmSyncSource,
@@ -516,6 +523,122 @@ export default function App() {
     },
     [dailyStreak]
   );
+
+  // Browser-Based Gentle Notification (+30m Post-Practice NSDR & Cognitive Reframing Reminder)
+  const [currentMinutesOfDay, setCurrentMinutesOfDay] = useState<number>(() => {
+    const now = new Date();
+    return now.getHours() * 60 + now.getMinutes();
+  });
+
+  const [gentleNotificationConfig, setGentleNotificationConfig] =
+    useState<GentleNotificationConfig>(() => {
+      const now = new Date();
+      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+      const defaultUsualHm =
+        nowMinutes >= 15 * 60 + 30
+          ? DEFAULT_GENTLE_NOTIFICATION_CONFIG.usualPracticeTimeHm
+          : formatMinutesToTimeHm((nowMinutes - 35 + 1440) % 1440);
+
+      if (typeof window !== 'undefined') {
+        try {
+          const raw = window.localStorage.getItem(GENTLE_NOTIFICATION_STORAGE_KEY);
+          if (raw) {
+            return sanitizeGentleNotificationConfig(JSON.parse(raw));
+          }
+        } catch {
+          // Ignore storage errors
+        }
+      }
+      const seeded = sanitizeGentleNotificationConfig({
+        ...DEFAULT_GENTLE_NOTIFICATION_CONFIG,
+        usualPracticeTimeHm: defaultUsualHm,
+      });
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(GENTLE_NOTIFICATION_STORAGE_KEY, JSON.stringify(seeded));
+        } catch {
+          // Ignore storage errors
+        }
+      }
+      return seeded;
+    });
+
+  const [forceGentleToastPreview, setForceGentleToastPreview] = useState(false);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      const now = new Date();
+      setCurrentMinutesOfDay(now.getHours() * 60 + now.getMinutes());
+    }, 30000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  const persistGentleNotificationConfig = useCallback((next: GentleNotificationConfig) => {
+    const sanitized = sanitizeGentleNotificationConfig(next);
+    setGentleNotificationConfig(sanitized);
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(GENTLE_NOTIFICATION_STORAGE_KEY, JSON.stringify(sanitized));
+      } catch {
+        // Ignore storage errors
+      }
+    }
+  }, []);
+
+  const handleUpdateUsualPracticeTimeHm = useCallback(
+    (nextTimeHm: string) => {
+      persistGentleNotificationConfig({
+        ...gentleNotificationConfig,
+        usualPracticeTimeHm: nextTimeHm,
+        dismissedForDateIso: null,
+        snoozedUntilMinutesOfDay: null,
+      });
+      soundEngine.playLightNote(587.33, 0.1);
+    },
+    [gentleNotificationConfig, persistGentleNotificationConfig]
+  );
+
+  const handleDismissGentleToastToday = useCallback(() => {
+    const todayIso = formatLocalDateIso();
+    setForceGentleToastPreview(false);
+    persistGentleNotificationConfig({
+      ...gentleNotificationConfig,
+      dismissedForDateIso: todayIso,
+    });
+  }, [gentleNotificationConfig, persistGentleNotificationConfig]);
+
+  const handleSnoozeGentleToast = useCallback(() => {
+    setForceGentleToastPreview(false);
+    persistGentleNotificationConfig({
+      ...gentleNotificationConfig,
+      snoozedUntilMinutesOfDay: (currentMinutesOfDay + 15) % 1440,
+    });
+    soundEngine.playLightNote(523.25, 0.1);
+  }, [currentMinutesOfDay, gentleNotificationConfig, persistGentleNotificationConfig]);
+
+  const handleToggleGentleReminderPreview = useCallback(
+    (e?: React.MouseEvent<HTMLButtonElement>) => {
+      if (e) e.currentTarget.blur();
+      setForceGentleToastPreview((prev) => !prev);
+      if (gentleNotificationConfig.dismissedForDateIso) {
+        persistGentleNotificationConfig({
+          ...gentleNotificationConfig,
+          dismissedForDateIso: null,
+          snoozedUntilMinutesOfDay: null,
+        });
+      }
+      soundEngine.playLightNote(659.25, 0.12);
+    },
+    [gentleNotificationConfig, persistGentleNotificationConfig]
+  );
+
+  const gentleNotificationEval = evaluateGentleHabitNotification({
+    config: gentleNotificationConfig,
+    tracker: dailyHabitTracker,
+    todayIso: formatLocalDateIso(),
+    currentMinutesOfDay,
+    forcePreview: forceGentleToastPreview,
+  });
 
   // HRV Coherence History (Last 10 Practice Sessions) persisted in localStorage
   const [hrvHistory, setHrvHistory] = useState<HrvSessionRecord[]>(() => {
@@ -1974,6 +2097,37 @@ export default function App() {
                 <button
                   type="button"
                   tabIndex={-1}
+                  data-testid="hud-gentle-reminder-btn"
+                  aria-label="Gentle Habit Notification (+30m Post-Practice NSDR & Reframing Reminder)"
+                  onClick={handleToggleGentleReminderPreview}
+                  className={`relative w-8 h-8 flex items-center justify-center rounded-lg border transition-colors shrink-0 cursor-pointer ${
+                    gentleNotificationEval.shouldShowToast
+                      ? 'bg-[#2B2112] text-[#F2B84B] border-[#F2B84B]'
+                      : gentleNotificationEval.allHabitsLogged
+                      ? 'bg-[#132A21] text-[#68D391] border-[#68D391]/50'
+                      : 'bg-[#132A21] hover:bg-[#1E3F32] text-[#F4EFE6] border-[#2C4C3E]'
+                  }`}
+                  title={`${gentleNotificationEval.statusBadgeLabel} — Usual Practice ${gentleNotificationEval.usualPracticeTimeHm} → +30m Trigger @ ${gentleNotificationEval.triggerTimeHm}`}
+                >
+                  <svg viewBox="0 0 24 24" className="w-4 h-4 fill-none stroke-current" strokeWidth="2">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                  </svg>
+                  {!gentleNotificationEval.allHabitsLogged && (
+                    <span
+                      className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full"
+                      style={{
+                        backgroundColor: gentleNotificationEval.shouldShowToast
+                          ? '#F2B84B'
+                          : '#4FD1C5',
+                      }}
+                    />
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  tabIndex={-1}
                   aria-label={isMuted ? 'Unmute Audio [M]' : 'Mute Audio [M]'}
                   onClick={handleToggleMute}
                   className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#132A21] hover:bg-[#1E3F32] text-[#F4EFE6] border border-[#2C4C3E] cursor-pointer"
@@ -2812,6 +2966,142 @@ export default function App() {
           soundEngine.playHarmonicChord('ufov');
         }}
       />
+
+      {/* 7. GENTLE HABIT NOTIFICATION TOAST (+30 Minutes Post-Practice NSDR & Reframing Reminder) */}
+      {gentleNotificationEval.shouldShowToast && !isCodexOpen && (
+        <aside
+          role="status"
+          aria-live="polite"
+          data-testid="gentle-habit-notification-toast"
+          data-usual-practice-time={gentleNotificationEval.usualPracticeTimeHm}
+          data-trigger-time={gentleNotificationEval.triggerTimeHm}
+          data-missing-count={gentleNotificationEval.missingExercises.length}
+          className="fixed bottom-36 right-4 z-40 w-[396px] max-w-[calc(100vw-2rem)] rounded-2xl bg-[#091510]/95 border border-[#F2B84B]/70 p-3.5 shadow-2xl backdrop-blur-md pointer-events-auto transition-all duration-300"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-2 h-2 rounded-full bg-[#F2B84B] shrink-0" />
+              <span
+                data-testid="gentle-toast-headline"
+                className="text-[10px] font-mono font-bold uppercase tracking-wide text-[#F2B84B] truncate"
+              >
+                {gentleNotificationEval.toastHeadline}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                data-testid="gentle-toast-snooze-btn"
+                onClick={handleSnoozeGentleToast}
+                className="px-2 py-0.5 rounded bg-[#132A21] hover:bg-[#1E3F32] text-[#A3B8B0] hover:text-[#F4EFE6] border border-[#2C4C3E] text-[9.5px] font-mono font-semibold transition-colors cursor-pointer"
+                title="Snooze gentle reminder for 15 minutes"
+              >
+                Snooze 15m
+              </button>
+              <button
+                type="button"
+                data-testid="gentle-toast-dismiss-btn"
+                aria-label="Dismiss Gentle Reminder for Today"
+                onClick={handleDismissGentleToastToday}
+                className="px-2 py-0.5 rounded bg-[#132A21] hover:bg-[#1E3F32] text-[#A3B8B0] hover:text-[#F4EFE6] border border-[#2C4C3E] text-[9.5px] font-mono font-semibold transition-colors cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+
+          <p
+            data-testid="gentle-toast-message"
+            className="mt-1.5 text-xs text-[#D5E2DC] leading-relaxed"
+          >
+            {gentleNotificationEval.toastMessage}
+          </p>
+
+          {/* Quick-Log Buttons for Unlogged NSDR & Cognitive Reframing Exercises */}
+          <div className="mt-2.5 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              data-testid="gentle-toast-log-nsdr-btn"
+              onClick={() => handleToggleDailyHabitExercise('nsdr_protocol')}
+              className={`flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-xl border text-left transition-colors cursor-pointer ${
+                dailyHabitTracker.nsdrCompleted
+                  ? 'bg-[#143325] border-[#68D391] text-[#68D391]'
+                  : 'bg-[#10241C] hover:bg-[#173529] border-[#4FD1C5]/60 text-[#F4EFE6]'
+              }`}
+            >
+              <div className="min-w-0">
+                <div className="text-[10.5px] font-mono font-bold truncate">
+                  {dailyHabitTracker.nsdrCompleted ? '✓ NSDR Logged' : 'Log 20m NSDR'}
+                </div>
+                <div className="text-[9px] font-mono text-[#A3B8B0] truncate">
+                  Dopamine Reset
+                </div>
+              </div>
+              <span className="text-[9.5px] font-mono font-bold px-1.5 py-0.5 rounded bg-[#091510]/70 text-[#4FD1C5] shrink-0">
+                {dailyHabitTracker.nsdrCompleted ? 'Done' : '+Log'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              data-testid="gentle-toast-log-reframing-btn"
+              onClick={() => handleToggleDailyHabitExercise('cognitive_reframing')}
+              className={`flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-xl border text-left transition-colors cursor-pointer ${
+                dailyHabitTracker.cognitiveReframingCompleted
+                  ? 'bg-[#143325] border-[#68D391] text-[#68D391]'
+                  : 'bg-[#10241C] hover:bg-[#173529] border-[#F2B84B]/60 text-[#F4EFE6]'
+              }`}
+            >
+              <div className="min-w-0">
+                <div className="text-[10.5px] font-mono font-bold truncate">
+                  {dailyHabitTracker.cognitiveReframingCompleted
+                    ? '✓ Reframing Logged'
+                    : 'Log 5m Reframing'}
+                </div>
+                <div className="text-[9px] font-mono text-[#A3B8B0] truncate">
+                  Prefrontal Reappraisal
+                </div>
+              </div>
+              <span className="text-[9.5px] font-mono font-bold px-1.5 py-0.5 rounded bg-[#091510]/70 text-[#F2B84B] shrink-0">
+                {dailyHabitTracker.cognitiveReframingCompleted ? 'Done' : '+Log'}
+              </span>
+            </button>
+          </div>
+
+          {/* Usual Daily Practice Time Calibration (+30m Trigger Schedule) */}
+          <div className="mt-2.5 pt-2 border-t border-[#1E352B] space-y-1.5">
+            <div className="flex items-center justify-between text-[9.5px] font-mono text-[#A3B8B0]">
+              <span>
+                Usual Daily Practice: <strong className="text-[#F4EFE6]">{gentleNotificationEval.usualPracticeTimeHm}</strong>
+              </span>
+              <span>
+                +30m Trigger: <strong className="text-[#F2B84B]">{gentleNotificationEval.triggerTimeHm}</strong>
+              </span>
+            </div>
+            <div className="grid grid-cols-5 gap-1">
+              {USUAL_PRACTICE_TIME_PRESETS.map((presetHm) => {
+                const isSelected = gentleNotificationEval.usualPracticeTimeHm === presetHm;
+                return (
+                  <button
+                    key={presetHm}
+                    type="button"
+                    data-testid={`gentle-toast-time-preset-${presetHm}`}
+                    onClick={() => handleUpdateUsualPracticeTimeHm(presetHm)}
+                    className={`py-0.5 rounded text-[9.5px] font-mono font-semibold border text-center transition-colors cursor-pointer ${
+                      isSelected
+                        ? 'bg-[#2B2112] text-[#F2B84B] border-[#F2B84B]'
+                        : 'bg-[#0E1E18] text-[#A3B8B0] border-[#233D32] hover:text-[#F4EFE6]'
+                    }`}
+                  >
+                    {presetHm}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </aside>
+      )}
     </main>
   );
 }

@@ -3098,3 +3098,230 @@ export function computeCognitiveRhythmSyncState(params: {
   };
 }
 
+/**
+ * Browser-Based 'Gentle Notification' Feature (+30 Minutes Post-Practice Habit Reminder)
+ * Evaluates whether 30 minutes have elapsed since the user's usual daily practice time
+ * and triggers a subtle toast notification reminding them to log their Non-Sleep Deep Rest (NSDR)
+ * or Daily Cognitive Reframing exercises if they haven't logged them yet today.
+ */
+export const GENTLE_NOTIFICATION_STORAGE_KEY = 'sylvan_synapse_gentle_notification_v1';
+export const GENTLE_NOTIFICATION_REMINDER_DELAY_MINUTES = 30;
+
+export interface GentleNotificationConfig {
+  enabled: boolean;
+  usualPracticeTimeHm: string; // "HH:MM" in 24-hour local time (e.g., "15:00")
+  reminderDelayMinutes: number; // default 30 minutes after usualPracticeTimeHm
+  dismissedForDateIso: string | null; // YYYY-MM-DD when user dismissed the toast for today
+  snoozedUntilMinutesOfDay: number | null; // minutes of day (0..1439) when snooze expires
+}
+
+export const DEFAULT_GENTLE_NOTIFICATION_CONFIG: GentleNotificationConfig = {
+  enabled: true,
+  usualPracticeTimeHm: '15:00',
+  reminderDelayMinutes: GENTLE_NOTIFICATION_REMINDER_DELAY_MINUTES,
+  dismissedForDateIso: null,
+  snoozedUntilMinutesOfDay: null,
+};
+
+export const USUAL_PRACTICE_TIME_PRESETS = ['09:00', '12:30', '15:00', '18:00', '20:30'] as const;
+
+export function parseTimeHmToMinutes(rawHm: unknown, fallbackMinutes = 15 * 60): number {
+  if (typeof rawHm !== 'string') return fallbackMinutes;
+  const match = /^(\d{1,2}):(\d{2})$/.exec(rawHm.trim());
+  if (!match) return fallbackMinutes;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (
+    !Number.isInteger(hours) ||
+    !Number.isInteger(minutes) ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return fallbackMinutes;
+  }
+  return hours * 60 + minutes;
+}
+
+export function formatMinutesToTimeHm(totalMinutes: number): string {
+  const normalized = ((Math.round(totalMinutes) % 1440) + 1440) % 1440;
+  const hh = Math.floor(normalized / 60);
+  const mm = normalized % 60;
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+export function sanitizeGentleNotificationConfig(
+  raw: unknown,
+  fallback: GentleNotificationConfig = DEFAULT_GENTLE_NOTIFICATION_CONFIG
+): GentleNotificationConfig {
+  if (!raw || typeof raw !== 'object') {
+    return { ...fallback };
+  }
+  const obj = raw as Partial<GentleNotificationConfig>;
+  const enabled = typeof obj.enabled === 'boolean' ? obj.enabled : fallback.enabled;
+  const usualMinutes = parseTimeHmToMinutes(
+    obj.usualPracticeTimeHm,
+    parseTimeHmToMinutes(fallback.usualPracticeTimeHm, 15 * 60)
+  );
+  const usualPracticeTimeHm = formatMinutesToTimeHm(usualMinutes);
+
+  const rawDelay =
+    typeof obj.reminderDelayMinutes === 'number'
+      ? obj.reminderDelayMinutes
+      : Number(obj.reminderDelayMinutes);
+  const reminderDelayMinutes = Number.isFinite(rawDelay)
+    ? Math.max(5, Math.min(180, Math.round(rawDelay)))
+    : fallback.reminderDelayMinutes;
+
+  const dismissedForDateIso =
+    typeof obj.dismissedForDateIso === 'string' && obj.dismissedForDateIso.trim().length > 0
+      ? obj.dismissedForDateIso.trim()
+      : null;
+
+  const snoozedUntilMinutesOfDay =
+    typeof obj.snoozedUntilMinutesOfDay === 'number' &&
+    Number.isFinite(obj.snoozedUntilMinutesOfDay)
+      ? Math.max(0, Math.min(1439, Math.round(obj.snoozedUntilMinutesOfDay)))
+      : null;
+
+  return {
+    enabled,
+    usualPracticeTimeHm,
+    reminderDelayMinutes,
+    dismissedForDateIso,
+    snoozedUntilMinutesOfDay,
+  };
+}
+
+export interface GentleHabitNotificationEvaluation {
+  shouldShowToast: boolean;
+  enabled: boolean;
+  usualPracticeTimeHm: string;
+  usualPracticeMinutesOfDay: number;
+  reminderDelayMinutes: number;
+  triggerMinutesOfDay: number;
+  triggerTimeHm: string;
+  currentMinutesOfDay: number;
+  currentTimeHm: string;
+  minutesSinceUsualPractice: number;
+  minutesUntilTrigger: number;
+  isPastThirtyMinTrigger: boolean;
+  isDismissedToday: boolean;
+  isSnoozed: boolean;
+  allHabitsLogged: boolean;
+  nsdrPending: boolean;
+  cognitiveReframingPending: boolean;
+  missingExercises: DailyHabitExerciseId[];
+  missingExerciseLabels: string[];
+  toastHeadline: string;
+  toastMessage: string;
+  clinicalContextNote: string;
+  statusBadgeLabel: string;
+}
+
+export function evaluateGentleHabitNotification(params: {
+  config?: Partial<GentleNotificationConfig> | null;
+  tracker?: Partial<DailyHabitTrackerState> | null;
+  todayIso: string;
+  currentMinutesOfDay: number;
+  forcePreview?: boolean;
+}): GentleHabitNotificationEvaluation {
+  const config = sanitizeGentleNotificationConfig(params.config);
+  const safeCurrentMinutes =
+    ((Math.round(Number(params.currentMinutesOfDay) || 0) % 1440) + 1440) % 1440;
+  const currentTimeHm = formatMinutesToTimeHm(safeCurrentMinutes);
+
+  const usualPracticeMinutesOfDay = parseTimeHmToMinutes(config.usualPracticeTimeHm, 15 * 60);
+  const triggerMinutesOfDay =
+    (usualPracticeMinutesOfDay + config.reminderDelayMinutes) % 1440;
+  const triggerTimeHm = formatMinutesToTimeHm(triggerMinutesOfDay);
+
+  const nsdrPending = !Boolean(params.tracker?.nsdrCompleted);
+  const cognitiveReframingPending = !Boolean(params.tracker?.cognitiveReframingCompleted);
+  const missingExercises: DailyHabitExerciseId[] = [];
+  const missingExerciseLabels: string[] = [];
+
+  if (nsdrPending) {
+    missingExercises.push('nsdr_protocol');
+    missingExerciseLabels.push('20m Non-Sleep Deep Rest (NSDR)');
+  }
+  if (cognitiveReframingPending) {
+    missingExercises.push('cognitive_reframing');
+    missingExerciseLabels.push('5m Daily Cognitive Reframing');
+  }
+
+  const allHabitsLogged = missingExercises.length === 0;
+  const rawDiff = safeCurrentMinutes - usualPracticeMinutesOfDay;
+  const minutesSinceUsualPractice =
+    rawDiff < 0 && usualPracticeMinutesOfDay - safeCurrentMinutes > 12 * 60
+      ? safeCurrentMinutes + 1440 - usualPracticeMinutesOfDay
+      : rawDiff;
+  const isPastThirtyMinTrigger = minutesSinceUsualPractice >= config.reminderDelayMinutes;
+  const minutesUntilTrigger = isPastThirtyMinTrigger
+    ? 0
+    : Math.max(0, config.reminderDelayMinutes - minutesSinceUsualPractice);
+
+  const isDismissedToday = Boolean(
+    config.dismissedForDateIso && config.dismissedForDateIso === params.todayIso
+  );
+  const isSnoozed = Boolean(
+    config.snoozedUntilMinutesOfDay !== null &&
+      safeCurrentMinutes < config.snoozedUntilMinutesOfDay
+  );
+
+  const shouldShowToast = allHabitsLogged
+    ? false
+    : Boolean(params.forcePreview) ||
+      (config.enabled && isPastThirtyMinTrigger && !isDismissedToday && !isSnoozed);
+
+  const toastHeadline = `Gentle Reminder · +${config.reminderDelayMinutes}m Post-Practice`;
+  let toastMessage = '';
+  if (allHabitsLogged) {
+    toastMessage =
+      'Both Non-Sleep Deep Rest (NSDR) and Daily Cognitive Reframing are logged for today. Synaptic consolidation complete.';
+  } else if (nsdrPending && cognitiveReframingPending) {
+    toastMessage = `It is ${config.reminderDelayMinutes}+ min past your usual ${config.usualPracticeTimeHm} practice time (${triggerTimeHm} trigger). Complete & log your NSDR or Cognitive Reframing exercises to consolidate today’s neuroplasticity.`;
+  } else if (nsdrPending) {
+    toastMessage = `It is ${config.reminderDelayMinutes}+ min past your usual ${config.usualPracticeTimeHm} practice time. Complete & log your 20m Non-Sleep Deep Rest (NSDR) session to replenish striatal dopamine.`;
+  } else {
+    toastMessage = `It is ${config.reminderDelayMinutes}+ min past your usual ${config.usualPracticeTimeHm} practice time. Complete & log your 5m Daily Cognitive Reframing exercise to buffer prefrontal-amygdala reactivity.`;
+  }
+
+  const clinicalContextNote =
+    'Kjaer et al. (2002) & Ochsner et al. (2005): Logging NSDR & Cognitive Reframing within 30–60m post-practice locks in hippocampal replay and vagal tone.';
+
+  const statusBadgeLabel = allHabitsLogged
+    ? 'Habits 2/2 Logged'
+    : shouldShowToast
+    ? `Reminder Active · ${missingExercises.length} Pending`
+    : `Reminder @ ${triggerTimeHm} (+${config.reminderDelayMinutes}m)`;
+
+  return {
+    shouldShowToast,
+    enabled: config.enabled,
+    usualPracticeTimeHm: config.usualPracticeTimeHm,
+    usualPracticeMinutesOfDay,
+    reminderDelayMinutes: config.reminderDelayMinutes,
+    triggerMinutesOfDay,
+    triggerTimeHm,
+    currentMinutesOfDay: safeCurrentMinutes,
+    currentTimeHm,
+    minutesSinceUsualPractice,
+    minutesUntilTrigger,
+    isPastThirtyMinTrigger,
+    isDismissedToday,
+    isSnoozed,
+    allHabitsLogged,
+    nsdrPending,
+    cognitiveReframingPending,
+    missingExercises,
+    missingExerciseLabels,
+    toastHeadline,
+    toastMessage,
+    clinicalContextNote,
+    statusBadgeLabel,
+  };
+}
+
+
