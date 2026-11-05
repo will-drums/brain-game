@@ -408,61 +408,80 @@ test('stepSanctuaryBloomCrossfade and computeSanctuaryBloomEffect smoothly inter
   assert.ok(fadingOutState.statusBadgeText.includes('FADING OUT'));
 });
 
-test('computeDailyHabitDurationProgress calculates daily duration goals, logged minutes, and progress bar percentages for NSDR and Cognitive Reframing', () => {
-  assert.equal(clampHabitDurationGoalMinutes('nsdr_protocol', 25), 25);
+test('computeDailyHabitDurationProgress calculates daily duration goals (including 20, 30, 45 min), logged minutes, and circular progress ring metrics for NSDR and Cognitive Reframing', () => {
+  assert.equal(clampHabitDurationGoalMinutes('nsdr_protocol', 20), 20);
+  assert.equal(clampHabitDurationGoalMinutes('nsdr_protocol', 30), 30);
+  assert.equal(clampHabitDurationGoalMinutes('nsdr_protocol', 45), 45);
   assert.equal(clampHabitDurationGoalMinutes('nsdr_protocol', 1), 5);
-  assert.equal(clampHabitDurationGoalMinutes('nsdr_protocol', 99), 40);
-  assert.equal(clampHabitDurationGoalMinutes('cognitive_reframing', 10), 10);
+  assert.equal(clampHabitDurationGoalMinutes('nsdr_protocol', 99), 60);
+  assert.equal(clampHabitDurationGoalMinutes('cognitive_reframing', 20), 20);
+  assert.equal(clampHabitDurationGoalMinutes('cognitive_reframing', 30), 30);
+  assert.equal(clampHabitDurationGoalMinutes('cognitive_reframing', 45), 45);
   assert.equal(clampHabitDurationGoalMinutes('cognitive_reframing', 0), 3);
-  assert.equal(clampHabitDurationGoalMinutes('cognitive_reframing', 45), 20);
+  assert.equal(clampHabitDurationGoalMinutes('cognitive_reframing', 99), 60);
 
   const sanitized = sanitizeDailyHabitDurationGoalsConfig({
-    nsdrGoalMinutes: 30,
-    cognitiveReframingGoalMinutes: 10,
-    nsdrLoggedMinutes: 15,
-    cognitiveReframingLoggedMinutes: 5,
+    nsdrGoalMinutes: 45,
+    cognitiveReframingGoalMinutes: 30,
+    nsdrLoggedMinutes: 20,
+    cognitiveReframingLoggedMinutes: 15,
   });
-  assert.equal(sanitized.nsdrGoalMinutes, 30);
-  assert.equal(sanitized.cognitiveReframingGoalMinutes, 10);
-  assert.equal(sanitized.nsdrLoggedMinutes, 15);
-  assert.equal(sanitized.cognitiveReframingLoggedMinutes, 5);
+  assert.equal(sanitized.nsdrGoalMinutes, 45);
+  assert.equal(sanitized.cognitiveReframingGoalMinutes, 30);
+  assert.equal(sanitized.nsdrLoggedMinutes, 20);
+  assert.equal(sanitized.cognitiveReframingLoggedMinutes, 15);
 
-  // Partial progress toward custom goals (15/30 min NSDR = 50%, 5/10 min Reframing = 50%)
+  // Partial progress toward custom goals (15/30 min NSDR = 50%, 15/30 min Reframing = 50%)
   const partialProgress = computeDailyHabitDurationProgress({
     nsdrCompleted: false,
     cognitiveReframingCompleted: false,
     nsdrGoalMinutes: 30,
-    cognitiveReframingGoalMinutes: 10,
+    cognitiveReframingGoalMinutes: 30,
     nsdrLoggedMinutes: 15,
-    cognitiveReframingLoggedMinutes: 5,
+    cognitiveReframingLoggedMinutes: 15,
   });
   assert.equal(partialProgress.nsdr.goalMinutes, 30);
   assert.equal(partialProgress.nsdr.loggedMinutes, 15);
   assert.equal(partialProgress.nsdr.progressPct, 50);
   assert.equal(partialProgress.nsdr.remainingMinutes, 15);
   assert.equal(partialProgress.nsdr.isGoalMet, false);
+  assert.ok(partialProgress.nsdr.goalPresetsMinutes.includes(20));
+  assert.ok(partialProgress.nsdr.goalPresetsMinutes.includes(30));
+  assert.ok(partialProgress.nsdr.goalPresetsMinutes.includes(45));
+  assert.equal(partialProgress.nsdr.circularRing.progressPct, 50);
+  assert.equal(partialProgress.nsdr.circularRing.sweepAngleDeg, 180);
+  assert.ok(partialProgress.nsdr.circularRing.strokeDashoffsetPx > 100 && partialProgress.nsdr.circularRing.strokeDashoffsetPx < 120);
   assert.ok(partialProgress.nsdr.statusLabel.includes('15/30 min (50%)'));
 
-  assert.equal(partialProgress.cognitiveReframing.goalMinutes, 10);
-  assert.equal(partialProgress.cognitiveReframing.loggedMinutes, 5);
+  assert.equal(partialProgress.cognitiveReframing.goalMinutes, 30);
+  assert.equal(partialProgress.cognitiveReframing.loggedMinutes, 15);
   assert.equal(partialProgress.cognitiveReframing.progressPct, 50);
   assert.equal(partialProgress.cognitiveReframing.isGoalMet, false);
+  assert.ok(partialProgress.cognitiveReframing.goalPresetsMinutes.includes(20));
+  assert.ok(partialProgress.cognitiveReframing.goalPresetsMinutes.includes(30));
+  assert.ok(partialProgress.cognitiveReframing.goalPresetsMinutes.includes(45));
+  assert.equal(partialProgress.cognitiveReframing.circularRing.progressPct, 50);
+  assert.equal(partialProgress.cognitiveReframing.circularRing.sweepAngleDeg, 180);
   assert.equal(partialProgress.combinedProgressPct, 50);
+  assert.equal(partialProgress.combinedCircularRing.progressPct, 50);
   assert.equal(partialProgress.bothGoalsMet, false);
 
-  // Full goal completion when habits are toggled complete
+  // Full goal completion when habits are toggled complete (e.g., 45m NSDR and 20m Reframing)
   const completedProgress = computeDailyHabitDurationProgress({
     nsdrCompleted: true,
     cognitiveReframingCompleted: true,
-    nsdrGoalMinutes: 25,
-    cognitiveReframingGoalMinutes: 8,
+    nsdrGoalMinutes: 45,
+    cognitiveReframingGoalMinutes: 20,
   });
-  assert.equal(completedProgress.nsdr.loggedMinutes, 25);
+  assert.equal(completedProgress.nsdr.loggedMinutes, 45);
   assert.equal(completedProgress.nsdr.progressPct, 100);
   assert.equal(completedProgress.nsdr.isGoalMet, true);
-  assert.equal(completedProgress.cognitiveReframing.loggedMinutes, 8);
+  assert.equal(completedProgress.nsdr.circularRing.strokeDashoffsetPx, 0);
+  assert.equal(completedProgress.nsdr.circularRing.sweepAngleDeg, 360);
+  assert.equal(completedProgress.cognitiveReframing.loggedMinutes, 20);
   assert.equal(completedProgress.cognitiveReframing.progressPct, 100);
   assert.equal(completedProgress.cognitiveReframing.isGoalMet, true);
+  assert.equal(completedProgress.cognitiveReframing.circularRing.strokeDashoffsetPx, 0);
   assert.equal(completedProgress.combinedProgressPct, 100);
   assert.equal(completedProgress.bothGoalsMet, true);
 });

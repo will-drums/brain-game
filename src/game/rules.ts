@@ -4385,13 +4385,13 @@ export const DAILY_HABIT_DURATION_GOALS_STORAGE_KEY =
 
 export const DEFAULT_NSDR_DURATION_GOAL_MINUTES = 20;
 export const MIN_NSDR_DURATION_GOAL_MINUTES = 5;
-export const MAX_NSDR_DURATION_GOAL_MINUTES = 40;
-export const NSDR_DURATION_GOAL_PRESETS_MINUTES: readonly number[] = [10, 15, 20, 30];
+export const MAX_NSDR_DURATION_GOAL_MINUTES = 60;
+export const NSDR_DURATION_GOAL_PRESETS_MINUTES: readonly number[] = [10, 15, 20, 30, 45];
 
 export const DEFAULT_REFRAMING_DURATION_GOAL_MINUTES = 5;
 export const MIN_REFRAMING_DURATION_GOAL_MINUTES = 3;
-export const MAX_REFRAMING_DURATION_GOAL_MINUTES = 20;
-export const REFRAMING_DURATION_GOAL_PRESETS_MINUTES: readonly number[] = [3, 5, 10, 15];
+export const MAX_REFRAMING_DURATION_GOAL_MINUTES = 60;
+export const REFRAMING_DURATION_GOAL_PRESETS_MINUTES: readonly number[] = [5, 10, 20, 30, 45];
 
 export interface DailyHabitDurationGoalsConfig {
   nsdrGoalMinutes: number;
@@ -4404,6 +4404,53 @@ export const DEFAULT_DAILY_HABIT_DURATION_GOALS: DailyHabitDurationGoalsConfig =
   nsdrGoalMinutes: DEFAULT_NSDR_DURATION_GOAL_MINUTES,
   cognitiveReframingGoalMinutes: DEFAULT_REFRAMING_DURATION_GOAL_MINUTES,
 };
+
+export interface DailyHabitCircularRingMetrics {
+  sizePx: number;
+  centerPx: number;
+  radiusPx: number;
+  strokeWidthPx: number;
+  circumferencePx: number;
+  strokeDashoffsetPx: number;
+  filledArcPx: number;
+  sweepAngleDeg: number;
+  progressPct: number;
+  activeStrokeHex: string;
+  trackStrokeHex: string;
+}
+
+export function computeHabitCircularRingMetrics(params: {
+  progressPct: number;
+  isGoalMet: boolean;
+  accentHex: string;
+  sizePx?: number;
+  radiusPx?: number;
+  strokeWidthPx?: number;
+}): DailyHabitCircularRingMetrics {
+  const sizePx = params.sizePx ?? 88;
+  const centerPx = sizePx / 2;
+  const radiusPx = params.radiusPx ?? 35;
+  const strokeWidthPx = params.strokeWidthPx ?? 7;
+  const clampedPct = Math.max(0, Math.min(100, Math.round(params.progressPct)));
+  const circumferencePx = Number((2 * Math.PI * radiusPx).toFixed(2));
+  const filledArcPx = Number(((circumferencePx * clampedPct) / 100).toFixed(2));
+  const strokeDashoffsetPx = Number((circumferencePx - filledArcPx).toFixed(2));
+  const sweepAngleDeg = Math.round((clampedPct / 100) * 360);
+  const activeStrokeHex = params.isGoalMet ? '#68D391' : params.accentHex;
+  return {
+    sizePx,
+    centerPx,
+    radiusPx,
+    strokeWidthPx,
+    circumferencePx,
+    strokeDashoffsetPx,
+    filledArcPx,
+    sweepAngleDeg,
+    progressPct: clampedPct,
+    activeStrokeHex,
+    trackStrokeHex: '#162C23',
+  };
+}
 
 export interface DailyHabitDurationProgressItem {
   exerciseId: DailyHabitExerciseId;
@@ -4420,6 +4467,7 @@ export interface DailyHabitDurationProgressItem {
   incrementMinutes: number;
   goalPresetsMinutes: readonly number[];
   accentHex: string;
+  circularRing: DailyHabitCircularRingMetrics;
 }
 
 export interface DailyHabitDurationProgressSummary {
@@ -4430,6 +4478,7 @@ export interface DailyHabitDurationProgressSummary {
   totalLoggedMinutes: number;
   combinedProgressPct: number;
   bothGoalsMet: boolean;
+  combinedCircularRing: DailyHabitCircularRingMetrics;
 }
 
 export function clampHabitDurationGoalMinutes(
@@ -4571,6 +4620,15 @@ export function computeDailyHabitDurationProgress(params: {
       ? `✓ Target duration achieved (${loggedMinutes}m logged vs. ${goalMinutes}m goal)`
       : `${remainingMinutes} min remaining to reach ${goalMinutes} min daily goal`;
 
+    const circularRing = computeHabitCircularRingMetrics({
+      progressPct,
+      isGoalMet,
+      accentHex,
+      sizePx: 88,
+      radiusPx: 35,
+      strokeWidthPx: 7,
+    });
+
     return {
       exerciseId,
       goalMinutes,
@@ -4586,6 +4644,7 @@ export function computeDailyHabitDurationProgress(params: {
       incrementMinutes,
       goalPresetsMinutes,
       accentHex,
+      circularRing,
     };
   };
 
@@ -4607,8 +4666,8 @@ export function computeDailyHabitDurationProgress(params: {
     cognitiveReframingLoggedMinutes,
     MIN_REFRAMING_DURATION_GOAL_MINUTES,
     MAX_REFRAMING_DURATION_GOAL_MINUTES,
-    1,
-    2,
+    5,
+    5,
     REFRAMING_DURATION_GOAL_PRESETS_MINUTES,
     '#B794F4'
   );
@@ -4621,6 +4680,15 @@ export function computeDailyHabitDurationProgress(params: {
     0,
     Math.min(100, Math.round((totalLoggedMinutes / Math.max(1, totalGoalMinutes)) * 100))
   );
+  const bothGoalsMet = nsdr.isGoalMet && cognitiveReframing.isGoalMet;
+  const combinedCircularRing = computeHabitCircularRingMetrics({
+    progressPct: combinedProgressPct,
+    isGoalMet: bothGoalsMet,
+    accentHex: '#4FD1C5',
+    sizePx: 54,
+    radiusPx: 21,
+    strokeWidthPx: 5,
+  });
 
   return {
     nsdr,
@@ -4632,7 +4700,8 @@ export function computeDailyHabitDurationProgress(params: {
     totalGoalMinutes,
     totalLoggedMinutes,
     combinedProgressPct,
-    bothGoalsMet: nsdr.isGoalMet && cognitiveReframing.isGoalMet,
+    bothGoalsMet,
+    combinedCircularRing,
   };
 }
 
