@@ -33,6 +33,9 @@ import {
   computeWeeklyCognitiveGoalsProgress,
   CLINICAL_CODEX_EXIT_DURATION_MS,
   computeCodexModalAnimationState,
+  computeCodexSectionCascadeConfig,
+  computeAllCodexSectionCascades,
+  type CodexSectionCascadeId,
   DEFAULT_PRIOR_SIX_DAYS_HABIT_HISTORY,
   computeWeeklyHabitCompliance,
   DAILY_HABIT_DURATION_GOALS_STORAGE_KEY,
@@ -160,6 +163,20 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
 
   const modalAnimState = computeCodexModalAnimationState(effectiveTransitionPhase);
   const shouldRenderModal = modalAnimState.shouldRender;
+  const [cascadeReplayCount, setCascadeReplayCount] = useState<number>(0);
+
+  const sectionCascades = computeAllCodexSectionCascades(effectiveTransitionPhase);
+  const getSectionCascadeProps = (sectionId: CodexSectionCascadeId) => {
+    const cfg = sectionCascades.byId[sectionId];
+    return {
+      'data-cascade-section': cfg.sectionId,
+      'data-cascade-label': cfg.label,
+      'data-cascade-index': cfg.orderIndex,
+      'data-cascade-delay-ms': cfg.delayMs,
+      'data-cascade-duration-ms': cfg.durationMs,
+      style: cfg.styleVars as React.CSSProperties,
+    };
+  };
 
   // Personal Weekly Cognitive Goals (N-Back Accuracy % & UFOV Speed ms) persisted in localStorage
   const [weeklyGoalsConfig, setWeeklyGoalsConfig] = useState<WeeklyCognitiveGoalsConfig>(() => {
@@ -1222,40 +1239,112 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
         data-animation-phase={modalAnimState.phase}
         data-translate-y-px={modalAnimState.panelTranslateYpx}
         data-scale={modalAnimState.panelScale}
-        className={`w-full max-w-4xl max-h-[88vh] overflow-y-auto rounded-2xl bg-[#10231C] border border-[#2C4C3E] shadow-2xl p-6 md:p-8 text-[#F4EFE6] ${modalAnimState.panelClassName}`}
+        className={`w-full max-w-5xl max-h-[88vh] overflow-y-auto rounded-2xl bg-[#10231C] border border-[#2C4C3E] shadow-2xl px-6 pb-6 md:px-8 md:pb-8 text-[#F4EFE6] ${modalAnimState.panelClassName}`}
       >
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pb-6 border-b border-[#233D32]">
-          <div className="min-w-0">
-            <p className="text-xs font-mono tracking-wider uppercase text-[#68D391]">
-              Enterprise Digital Therapeutics (DTx) · Biofeedback &amp; Neuroplasticity Telemetry
-            </p>
-            <h2
-              id="clinical-codex-title"
-              className="mt-1 text-xl md:text-2xl font-display font-semibold text-[#F4EFE6]"
-            >
-              Clinical Research Codex &amp; Longitudinal Telemetry
-            </h2>
+        <div
+          data-testid="codex-sticky-header"
+          className="sticky top-0 z-30 -mx-6 md:-mx-8 px-6 pt-4 pb-3 md:px-8 md:pt-5 bg-[#10231C] border-b border-[#233D32] shadow-lg space-y-2.5"
+        >
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-mono tracking-wider uppercase text-[#68D391]">
+                Enterprise Digital Therapeutics (DTx) · Biofeedback &amp; Neuroplasticity Telemetry
+              </p>
+              <h2
+                id="clinical-codex-title"
+                className="mt-0.5 text-xl md:text-2xl font-display font-semibold text-[#F4EFE6]"
+              >
+                Clinical Research Codex &amp; Longitudinal Telemetry
+              </h2>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                type="button"
+                data-testid="codex-replay-cascade-btn"
+                onClick={() => setCascadeReplayCount((prev) => prev + 1)}
+                title="Replay staggered panel-by-panel entry cascade across all Clinical Codex sections"
+                className="px-3 py-2 rounded-lg bg-[#132C22] hover:bg-[#1B3E30] text-[#68D391] border border-[#2C4C3E] text-xs font-mono font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                ✦ Cascade ({sectionCascades.items.length} Panels · {sectionCascades.staggerStepMs}ms)
+              </button>
+              <button
+                type="button"
+                data-testid="export-dtx-telemetry-btn"
+                onClick={handleExportDtxTelemetry}
+                className="px-3.5 py-2 rounded-lg bg-[#152E24] hover:bg-[#1E3F32] text-xs font-mono font-semibold text-[#4FD1C5] border border-[#2C4C3E] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                {exportStatus || '⇩ Export DTx Telemetry [JSON]'}
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close Clinical Evidence Codex"
+                className="px-4 py-2 rounded-lg bg-[#1A352B] hover:bg-[#24473A] text-sm font-medium text-[#F4EFE6] border border-[#2C4C3E] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                Close Codex [Esc]
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-2.5 shrink-0">
-            <button
-              type="button"
-              data-testid="export-dtx-telemetry-btn"
-              onClick={handleExportDtxTelemetry}
-              className="px-3.5 py-2 rounded-lg bg-[#152E24] hover:bg-[#1E3F32] text-xs font-mono font-semibold text-[#4FD1C5] border border-[#2C4C3E] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              {exportStatus || '⇩ Export DTx Telemetry [JSON]'}
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close Clinical Evidence Codex"
-              className="px-4 py-2 rounded-lg bg-[#1A352B] hover:bg-[#24473A] text-sm font-medium text-[#F4EFE6] border border-[#2C4C3E] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              Close Codex [Esc]
-            </button>
-          </div>
+
+          {/* Quick-Jump Clinical Section Navigation Strip */}
+          <nav
+            aria-label="Clinical Codex Section Navigation"
+            data-testid="codex-quick-jump-nav"
+            className="flex flex-wrap items-center gap-1.5"
+          >
+            {[
+              { label: '10-Session HRV', targetTestId: 'clinical-codex-hrv-chart' },
+              { label: 'Bloom Settings', targetTestId: 'codex-sanctuary-bloom-intensity-trend-section' },
+              { label: '30d Habit Heatmap', targetTestId: 'habit-completion-heatmap-section' },
+              { label: 'Habit Tracker', targetTestId: 'daily-habit-tracker-panel' },
+              { label: '6M Reserve Forecast', targetTestId: 'clinical-codex-neuro-projection-chart' },
+              { label: 'Cognitive Goals', targetTestId: 'clinical-codex-cognitive-goals' },
+              { label: 'Research Notes', targetTestId: 'codex-research-notes-section' },
+            ].map((item) => (
+              <button
+                key={item.targetTestId}
+                type="button"
+                data-testid={`codex-jump-${item.targetTestId}`}
+                onClick={() => {
+                  const panel = document.querySelector('[data-testid="clinical-codex-panel"]');
+                  const target = document.querySelector(
+                    `[data-testid="${item.targetTestId}"]`
+                  );
+                  if (panel instanceof HTMLElement && target instanceof HTMLElement) {
+                    const stickyHeaderEl = panel.querySelector(
+                      '[data-testid="codex-sticky-header"]'
+                    );
+                    const stickyHeaderOffset =
+                      stickyHeaderEl instanceof HTMLElement
+                        ? stickyHeaderEl.getBoundingClientRect().height + 14
+                        : 128;
+                    const panelRect = panel.getBoundingClientRect();
+                    const targetRect = target.getBoundingClientRect();
+                    panel.scrollTo({
+                      top: Math.max(
+                        0,
+                        panel.scrollTop + (targetRect.top - panelRect.top) - stickyHeaderOffset
+                      ),
+                      behavior: 'auto',
+                    });
+                  }
+                }}
+                className="px-2.5 py-1 rounded-md bg-[#0B1914] hover:bg-[#163227] text-[#A3B8B0] hover:text-[#F4EFE6] border border-[#233D32] text-[10.5px] font-mono font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
         </div>
 
+        <div
+          key={`codex-cascade-stage-${cascadeReplayCount}`}
+          data-testid="codex-cascade-sections-container"
+          data-cascade-count={sectionCascades.items.length}
+          data-cascade-step-ms={sectionCascades.staggerStepMs}
+          data-cascade-span-ms={sectionCascades.totalCascadeSpanMs}
+          data-cascade-replay-count={cascadeReplayCount}
+        >
         {/* 1. Recharts 10-Session HRV Coherence Trend Line Chart (Last 10 Practice Sessions from HRV_HISTORY_STORAGE_KEY) */}
         <section
           aria-labelledby="hrv-chart-heading"
@@ -1266,7 +1355,8 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
           data-trend-delta={tenSessionHrvChart.trendDelta}
           data-linear-slope={tenSessionHrvChart.linearSlopePerSession}
           data-optimal-sessions={tenSessionHrvChart.optimalSessionCount}
-          className="mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#233D32] space-y-4 codex-section-cascade"
+          {...getSectionCascadeProps('hrv_trajectory')}
+          className={`mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#233D32] space-y-4 ${sectionCascades.byId.hrv_trajectory.className}`}
         >
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
@@ -1620,7 +1710,8 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
           data-resonant-days-count={vagalToneTrend.resonantDaysCount}
           data-latest-coherence-pct={vagalToneTrend.latestCoherencePct}
           data-displayed-days-count={displayedVagalDays.length}
-          className="mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#2C4C3E] space-y-4 codex-section-cascade"
+          {...getSectionCascadeProps('vagal_tone_trend')}
+          className={`mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#2C4C3E] space-y-4 ${sectionCascades.byId.vagal_tone_trend.className}`}
         >
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
@@ -1972,13 +2063,14 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
           data-pearson-correlation-r={bloomIntensityTrend.pearsonCorrelationR}
           data-sweet-spot-lift-pct={bloomIntensityTrend.rejuvenationLiftInSweetSpotPct}
           data-displayed-days-count={displayedBloomDays.length}
-          className="mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#2C4C3E] space-y-4 codex-section-cascade"
+          {...getSectionCascadeProps('bloom_settings')}
+          className={`mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#2C4C3E] space-y-4 ${sectionCascades.byId.bloom_settings.className}`}
         >
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs font-mono uppercase tracking-wider text-[#F2B84B]">
-                  30-Day Aesthetic &amp; Neuro-Rejuvenation Telemetry · Recharts Visualization
+                  Bloom Settings &amp; 30-Day Aesthetic Neuro-Rejuvenation Telemetry · Recharts Visualization
                 </span>
                 <span
                   data-testid="bloom-trend-correlation-badge"
@@ -2358,7 +2450,8 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
           data-month-six-reserve={neuroProjection.monthSixProjectedReserveIndex}
           data-net-reserve-gain={neuroProjection.netSixMonthReserveGain}
           data-habit-adherence-pct={neuroProjection.habitAdherencePct}
-          className="mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#2C4C3E] space-y-4 codex-section-cascade"
+          {...getSectionCascadeProps('neuro_projection')}
+          className={`mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#2C4C3E] space-y-4 ${sectionCascades.byId.neuro_projection.className}`}
         >
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
@@ -2506,7 +2599,8 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
         <section
           aria-label="4-Domain Cognitive Reserve Profile"
           data-testid="cognitive-domain-profile"
-          className="mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#233D32] space-y-4 codex-section-cascade"
+          {...getSectionCascadeProps('domain_profile')}
+          className={`mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#233D32] space-y-4 ${sectionCascades.byId.domain_profile.className}`}
         >
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
@@ -2577,7 +2671,8 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
           data-nback-progress-pct={goalsProgress.nBackGoal.progressPct}
           data-ufov-target-ms={goalsProgress.ufovGoal.targetSpeedMs}
           data-ufov-progress-pct={goalsProgress.ufovGoal.progressPct}
-          className="mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#233D32] space-y-4 codex-section-cascade"
+          {...getSectionCascadeProps('cognitive_goals')}
+          className={`mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#233D32] space-y-4 ${sectionCascades.byId.cognitive_goals.className}`}
         >
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <div className="flex-1 min-w-0">
@@ -2926,7 +3021,8 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
         <section
           aria-labelledby="neuro-nutrition-heading"
           data-testid="neuro-nutrition-section"
-          className="mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#233D32] space-y-4"
+          {...getSectionCascadeProps('neuro_nutrition')}
+          className={`mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#233D32] space-y-4 ${sectionCascades.byId.neuro_nutrition.className}`}
         >
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
@@ -3066,7 +3162,8 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
           {/* WEEKLY HABIT COMPLIANCE CHART (RECHARTS 7-DAY NSDR & COGNITIVE REFRAMING TREND) */}
           <div
             data-testid="weekly-habit-compliance-section"
-            className="mt-4 pt-4 border-t border-[#233D32] space-y-4"
+            {...getSectionCascadeProps('weekly_compliance')}
+            className={`mt-4 pt-4 border-t border-[#233D32] space-y-4 ${sectionCascades.byId.weekly_compliance.className}`}
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -3538,7 +3635,8 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
               habitHeatmap30d.thirtyDayOverallCompliancePct
             }
             data-filter-mode={heatmapFilterMode}
-            className="mt-4 pt-4 border-t border-[#233D32] space-y-4"
+            {...getSectionCascadeProps('habit_heatmap')}
+            className={`mt-4 pt-4 border-t border-[#233D32] space-y-4 ${sectionCascades.byId.habit_heatmap.className}`}
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -3994,7 +4092,8 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
             data-combined-progress-pct={
               habitDurationProgress.combinedProgressPct
             }
-            className="mt-4 pt-4 border-t border-[#233D32] space-y-3.5"
+            {...getSectionCascadeProps('habit_tracker')}
+            className={`mt-4 pt-4 border-t border-[#233D32] space-y-3.5 ${sectionCascades.byId.habit_tracker.className}`}
           >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -4314,11 +4413,11 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
                                   : 'bg-[#0D1E18] text-[#F2B84B] border-[#F2B84B]/60 hover:bg-[#163025] hover:text-[#F4EFE6]'
                               }`}
                             >
-                              <span className="truncate">
+                              <span className="whitespace-nowrap">
                                 {itemProgress.isGoalMet
-                                  ? `✓ Goal Met & Synced`
+                                  ? `✓ Goal Met`
                                   : exercise.id === 'nsdr_protocol'
-                                  ? '+ Log NSDR Session'
+                                  ? '+ Log NSDR'
                                   : '+ Log Reframing'}
                               </span>
                               <span
@@ -4418,7 +4517,7 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
                                 </div>
                               </div>
 
-                              <div className="text-[10px] font-mono text-[#A3B8B0] tabular-nums truncate">
+                              <div className="text-[10px] font-mono text-[#A3B8B0] tabular-nums leading-snug">
                                 <span data-testid={`habit-duration-delta-${exercise.id}`}>
                                   {itemProgress.deltaSummaryText}
                                 </span>
@@ -4644,7 +4743,11 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
 
         {/* COGNITIVE INSIGHT JOURNAL — NEURAL LOGS ARCHIVE LINKED TO DAILY STREAK */}
         {onAddNeuralLog && (
-          <div className="mt-6">
+          <div
+            data-testid="codex-insight-journal-section"
+            {...getSectionCascadeProps('insight_journal')}
+            className={`mt-6 ${sectionCascades.byId.insight_journal.className}`}
+          >
             <CognitiveInsightJournal
               neuralLogs={neuralLogs}
               streakDayCount={currentStreakDays}
@@ -4656,39 +4759,74 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
           </div>
         )}
 
-        {/* Peer-Reviewed Clinical Protocols List */}
-        <div className="mt-6 space-y-5">
-          {protocols.map((item, idx) => (
-            <div
-              key={item.id}
-              className="p-5 rounded-xl bg-[#0B1914] border border-[#233D32] space-y-3"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-lg font-display font-semibold text-[#F4EFE6]">
-                  0{idx + 1}. {item.shortName} — {item.mechanism}
-                </h3>
-                <span className="text-xs font-mono text-[#A3B8B0]">
-                  Target Region: {item.brainRegion}
-                </span>
-              </div>
-
-              <div className="text-xs text-[#68D391] font-mono">
-                <span>{item.authors}</span>
-                <span aria-hidden="true"> · </span>
-                <span>{item.journalYear}</span>
-                <span aria-hidden="true"> · </span>
-                <span>{item.sampleNote}</span>
-              </div>
-
-              <p className="text-sm text-[#D5E2DC] leading-relaxed">
-                <strong className="text-[#F4EFE6]">Clinical Finding:</strong> {item.clinicalFinding}
-              </p>
-
-              <p className="text-sm text-[#F2B84B] leading-relaxed">
-                <strong className="text-[#F4EFE6]">In-Sanctuary Translation:</strong> {item.howInGameWorks}
-              </p>
+        {/* RESEARCH NOTES — Peer-Reviewed Clinical Protocols List */}
+        <section
+          aria-labelledby="codex-research-notes-heading"
+          data-testid="codex-research-notes-section"
+          {...getSectionCascadeProps('research_notes')}
+          className={`mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#233D32] space-y-4 ${sectionCascades.byId.research_notes.className}`}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#1E3A2F] pb-3">
+            <div>
+              <span className="text-xs font-mono uppercase tracking-wider text-[#68D391]">
+                Research Notes · Peer-Reviewed Neuroplasticity &amp; Clinical Trial Literature
+              </span>
+              <h3
+                id="codex-research-notes-heading"
+                className="text-lg font-display font-semibold text-[#F4EFE6] mt-0.5"
+              >
+                Research Notes — Peer-Reviewed Clinical Protocols (01–0{protocols.length})
+              </h3>
             </div>
-          ))}
+            <span className="px-2.5 py-1 rounded bg-[#10231C] border border-[#2C4C3E] text-[10px] font-mono text-[#4FD1C5] tabular-nums">
+              {protocols.length} Clinical Mechanisms Verified
+            </span>
+          </div>
+
+          <div className="space-y-4">
+            {protocols.map((item, idx) => {
+              const cardCascade = computeCodexSectionCascadeConfig({
+                sectionId: 'research_notes',
+                orderIndexOverride: sectionCascades.byId.research_notes.orderIndex + idx + 1,
+                phase: effectiveTransitionPhase,
+              });
+              return (
+                <div
+                  key={item.id}
+                  data-testid={`codex-research-note-card-${item.id}`}
+                  data-cascade-delay-ms={cardCascade.delayMs}
+                  style={cardCascade.styleVars as React.CSSProperties}
+                  className={`p-4 rounded-xl bg-[#10231C] border border-[#233D32] space-y-2.5 ${cardCascade.className}`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="text-base font-display font-semibold text-[#F4EFE6]">
+                      0{idx + 1}. {item.shortName} — {item.mechanism}
+                    </h4>
+                    <span className="text-xs font-mono text-[#A3B8B0]">
+                      Target Region: {item.brainRegion}
+                    </span>
+                  </div>
+
+                  <div className="text-xs text-[#68D391] font-mono">
+                    <span>{item.authors}</span>
+                    <span aria-hidden="true"> · </span>
+                    <span>{item.journalYear}</span>
+                    <span aria-hidden="true"> · </span>
+                    <span>{item.sampleNote}</span>
+                  </div>
+
+                  <p className="text-sm text-[#D5E2DC] leading-relaxed">
+                    <strong className="text-[#F4EFE6]">Clinical Finding:</strong> {item.clinicalFinding}
+                  </p>
+
+                  <p className="text-sm text-[#F2B84B] leading-relaxed">
+                    <strong className="text-[#F4EFE6]">In-Sanctuary Translation:</strong> {item.howInGameWorks}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </section>
         </div>
 
         <div className="mt-6 pt-4 border-t border-[#233D32] flex items-center justify-between gap-4">

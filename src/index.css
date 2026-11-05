@@ -73,13 +73,13 @@
 }
 
 @keyframes codexSectionCascadeUp {
-  from {
+  0% {
     opacity: 0;
-    transform: translate3d(0, 8px, 0);
+    transform: translate3d(0, 12px, 0) scale(0.992);
   }
-  to {
+  100% {
     opacity: 1;
-    transform: translate3d(0, 0, 0);
+    transform: translate3d(0, 0, 0) scale(1);
   }
 }
 
@@ -126,8 +126,29 @@
 }
 
 .codex-section-cascade {
+  --codex-cascade-delay: 0ms;
+  --codex-cascade-duration: 260ms;
   will-change: transform, opacity;
-  animation: codexSectionCascadeUp 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-name: codexSectionCascadeUp;
+  animation-duration: var(--codex-cascade-duration, 260ms);
+  animation-delay: var(--codex-cascade-delay, 0ms);
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  animation-fill-mode: both;
+}
+
+.codex-section-cascade-exit {
+  animation: none;
+  opacity: 0;
+  transform: translate3d(0, 6px, 0);
+  transition:
+    transform 140ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.codex-section-cascade-static {
+  animation: none;
+  opacity: 1;
+  transform: none;
 }
 
 /* HUD Subtle CSS Keyframe Pulse Animations for 'Vitality' & 'Nectar' on N-Back Match or Tree Craft */

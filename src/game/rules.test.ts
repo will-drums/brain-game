@@ -57,6 +57,11 @@ import {
   CLINICAL_CODEX_EXIT_DURATION_MS,
   CLINICAL_CODEX_EASING_CURVE,
   computeCodexModalAnimationState,
+  CODEX_SECTION_CASCADE_STAGGER_STEP_MS,
+  CODEX_SECTION_CASCADE_DURATION_MS,
+  CODEX_SECTION_CASCADE_REGISTRY,
+  computeCodexSectionCascadeConfig,
+  computeAllCodexSectionCascades,
   SANCTUARY_BLOOM_PRESETS,
   SANCTUARY_BLOOM_PRESET_LIST,
   getSanctuaryBloomPresetConfig,
@@ -869,6 +874,61 @@ test('computeCodexModalAnimationState manages smooth fade-in and upward slide-up
   assert.equal(reduced.panelTranslateYpx, 0);
   assert.equal(reduced.panelScale, 1);
   assert.equal(reduced.durationMs, 0);
+});
+
+test('computeCodexSectionCascadeConfig and computeAllCodexSectionCascades generate staggered codex-section-cascade animations for Habit Tracker, Research Notes, Bloom Settings, and all modal sections', () => {
+  const cascade = computeAllCodexSectionCascades('entered', false);
+  assert.equal(cascade.items.length, CODEX_SECTION_CASCADE_REGISTRY.length);
+  assert.equal(cascade.staggerStepMs, CODEX_SECTION_CASCADE_STAGGER_STEP_MS);
+  assert.equal(cascade.durationMs, CODEX_SECTION_CASCADE_DURATION_MS);
+
+  // Verify monotonically increasing stagger delays across sequential sections
+  for (let i = 0; i < cascade.items.length; i++) {
+    const item = cascade.items[i];
+    assert.equal(item.orderIndex, i);
+    assert.ok(item.className.includes('codex-section-cascade'));
+    assert.ok(item.className.includes('codex-section-cascade-active'));
+    assert.equal(item.delayMs, i * CODEX_SECTION_CASCADE_STAGGER_STEP_MS);
+    assert.equal(item.styleVars.animationDelay, `${item.delayMs}ms`);
+    assert.equal(item.styleVars['--codex-cascade-delay'], `${item.delayMs}ms`);
+    assert.equal(item.styleVars['--codex-cascade-duration'], `${CODEX_SECTION_CASCADE_DURATION_MS}ms`);
+    if (i > 0) {
+      assert.ok(item.delayMs > cascade.items[i - 1].delayMs);
+    }
+  }
+
+  // Verify specific sections requested: Bloom Settings, Habit Tracker, and Research Notes
+  const bloomSettings = cascade.byId.bloom_settings;
+  const habitTracker = cascade.byId.habit_tracker;
+  const researchNotes = cascade.byId.research_notes;
+
+  assert.equal(bloomSettings.label, 'Bloom Settings');
+  assert.ok(bloomSettings.className.includes('codex-section-cascade'));
+  assert.ok(bloomSettings.delayMs > 0);
+
+  assert.equal(habitTracker.label, 'Habit Tracker');
+  assert.ok(habitTracker.className.includes('codex-section-cascade'));
+  assert.ok(habitTracker.delayMs > bloomSettings.delayMs);
+
+  assert.equal(researchNotes.label, 'Research Notes');
+  assert.ok(researchNotes.className.includes('codex-section-cascade'));
+  assert.ok(researchNotes.delayMs > habitTracker.delayMs);
+
+  // Verify reduced-motion and exiting phases disable stagger delay
+  const reducedCascade = computeAllCodexSectionCascades('entered', true);
+  for (const item of reducedCascade.items) {
+    assert.equal(item.delayMs, 0);
+    assert.equal(item.durationMs, 0);
+    assert.equal(item.isAnimated, false);
+    assert.ok(item.className.includes('codex-section-cascade'));
+  }
+
+  const exitConfig = computeCodexSectionCascadeConfig({
+    sectionId: 'habit_tracker',
+    phase: 'exiting',
+  });
+  assert.equal(exitConfig.delayMs, 0);
+  assert.ok(exitConfig.className.includes('codex-section-cascade-exit'));
 });
 
 test('computeWeeklyCognitiveGoalsProgress evaluates personal weekly N-Back accuracy and UFOV speed goals and progress bars', () => {

@@ -3501,6 +3501,229 @@ export function computeCodexModalAnimationState(
 }
 
 /**
+ * Staggered Section Entry Cascade Engine for the Clinical Codex Modal
+ * Uses the `.codex-section-cascade` class with deterministic per-panel stagger delays
+ * to create a smooth, sophisticated panel-by-panel appearance across all Codex sections
+ * (including 'Habit Tracker', 'Research Notes', 'Bloom Settings', and longitudinal charts).
+ */
+export type CodexSectionCascadeId =
+  | 'hrv_trajectory'
+  | 'vagal_tone_trend'
+  | 'bloom_settings'
+  | 'neuro_projection'
+  | 'domain_profile'
+  | 'cognitive_goals'
+  | 'neuro_nutrition'
+  | 'weekly_compliance'
+  | 'habit_heatmap'
+  | 'habit_tracker'
+  | 'insight_journal'
+  | 'research_notes';
+
+export const CODEX_SECTION_CASCADE_STAGGER_STEP_MS = 45;
+export const CODEX_SECTION_CASCADE_MAX_DELAY_MS = 495;
+export const CODEX_SECTION_CASCADE_DURATION_MS = 260;
+
+export interface CodexSectionCascadeRegistryItem {
+  id: CodexSectionCascadeId;
+  label: string;
+  orderIndex: number;
+  testId: string;
+}
+
+export const CODEX_SECTION_CASCADE_REGISTRY: readonly CodexSectionCascadeRegistryItem[] = [
+  {
+    id: 'hrv_trajectory',
+    label: '10-Session HRV Trajectory',
+    orderIndex: 0,
+    testId: 'clinical-codex-hrv-chart',
+  },
+  {
+    id: 'vagal_tone_trend',
+    label: '30-Day Vagal Tone Trend',
+    orderIndex: 1,
+    testId: 'codex-vagal-tone-trend-section',
+  },
+  {
+    id: 'bloom_settings',
+    label: 'Bloom Settings',
+    orderIndex: 2,
+    testId: 'codex-sanctuary-bloom-intensity-trend-section',
+  },
+  {
+    id: 'neuro_projection',
+    label: '6-Month Reserve Forecast',
+    orderIndex: 3,
+    testId: 'clinical-codex-neuro-projection-chart',
+  },
+  {
+    id: 'domain_profile',
+    label: '4-Domain Cognitive Profile',
+    orderIndex: 4,
+    testId: 'cognitive-domain-profile',
+  },
+  {
+    id: 'cognitive_goals',
+    label: 'Cognitive Goals',
+    orderIndex: 5,
+    testId: 'clinical-codex-cognitive-goals',
+  },
+  {
+    id: 'neuro_nutrition',
+    label: 'Neuro-Nutrition & Sleep Hygiene',
+    orderIndex: 6,
+    testId: 'neuro-nutrition-section',
+  },
+  {
+    id: 'weekly_compliance',
+    label: 'Weekly Habit Compliance',
+    orderIndex: 7,
+    testId: 'weekly-habit-compliance-section',
+  },
+  {
+    id: 'habit_heatmap',
+    label: '30-Day Habit Heatmap',
+    orderIndex: 8,
+    testId: 'habit-completion-heatmap-section',
+  },
+  {
+    id: 'habit_tracker',
+    label: 'Habit Tracker',
+    orderIndex: 9,
+    testId: 'daily-habit-tracker-panel',
+  },
+  {
+    id: 'insight_journal',
+    label: 'Cognitive Insight Journal',
+    orderIndex: 10,
+    testId: 'codex-insight-journal-section',
+  },
+  {
+    id: 'research_notes',
+    label: 'Research Notes',
+    orderIndex: 11,
+    testId: 'codex-research-notes-section',
+  },
+];
+
+export interface CodexSectionCascadeConfig {
+  sectionId: CodexSectionCascadeId;
+  label: string;
+  testId: string;
+  orderIndex: number;
+  className: string;
+  delayMs: number;
+  durationMs: number;
+  staggerStepMs: number;
+  easingCurve: string;
+  initialTranslateYpx: number;
+  initialScale: number;
+  isAnimated: boolean;
+  styleVars: {
+    animationDelay: string;
+    animationDuration: string;
+    '--codex-cascade-index': string;
+    '--codex-cascade-delay': string;
+    '--codex-cascade-duration': string;
+  };
+}
+
+export function computeCodexSectionCascadeConfig(params: {
+  sectionId: CodexSectionCascadeId;
+  orderIndexOverride?: number;
+  phase?: CodexModalTransitionPhase;
+  prefersReducedMotion?: boolean;
+}): CodexSectionCascadeConfig {
+  const registryItem =
+    CODEX_SECTION_CASCADE_REGISTRY.find((entry) => entry.id === params.sectionId) ??
+    CODEX_SECTION_CASCADE_REGISTRY[0];
+  const phase = params.phase ?? 'entered';
+  const prefersReducedMotion = Boolean(params.prefersReducedMotion);
+  const rawOrderIndex =
+    typeof params.orderIndexOverride === 'number' && Number.isFinite(params.orderIndexOverride)
+      ? Math.max(0, Math.round(params.orderIndexOverride))
+      : registryItem.orderIndex;
+
+  const isEnteringOrEntered = phase === 'entering' || phase === 'entered';
+  const isAnimated = isEnteringOrEntered && !prefersReducedMotion;
+
+  const delayMs = isAnimated
+    ? Math.min(
+        CODEX_SECTION_CASCADE_MAX_DELAY_MS,
+        rawOrderIndex * CODEX_SECTION_CASCADE_STAGGER_STEP_MS
+      )
+    : 0;
+  const durationMs = isAnimated ? CODEX_SECTION_CASCADE_DURATION_MS : 0;
+
+  const phaseModifierClass =
+    phase === 'exiting'
+      ? 'codex-section-cascade-exit'
+      : isAnimated
+      ? 'codex-section-cascade-active'
+      : 'codex-section-cascade-static';
+
+  return {
+    sectionId: registryItem.id,
+    label: registryItem.label,
+    testId: registryItem.testId,
+    orderIndex: rawOrderIndex,
+    className: `codex-section-cascade ${phaseModifierClass}`,
+    delayMs,
+    durationMs,
+    staggerStepMs: CODEX_SECTION_CASCADE_STAGGER_STEP_MS,
+    easingCurve: CLINICAL_CODEX_EASING_CURVE,
+    initialTranslateYpx: isAnimated ? 12 : 0,
+    initialScale: isAnimated ? 0.992 : 1,
+    isAnimated,
+    styleVars: {
+      animationDelay: `${delayMs}ms`,
+      animationDuration: `${durationMs}ms`,
+      '--codex-cascade-index': String(rawOrderIndex),
+      '--codex-cascade-delay': `${delayMs}ms`,
+      '--codex-cascade-duration': `${durationMs}ms`,
+    },
+  };
+}
+
+export interface AllCodexSectionCascadesResult {
+  items: CodexSectionCascadeConfig[];
+  byId: Record<CodexSectionCascadeId, CodexSectionCascadeConfig>;
+  staggerStepMs: number;
+  durationMs: number;
+  totalCascadeSpanMs: number;
+}
+
+export function computeAllCodexSectionCascades(
+  phase: CodexModalTransitionPhase = 'entered',
+  prefersReducedMotion = false
+): AllCodexSectionCascadesResult {
+  const items = CODEX_SECTION_CASCADE_REGISTRY.map((entry) =>
+    computeCodexSectionCascadeConfig({
+      sectionId: entry.id,
+      phase,
+      prefersReducedMotion,
+    })
+  );
+  const byId = items.reduce((acc, item) => {
+    acc[item.sectionId] = item;
+    return acc;
+  }, {} as Record<CodexSectionCascadeId, CodexSectionCascadeConfig>);
+
+  const maxDelay = items.reduce((max, item) => Math.max(max, item.delayMs), 0);
+  const durationMs = prefersReducedMotion || phase === 'closed' || phase === 'exiting'
+    ? 0
+    : CODEX_SECTION_CASCADE_DURATION_MS;
+
+  return {
+    items,
+    byId,
+    staggerStepMs: CODEX_SECTION_CASCADE_STAGGER_STEP_MS,
+    durationMs,
+    totalCascadeSpanMs: maxDelay + durationMs,
+  };
+}
+
+/**
  * 'Cognitive Rhythm Sync' Mode & Background Waveform Visualizer Engine
  * Allows users to calibrate their N-Back chime frequency to match either:
  *  - Personal Resting Heart Rate (45..100 BPM -> 1 chime every 4 cardiac beats)

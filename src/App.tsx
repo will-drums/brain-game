@@ -340,7 +340,13 @@ export default function App() {
     }
     return 'forest';
   });
-  const [isCodexOpen, setIsCodexOpen] = useState<boolean>(false);
+  const [isCodexOpen, setIsCodexOpen] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('codex') === '1';
+    }
+    return false;
+  });
   const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
   const [demoStepSignal, setDemoStepSignal] = useState<{ step: number; seq: number } | null>(null);
   const [resetSignal, setResetSignal] = useState<number>(0);
@@ -778,13 +784,6 @@ export default function App() {
 
   const [gentleNotificationConfig, setGentleNotificationConfig] =
     useState<GentleNotificationConfig>(() => {
-      const now = new Date();
-      const nowMinutes = now.getHours() * 60 + now.getMinutes();
-      const defaultUsualHm =
-        nowMinutes >= 15 * 60 + 30
-          ? DEFAULT_GENTLE_NOTIFICATION_CONFIG.usualPracticeTimeHm
-          : formatMinutesToTimeHm((nowMinutes - 35 + 1440) % 1440);
-
       if (typeof window !== 'undefined') {
         try {
           const raw = window.localStorage.getItem(GENTLE_NOTIFICATION_STORAGE_KEY);
@@ -795,10 +794,9 @@ export default function App() {
           // Ignore storage errors
         }
       }
-      const seeded = sanitizeGentleNotificationConfig({
-        ...DEFAULT_GENTLE_NOTIFICATION_CONFIG,
-        usualPracticeTimeHm: defaultUsualHm,
-      });
+      const seeded = sanitizeGentleNotificationConfig(
+        DEFAULT_GENTLE_NOTIFICATION_CONFIG
+      );
       if (typeof window !== 'undefined') {
         try {
           window.localStorage.setItem(GENTLE_NOTIFICATION_STORAGE_KEY, JSON.stringify(seeded));
@@ -809,7 +807,13 @@ export default function App() {
       return seeded;
     });
 
-  const [forceGentleToastPreview, setForceGentleToastPreview] = useState(false);
+  const [forceGentleToastPreview, setForceGentleToastPreview] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('reminder') === '1';
+    }
+    return false;
+  });
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -1505,13 +1509,14 @@ export default function App() {
     });
   };
 
-  // Bind [Z] keyboard shortcut during active play to toggle Zen Mode, and [B] for Sanctuary Bloom
+  // Bind [Z] keyboard shortcut during active play to toggle Zen Mode, [B] for Sanctuary Bloom, and [C] for Clinical Codex
   useEffect(() => {
     if (gameState !== 'playing' || isCodexOpen) return;
     const onZenKey = (e: KeyboardEvent) => {
       if (
         e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement
       ) {
         return;
       }
@@ -1527,6 +1532,9 @@ export default function App() {
       } else if (e.code === 'KeyB' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
         setIsSanctuaryBloomActive((prev) => !prev);
+      } else if (e.code === 'KeyC' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setIsCodexOpen(true);
       }
     };
     window.addEventListener('keydown', onZenKey);
@@ -1594,19 +1602,20 @@ export default function App() {
       {/* 2. TITLE SCREEN OVERLAY (30%-40% negative space left column over live world camera pan) */}
       {gameState === 'title' && (
         <div
-          className="fixed inset-0 z-20 flex flex-col justify-between p-5 md:px-10 md:py-6 overflow-y-auto pointer-events-none"
+          data-testid="title-screen-overlay"
+          className="fixed inset-0 z-20 flex flex-col justify-between px-5 py-3.5 md:px-9 md:py-4 overflow-y-auto pointer-events-none"
           style={{
             background:
               'linear-gradient(90deg, rgba(7, 18, 14, 0.98) 0%, rgba(7, 18, 14, 0.95) 46%, rgba(7, 18, 14, 0.25) 76%, rgba(7, 18, 14, 0.1) 100%)',
           }}
         >
           {/* Top-Left Clinical Identity Lockup */}
-          <div className="max-w-xl space-y-3 pointer-events-auto">
+          <div className="w-full max-w-[640px] space-y-2 pointer-events-auto">
             {/* Custom Inline SVG Title Lockup */}
-            <div className="space-y-1.5">
+            <div className="space-y-1">
               <svg
-                viewBox="0 0 460 96"
-                className="w-full max-w-[410px] h-auto overflow-visible"
+                viewBox="0 0 460 82"
+                className="w-full max-w-[380px] h-auto overflow-visible"
                 role="img"
                 aria-label="Sylvan Synapse — Botanical Cognitive Sanctuary"
               >
@@ -1621,8 +1630,8 @@ export default function App() {
                   </linearGradient>
                 </defs>
                 {/* Botanical Neural Crest Emblem */}
-                <g transform="translate(8, 10)">
-                  <circle cx="36" cy="36" r="32" fill="#102820" stroke="url(#synapseTeal)" strokeWidth="2.5" />
+                <g transform="translate(6, 5)">
+                  <circle cx="36" cy="36" r="31" fill="#102820" stroke="url(#synapseTeal)" strokeWidth="2.5" />
                   <path
                     d="M36 12 C48 22, 52 38, 36 58 C20 38, 24 22, 36 12 Z"
                     fill="none"
@@ -1637,22 +1646,22 @@ export default function App() {
                 </g>
                 {/* Title Lettering */}
                 <text
-                  x="92"
-                  y="44"
+                  x="88"
+                  y="40"
                   fill="#F4EFE6"
                   fontFamily="Fraunces, Georgia, serif"
-                  fontSize="40"
+                  fontSize="38"
                   fontWeight="600"
                   letterSpacing="-0.02em"
                 >
                   Sylvan Synapse
                 </text>
                 <text
-                  x="94"
-                  y="70"
+                  x="90"
+                  y="63"
                   fill="#68D391"
                   fontFamily="JetBrains Mono, monospace"
-                  fontSize="12"
+                  fontSize="11.5"
                   fontWeight="600"
                   letterSpacing="0.12em"
                 >
@@ -1660,24 +1669,24 @@ export default function App() {
                 </text>
               </svg>
 
-              <p className="text-sm text-[#D5E2DC] leading-relaxed max-w-lg">
+              <p className="text-xs md:text-[13px] text-[#D5E2DC] leading-snug max-w-lg">
                 Restore a bioluminescent forest sanctuary through four medical research protocols proven to expand working memory, visual processing speed, vagal heart-brain coherence, and hippocampal BDNF synaptogenesis.
               </p>
             </div>
 
             {/* Unboxed Clinical Evidence Strip */}
-            <div className="text-[11px] font-mono text-[#A3B8B0] space-y-1 pt-1 border-t border-[#233D32]">
-              <div>
+            <div className="text-[10.5px] font-mono text-[#A3B8B0] space-y-0.5 pt-1 border-t border-[#233D32]">
+              <div className="truncate">
                 <span className="text-[#F2B84B]">ACTIVE Trial UFOV</span>
                 <span aria-hidden="true"> · </span>
                 <span>29% lower 10-yr dementia incidence (Ball et al., JAMA)</span>
               </div>
-              <div>
+              <div className="truncate">
                 <span className="text-[#4FD1C5]">Dual N-Back Chimes</span>
                 <span aria-hidden="true"> · </span>
                 <span>Prefrontal working memory &amp; fluid intelligence (Jaeggi et al., PNAS)</span>
               </div>
-              <div>
+              <div className="truncate">
                 <span className="text-[#68D391]">0.1 Hz HRV Coherence &amp; Hippocampal BDNF</span>
                 <span aria-hidden="true"> · </span>
                 <span>Vagal restoration &amp; spatial neurogenesis (Erickson et al., PNAS)</span>
@@ -1688,12 +1697,12 @@ export default function App() {
             <div
               data-testid="title-daily-streak"
               aria-label={`Daily Practice Streak: ${dailyStreak.currentStreak} ${dailyStreak.currentStreak === 1 ? 'Day' : 'Days'}`}
-              className="flex flex-wrap items-center justify-between gap-4 px-4 py-2.5 rounded-xl bg-[#10241C] border border-[#233D32]"
+              className="flex flex-wrap items-center justify-between gap-3 px-3.5 py-2 rounded-xl bg-[#10241C] border border-[#233D32]"
             >
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2.5">
                 <svg
                   viewBox="0 0 24 24"
-                  className="w-5 h-5 shrink-0"
+                  className="w-4 h-4 shrink-0"
                   aria-hidden="true"
                 >
                   <path
@@ -1708,14 +1717,14 @@ export default function App() {
                   />
                 </svg>
                 <div>
-                  <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
+                  <div className="text-[9.5px] font-mono uppercase tracking-wider text-[#A3B8B0]">
                     DAILY PRACTICE STREAK
                   </div>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-xl font-mono font-bold text-[#F2B84B] tabular-nums">
+                    <span className="text-lg font-mono font-bold text-[#F2B84B] tabular-nums leading-tight">
                       {dailyStreak.currentStreak} {dailyStreak.currentStreak === 1 ? 'Day' : 'Days'}
                     </span>
-                    <span className="text-xs font-mono text-[#68D391]">
+                    <span className="text-[11px] font-mono text-[#68D391]">
                       {dailyStreak.lastPracticedDate === formatLocalDateIso()
                         ? '· Practiced Today'
                         : '· Ready for Today’s Session'}
@@ -1724,7 +1733,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="text-right font-mono text-xs text-[#A3B8B0] tabular-nums">
+              <div className="text-right font-mono text-[11px] text-[#A3B8B0] tabular-nums leading-tight">
                 <div>Best Streak: {dailyStreak.longestStreak}d</div>
                 <div>Total Sessions: {dailyStreak.totalDaysPracticed}d</div>
               </div>
@@ -1736,19 +1745,19 @@ export default function App() {
               data-zen-mastery-unlocked={milestoneEval.zenMasteryUnlocked ? 'true' : 'false'}
               data-consecutive-zen-days={milestoneEval.consecutiveZenModeDays}
               data-selected-milestone-id={lifetimeProgress.selectedMilestoneId}
-              className="p-3.5 rounded-xl bg-[#0D2018] border border-[#264538] space-y-2.5"
+              className="p-2.5 rounded-xl bg-[#0D2018] border border-[#264538] space-y-1.5"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-[#68D391] font-semibold">
+                  <span className="text-[9.5px] font-mono uppercase tracking-wider text-[#68D391] font-semibold">
                     COGNITIVE MILESTONE BADGES · SANCTUARY FLORA &amp; FIREFLY UPGRADES
                   </span>
-                  <div className="text-xs text-[#D5E2DC]">
+                  <div className="text-[11px] text-[#D5E2DC]">
                     Active Theme: <span className="font-semibold text-[#F4EFE6]">{activeAesthetic.themeName}</span>{' '}
                     <span className="font-mono text-[#F2B84B] tabular-nums">({activeAesthetic.fireflyCount} Fireflies)</span>
                   </div>
                 </div>
-                <div className="text-right font-mono text-[11px] text-[#A3B8B0] tabular-nums">
+                <div className="text-right font-mono text-[10.5px] text-[#A3B8B0] tabular-nums leading-tight">
                   <div>
                     Trees Grafted: <span className="text-[#B794F4] font-semibold">{lifetimeProgress.totalTreesGrafted}</span>
                     {' · '}
@@ -1766,7 +1775,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-1.5">
                 {COGNITIVE_MILESTONE_BADGES.map((badge) => {
                   const isUnlocked = milestoneEval.unlockedBadges.some((u) => u.id === badge.id);
                   const isSelected = lifetimeProgress.selectedMilestoneId === badge.id;
@@ -1783,7 +1792,7 @@ export default function App() {
                       data-badge-unlocked={isUnlocked ? 'true' : 'false'}
                       data-badge-selected={isSelected ? 'true' : 'false'}
                       onClick={() => handleSelectMilestoneBadge(badge.id)}
-                      className={`p-2.5 rounded-lg text-left transition-colors cursor-pointer border ${
+                      className={`px-2.5 py-1.5 rounded-lg text-left transition-colors cursor-pointer border ${
                         isZenMasteryBadge ? 'col-span-2' : ''
                       } ${
                         isSelected
@@ -1794,21 +1803,21 @@ export default function App() {
                       }`}
                     >
                       <div className="flex items-center justify-between gap-1.5">
-                        <span className="flex items-center gap-1.5 text-xs font-semibold text-[#F4EFE6] truncate">
+                        <span className="flex items-center gap-1.5 text-[11px] font-semibold text-[#F4EFE6] truncate">
                           <span
-                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                            className="w-2 h-2 rounded-full shrink-0"
                             style={{ backgroundColor: badge.upgrade.myceliumBridgeHex }}
                           />
-                          <span>{badge.title}</span>
+                          <span className="truncate">{badge.title}</span>
                           {isZenMasteryBadge && (
-                            <span className="text-[10px] font-mono text-[#4FD1C5] font-normal">
+                            <span className="text-[10px] font-mono text-[#4FD1C5] font-normal shrink-0">
                               · 5-Day Consecutive Zen Mode Milestone
                             </span>
                           )}
                         </span>
                         <span
                           data-testid={`milestone-badge-status-${badge.id}`}
-                          className={`text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 tabular-nums ${
+                          className={`text-[9.5px] font-mono px-1.5 py-0.5 rounded shrink-0 tabular-nums ${
                             isSelected
                               ? 'bg-[#68D391] text-[#091510] font-bold'
                               : isUnlocked
@@ -1819,7 +1828,7 @@ export default function App() {
                           {isSelected ? 'ACTIVE' : isUnlocked ? 'UNLOCKED' : lockRequirementText}
                         </span>
                       </div>
-                      <div className="text-[10px] font-mono text-[#A3B8B0] mt-1 truncate">
+                      <div className="text-[9.5px] font-mono text-[#A3B8B0] mt-0.5 truncate">
                         {badge.upgrade.fireflyCount} Fireflies · {badge.upgrade.themeName}
                         {isZenMasteryBadge
                           ? ` · ${
@@ -1839,9 +1848,9 @@ export default function App() {
               {/* 5-Day Consecutive Zen Mode Usage Progress & Calibration Strip */}
               <div
                 data-testid="zen-mastery-streak-tracker"
-                className="p-2.5 rounded-lg bg-[#091510] border border-[#1E3A2F] space-y-1.5"
+                className="px-2.5 py-1.5 rounded-lg bg-[#091510] border border-[#1E3A2F] space-y-1"
               >
-                <div className="flex flex-wrap items-center justify-between gap-2 text-[10.5px] font-mono">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono">
                   <span
                     data-testid="zen-mastery-progress-label"
                     className="text-[#D5E2DC] font-semibold tabular-nums"
@@ -1856,7 +1865,7 @@ export default function App() {
                       type="button"
                       data-testid="zen-mastery-reset-streak-btn"
                       onClick={handleResetZenModeStreak}
-                      className="px-2 py-0.5 rounded bg-[#10231C] hover:bg-[#18352A] text-[#A3B8B0] hover:text-[#F4EFE6] border border-[#233D32] text-[10px] font-mono font-semibold cursor-pointer"
+                      className="px-2 py-0.5 rounded bg-[#10231C] hover:bg-[#18352A] text-[#A3B8B0] hover:text-[#F4EFE6] border border-[#233D32] text-[9.5px] font-mono font-semibold cursor-pointer"
                     >
                       Reset (0d)
                     </button>
@@ -1864,7 +1873,7 @@ export default function App() {
                       type="button"
                       data-testid="zen-mastery-log-day-btn"
                       onClick={() => handleRecordConsecutiveZenDay(true)}
-                      className="px-2 py-0.5 rounded bg-[#143025] hover:bg-[#1D4434] text-[#68D391] border border-[#2C5E48] text-[10px] font-mono font-semibold cursor-pointer tabular-nums"
+                      className="px-2 py-0.5 rounded bg-[#143025] hover:bg-[#1D4434] text-[#68D391] border border-[#2C5E48] text-[9.5px] font-mono font-semibold cursor-pointer tabular-nums"
                     >
                       +1 Zen Day
                     </button>
@@ -1878,7 +1887,7 @@ export default function App() {
                   aria-valuemin={0}
                   aria-valuemax={100}
                   data-testid="zen-mastery-progress-bar"
-                  className="w-full h-2 rounded-full bg-[#060E0B] overflow-hidden border border-[#233D32]"
+                  className="w-full h-1.5 rounded-full bg-[#060E0B] overflow-hidden border border-[#233D32]"
                 >
                   <div
                     data-testid="zen-mastery-progress-fill"
@@ -1894,14 +1903,14 @@ export default function App() {
               </div>
             </div>
 
-            {/* Stage Selector & Sanctuary Atmosphere Soundscape Selector */}
-            <div className="space-y-2.5">
+            {/* Stage Selector & Sanctuary Atmosphere Soundscape Selector (2-Column Balanced Row) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {/* Stage Selector */}
-              <div className="space-y-1.5">
-                <span className="block text-[11px] font-mono uppercase tracking-wider text-[#A3B8B0]">
+              <div className="space-y-1">
+                <span className="block text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
                   Select Sanctuary Grove Stage
                 </span>
-                <div className="grid grid-cols-4 gap-1.5">
+                <div className="grid grid-cols-4 gap-1">
                   {SANCTUARY_STAGES.map((st, idx) => {
                     const locked = idx > highestReachedStage && idx > 0;
                     const active = stageIndex === idx;
@@ -1911,7 +1920,7 @@ export default function App() {
                         type="button"
                         disabled={locked}
                         onClick={() => setStageIndex(idx)}
-                        className={`px-2 py-1.5 rounded-lg text-xs font-mono transition-colors whitespace-nowrap text-center cursor-pointer ${
+                        className={`px-1.5 py-1.5 rounded-lg text-[11px] font-mono transition-colors whitespace-nowrap text-center cursor-pointer ${
                           active
                             ? 'bg-[#1E4435] text-[#F4EFE6] border border-[#68D391]'
                             : locked
@@ -1929,10 +1938,10 @@ export default function App() {
               {/* Sanctuary Atmosphere Soundscape Selector */}
               <div
                 data-testid="title-atmosphere-selector"
-                className="space-y-1.5"
+                className="space-y-1"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="block text-[11px] font-mono uppercase tracking-wider text-[#A3B8B0]">
+                  <span className="block text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
                     Sanctuary Atmosphere
                   </span>
                   <span
@@ -1942,7 +1951,7 @@ export default function App() {
                     {activeAtmosphere.label}
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1">
                   {SANCTUARY_ATMOSPHERES.map((atm) => {
                     const isSelected = atmosphereId === atm.id;
                     return (
@@ -1952,7 +1961,7 @@ export default function App() {
                         data-testid={`atmosphere-btn-${atm.id}`}
                         onClick={() => handleSelectAtmosphere(atm.id)}
                         title={`${atm.label}: ${atm.subtitle}`}
-                        className={`flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono transition-colors cursor-pointer border ${
+                        className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-mono transition-colors cursor-pointer border ${
                           isSelected
                             ? 'bg-[#1A3B2E] text-[#F4EFE6] border-[#68D391] font-semibold'
                             : 'bg-[#11261E] text-[#A3B8B0] border-[#233D32] hover:text-[#F4EFE6] hover:border-[#4FD1C5]'
@@ -1971,12 +1980,12 @@ export default function App() {
             </div>
 
             {/* Primary Start CTA, Interactive Demo & Clinical Codex Button (3 actions total) */}
-            <div className="flex flex-wrap items-center gap-3 pt-1">
+            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 pt-0.5">
               <button
                 type="button"
                 data-start="true"
                 onClick={() => startOrRestartGame(stageIndex, false)}
-                className="px-6 py-3 rounded-xl bg-[#F2B84B] hover:bg-[#F6AD55] text-[#091510] font-semibold text-sm md:text-base shadow-lg transition-transform active:scale-95 whitespace-nowrap shrink-0 cursor-pointer"
+                className="px-4 py-2.5 rounded-xl bg-[#F2B84B] hover:bg-[#F6AD55] text-[#091510] font-semibold text-sm shadow-lg transition-transform active:scale-95 whitespace-nowrap shrink-0 cursor-pointer"
               >
                 Enter Sanctuary [⏎ Return / Space]
               </button>
@@ -1985,15 +1994,16 @@ export default function App() {
                 type="button"
                 data-testid="watch-demo-button"
                 onClick={() => startOrRestartGame(0, true)}
-                className="px-4 py-3 rounded-xl bg-[#16382C] hover:bg-[#1E4B3B] text-[#68D391] border border-[#68D391]/60 font-mono font-semibold text-xs md:text-sm transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                className="px-3 py-2.5 rounded-xl bg-[#16382C] hover:bg-[#1E4B3B] text-[#68D391] border border-[#68D391]/60 font-mono font-semibold text-xs transition-colors whitespace-nowrap shrink-0 cursor-pointer"
               >
                 ▶ Interactive How-to-Play Demo
               </button>
 
               <button
                 type="button"
+                data-testid="title-codex-button"
                 onClick={() => setIsCodexOpen(true)}
-                className="px-4 py-3 rounded-xl bg-[#132A21] hover:bg-[#1C3B2F] text-[#F4EFE6] border border-[#2C4C3E] font-medium text-xs md:text-sm transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                className="px-3 py-2.5 rounded-xl bg-[#132A21] hover:bg-[#1C3B2F] text-[#F4EFE6] border border-[#2C4C3E] font-medium text-xs transition-colors whitespace-nowrap shrink-0 cursor-pointer"
               >
                 Read Clinical Evidence
               </button>
@@ -2001,7 +2011,7 @@ export default function App() {
           </div>
 
           {/* Flat Single-Line Mac Control Hint in Bottom Safe Margin */}
-          <div className="text-xs font-mono text-[#A3B8B0] tracking-wide pt-2">
+          <div className="text-[11px] font-mono text-[#A3B8B0] tracking-wide pt-1">
             {MAC_CONTROL_HINT_LINE}
           </div>
         </div>
@@ -2223,501 +2233,510 @@ export default function App() {
               )}
             </div>
 
-            {/* Top-Right Cluster: Live N-Back Working Memory Strip + Compact Utility Buttons */}
-            <div className="flex flex-wrap items-center justify-end gap-1.5 pointer-events-auto shrink-0">
-              {/* Live N-Back Totem Sequence Indicator + 5-Session HRV Adaptive Difficulty Scaling (Hidden in Zen Mode) */}
-              {zenHud.showNBackStream && (
-                <div
-                  data-testid="hud-nback-stream"
-                  data-effective-nback-level={hud.nBackLevel}
-                  data-effective-ufov-window-ms={hud.adaptiveUfovWindowMs}
-                  data-running-five-hrv-avg={hud.runningFiveSessionHrvAvg ?? activeAdaptiveScaling.runningFiveSessionHrvAvg}
-                  data-adaptive-tier-id={activeAdaptiveScaling.tierId}
-                  data-rhythm-sync-enabled={rhythmSyncConfig.enabled ? 'true' : 'false'}
-                  data-rhythm-chime-interval-sec={activeRhythmSync.effectiveChimeIntervalSec}
-                  className="hidden md:flex items-center gap-2 px-2.5 py-1.5 rounded-2xl bg-[#091510]/88 border border-[#233D32] shadow-xl whitespace-nowrap"
-                >
-                  <div>
-                    <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0] flex items-center gap-1.5">
-                      <span data-testid="hud-effective-nback-label">
-                        {hud.nBackLevel}-BACK CHIME STREAM
-                      </span>
-                      <button
-                        type="button"
-                        tabIndex={-1}
-                        data-testid="cycle-adaptive-hrv-tier-btn"
-                        onClick={handleCycleAdaptiveHrvPreset}
-                        title={`${activeAdaptiveScaling.tierLabel}: ${activeAdaptiveScaling.clinicalRationale} (5-Session Avg: ${activeAdaptiveScaling.runningFiveSessionHrvAvg}% · Click to test HRV Flow Scaling tiers)`}
-                        className="px-1.5 py-0.2 rounded text-[9px] font-mono font-semibold border transition-colors cursor-pointer bg-[#142D23] hover:bg-[#1D4032] border-[#2C4C3E]"
-                        style={{ color: activeAdaptiveScaling.accentHex }}
-                      >
-                        5-Sess HRV {hud.runningFiveSessionHrvAvg ?? activeAdaptiveScaling.runningFiveSessionHrvAvg}% · {hud.adaptiveUfovWindowMs}ms
-                        {runningFiveSessionHrvAvgOverride !== null ? ' [SIM]' : ''}
-                      </button>
-                      <button
-                        type="button"
-                        tabIndex={-1}
-                        data-testid="toggle-rhythm-sync-btn"
-                        aria-pressed={rhythmSyncConfig.enabled}
-                        onClick={handleToggleRhythmSync}
-                        title={activeRhythmSync.clinicalSummary}
-                        className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-semibold border transition-colors cursor-pointer flex items-center gap-1 ${
-                          rhythmSyncConfig.enabled
-                            ? 'bg-[#122D26] border-[#4FD1C5] text-[#4FD1C5]'
-                            : 'bg-[#142D23] hover:bg-[#1D4032] border-[#2C4C3E] text-[#A3B8B0] hover:text-[#F4EFE6]'
-                        }`}
-                        style={
-                          rhythmSyncConfig.enabled
-                            ? {
-                                borderColor: activeRhythmSync.primaryColorHex,
-                                color: activeRhythmSync.primaryColorHex,
-                              }
-                            : undefined
-                        }
-                      >
-                        <span
-                          className="w-1.5 h-1.5 rounded-full shrink-0"
-                          style={{
-                            backgroundColor: rhythmSyncConfig.enabled
-                              ? activeRhythmSync.primaryColorHex
-                              : '#526B61',
-                          }}
-                        />
-                        <span data-testid="hud-rhythm-sync-badge-text">
-                          {rhythmSyncConfig.enabled
-                            ? activeRhythmSync.modeBadgeLabel
-                            : `Rhythm Sync · ${activeRhythmSync.effectiveChimeIntervalSec.toFixed(2)}s`}
-                        </span>
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-1 mt-1">
-                      {hud.chimeHistory.slice(-(hud.nBackLevel === 3 ? 4 : 3)).map((sym, idx, arr) => {
-                        const isLatest = idx === arr.length - 1;
-                        return (
-                          <React.Fragment key={idx}>
-                            {renderSymbolBadge(sym, isLatest && hud.isNBackReadyToMatch)}
-                            {idx < arr.length - 1 && (
-                              <span className="text-xs text-[#526B61]">→</span>
-                            )}
-                          </React.Fragment>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    onClick={(e) => {
-                      e.currentTarget.blur();
-                      setTriggerActionSignal({ action: 'chime', seq: Date.now() });
-                    }}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                      hud.isNBackReadyToMatch
-                        ? 'bg-[#F2B84B] text-[#091510] shadow-md'
-                        : 'bg-[#152E24] text-[#4FD1C5] border border-[#2C4C3E] hover:bg-[#1E3F32]'
-                    }`}
-                  >
-                    Ring Echo [E]
-                  </button>
-                </div>
-              )}
-
-              {/* Compact Square SVG Utility Buttons: Codex, Mute [M], Restart [R], Pause [P] */}
-              <div className="flex items-center gap-1 p-1 rounded-xl bg-[#091510]/88 border border-[#233D32]">
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  aria-label="Open Clinical Evidence Codex"
-                  onClick={(e) => {
-                    e.currentTarget.blur();
-                    setIsCodexOpen(true);
-                  }}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#132A21] hover:bg-[#1E3F32] text-[#68D391] border border-[#2C4C3E] cursor-pointer"
-                  title="Clinical Evidence Codex"
-                >
-                  <svg viewBox="0 0 24 24" className="w-4 h-4 fill-none stroke-current" strokeWidth="2">
-                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-                  </svg>
-                </button>
-
-                {/* Sanctuary Atmosphere Switcher (Forest / Rain / Meadow) */}
-                <div
-                  data-testid="hud-atmosphere-selector"
-                  className="hidden 2xl:flex items-center gap-1 p-0.5 rounded-lg bg-[#0D1F18] border border-[#233D32]"
-                  title={`Sanctuary Atmosphere: ${activeAtmosphere.label} — ${activeAtmosphere.subtitle}`}
-                >
-                  {SANCTUARY_ATMOSPHERES.map((atm) => {
-                    const isSelected = atmosphereId === atm.id;
-                    return (
-                      <button
-                        key={atm.id}
-                        type="button"
-                        tabIndex={-1}
-                        data-testid={`hud-atmosphere-${atm.id}`}
-                        onClick={(e) => {
-                          e.currentTarget.blur();
-                          handleSelectAtmosphere(atm.id);
-                        }}
-                        className={`px-2 h-7 rounded-md text-[10px] font-mono font-semibold transition-colors cursor-pointer ${
-                          isSelected
-                            ? 'bg-[#1D4032] text-[#F4EFE6] border border-[#68D391]/60'
-                            : 'text-[#A3B8B0] hover:text-[#F4EFE6]'
-                        }`}
-                      >
-                        {atm.shortLabel}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  data-testid="toggle-zen-mode-btn"
-                  aria-pressed={isZenMode}
-                  aria-label="Toggle Zen Mode [Z] — Minimalist HRV Breathing View"
-                  onClick={handleToggleZenMode}
-                  className={`px-2 h-8 flex items-center gap-1 rounded-lg text-[10px] font-mono font-semibold border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                    isZenMode
-                      ? 'bg-[#1A4231] text-[#68D391] border-[#68D391] shadow-md'
-                      : 'bg-[#132A21] text-[#A3B8B0] hover:text-[#F4EFE6] border-[#2C4C3E]'
-                  }`}
-                  title="Toggle Zen Mode [Z] — Hide non-essential telemetry (nectar, trees, flow) for focused 0.1 Hz HRV breathing"
-                >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full ${
-                      isZenMode ? 'bg-[#68D391]' : 'bg-[#526B61]'
-                    }`}
-                  />
-                  <span>{isZenMode ? 'Zen: ON' : 'Zen [Z]'}</span>
-                </button>
-
-                {/* Sanctuary Bloom Toggle + Bloom Preset Menu + Bioluminescence Intensity Slider Control */}
-                <div
-                  data-testid="hud-sanctuary-bloom-section"
-                  data-active-bloom-preset={sanctuaryBloomPresetId}
-                  data-bloom-primary-hex={activeBloomPreset.primaryHex}
-                  data-bloom-crossfade-pct={
-                    hud.sanctuaryBloomCrossfadePct ?? (isSanctuaryBloomActive ? 100 : 0)
-                  }
-                  data-bloom-is-transitioning={hud.sanctuaryBloomIsTransitioning ? 'true' : 'false'}
-                  className={`flex items-center gap-1.5 px-2 h-8 rounded-lg border transition-all duration-500 whitespace-nowrap shrink-0 ${
-                    isSanctuaryBloomActive
-                      ? 'bg-[#171B2A] shadow-md'
-                      : 'bg-[#132A21] border-[#2C4C3E]'
-                  }`}
-                  style={
-                    isSanctuaryBloomActive
-                      ? { borderColor: activeBloomPreset.primaryHex }
-                      : undefined
-                  }
-                >
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    data-testid="toggle-sanctuary-bloom-btn"
-                    aria-pressed={isSanctuaryBloomActive}
-                    aria-label="Toggle 4-Stage Sanctuary Bloom Post-Processing & Orbital Camera [B]"
-                    onClick={handleToggleSanctuaryBloom}
-                    className={`flex items-center gap-1 text-[10px] font-mono font-semibold transition-colors cursor-pointer ${
-                      isSanctuaryBloomActive
-                        ? 'text-[#F4EFE6]'
-                        : 'text-[#A3B8B0] hover:text-[#F4EFE6]'
-                    }`}
-                    style={
-                      isSanctuaryBloomActive
-                        ? { color: activeBloomPreset.primaryHex }
-                        : undefined
-                    }
-                    title="Sanctuary Bloom [B] — 4-Stage Full-Canvas Bioluminescence Saturation & Slow Orbital Camera Rotation"
-                  >
-                    <span
-                      className="w-1.5 h-1.5 rounded-full shrink-0"
-                      style={{
-                        backgroundColor: isSanctuaryBloomActive
-                          ? activeBloomPreset.primaryHex
-                          : '#526B61',
-                      }}
-                    />
-                    <span>{isSanctuaryBloomActive ? 'Bloom: ON' : 'Bloom [B]'}</span>
-                  </button>
-
-                  {/* Bloom Preset Menu: Morning Glow, Midnight Forest, Neural Zenith, Neuro-Zenith */}
+            {/* Top-Right Cluster: Live N-Back Working Memory Strip + Compact Utility Buttons + Dedicated Sanctuary Bloom Row */}
+            <div
+              data-testid="hud-top-right-cluster"
+              className="flex flex-col items-end gap-1.5 pointer-events-auto max-w-full"
+            >
+              {/* Row 1: N-Back Stream + Core Utility Controls (100% within 1440px viewport) */}
+              <div className="flex flex-wrap items-center justify-end gap-1.5">
+                {/* Live N-Back Totem Sequence Indicator + 5-Session HRV Adaptive Difficulty Scaling (Hidden in Zen Mode) */}
+                {zenHud.showNBackStream && (
                   <div
-                    role="group"
-                    aria-label="Sanctuary Bloom Presets"
-                    data-testid="hud-sanctuary-bloom-preset-menu"
-                    className="flex items-center gap-1 pl-1.5 border-l border-[#2C4C3E]"
+                    data-testid="hud-nback-stream"
+                    data-effective-nback-level={hud.nBackLevel}
+                    data-effective-ufov-window-ms={hud.adaptiveUfovWindowMs}
+                    data-running-five-hrv-avg={hud.runningFiveSessionHrvAvg ?? activeAdaptiveScaling.runningFiveSessionHrvAvg}
+                    data-adaptive-tier-id={activeAdaptiveScaling.tierId}
+                    data-rhythm-sync-enabled={rhythmSyncConfig.enabled ? 'true' : 'false'}
+                    data-rhythm-chime-interval-sec={activeRhythmSync.effectiveChimeIntervalSec}
+                    className="hidden md:flex items-center gap-2 px-2.5 py-1.5 rounded-2xl bg-[#091510]/88 border border-[#233D32] shadow-xl whitespace-nowrap"
                   >
-                    {SANCTUARY_BLOOM_PRESET_LIST.map((preset) => {
-                      const isSelected = sanctuaryBloomPresetId === preset.id;
-                      return (
+                    <div>
+                      <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0] flex items-center gap-1.5">
+                        <span data-testid="hud-effective-nback-label">
+                          {hud.nBackLevel}-BACK CHIME STREAM
+                        </span>
                         <button
-                          key={preset.id}
                           type="button"
                           tabIndex={-1}
-                          data-testid={`bloom-preset-${preset.id}`}
-                          data-preset-id={preset.id}
-                          data-default-intensity={preset.defaultIntensityPct}
-                          data-primary-hex={preset.primaryHex}
-                          aria-pressed={isSelected}
-                          onClick={(e) => handleSelectBloomPreset(preset.id, e)}
-                          title={`${preset.label} (${preset.defaultIntensityPct}% Intensity) — ${preset.subtitle}`}
-                          className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-mono font-semibold border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                            isSelected
-                              ? 'bg-[#0E1E18] text-[#F4EFE6] shadow-xs'
-                              : 'bg-[#0B1712]/70 text-[#A3B8B0] border-transparent hover:text-[#F4EFE6] hover:bg-[#152B22]'
+                          data-testid="cycle-adaptive-hrv-tier-btn"
+                          onClick={handleCycleAdaptiveHrvPreset}
+                          title={`${activeAdaptiveScaling.tierLabel}: ${activeAdaptiveScaling.clinicalRationale} (5-Session Avg: ${activeAdaptiveScaling.runningFiveSessionHrvAvg}% · Click to test HRV Flow Scaling tiers)`}
+                          className="px-1.5 py-0.2 rounded text-[9px] font-mono font-semibold border transition-colors cursor-pointer bg-[#142D23] hover:bg-[#1D4032] border-[#2C4C3E]"
+                          style={{ color: activeAdaptiveScaling.accentHex }}
+                        >
+                          5-Sess HRV {hud.runningFiveSessionHrvAvg ?? activeAdaptiveScaling.runningFiveSessionHrvAvg}% · {hud.adaptiveUfovWindowMs}ms
+                          {runningFiveSessionHrvAvgOverride !== null ? ' [SIM]' : ''}
+                        </button>
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          data-testid="toggle-rhythm-sync-btn"
+                          aria-pressed={rhythmSyncConfig.enabled}
+                          onClick={handleToggleRhythmSync}
+                          title={activeRhythmSync.clinicalSummary}
+                          className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-semibold border transition-colors cursor-pointer flex items-center gap-1 ${
+                            rhythmSyncConfig.enabled
+                              ? 'bg-[#122D26] border-[#4FD1C5] text-[#4FD1C5]'
+                              : 'bg-[#142D23] hover:bg-[#1D4032] border-[#2C4C3E] text-[#A3B8B0] hover:text-[#F4EFE6]'
                           }`}
                           style={
-                            isSelected
+                            rhythmSyncConfig.enabled
                               ? {
-                                  borderColor: preset.primaryHex,
-                                  color: preset.primaryHex,
+                                  borderColor: activeRhythmSync.primaryColorHex,
+                                  color: activeRhythmSync.primaryColorHex,
                                 }
                               : undefined
                           }
                         >
                           <span
                             className="w-1.5 h-1.5 rounded-full shrink-0"
-                            style={{ backgroundColor: preset.primaryHex }}
+                            style={{
+                              backgroundColor: rhythmSyncConfig.enabled
+                                ? activeRhythmSync.primaryColorHex
+                                : '#526B61',
+                            }}
                           />
-                          <span>{preset.label}</span>
+                          <span data-testid="hud-rhythm-sync-badge-text">
+                            {rhythmSyncConfig.enabled
+                              ? activeRhythmSync.modeBadgeLabel
+                              : `Rhythm Sync · ${activeRhythmSync.effectiveChimeIntervalSec.toFixed(2)}s`}
+                          </span>
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-1 mt-1">
+                        {hud.chimeHistory.slice(-(hud.nBackLevel === 3 ? 4 : 3)).map((sym, idx, arr) => {
+                          const isLatest = idx === arr.length - 1;
+                          return (
+                            <React.Fragment key={idx}>
+                              {renderSymbolBadge(sym, isLatest && hud.isNBackReadyToMatch)}
+                              {idx < arr.length - 1 && (
+                                <span className="text-xs text-[#526B61]">→</span>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      onClick={(e) => {
+                        e.currentTarget.blur();
+                        setTriggerActionSignal({ action: 'chime', seq: Date.now() });
+                      }}
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                        hud.isNBackReadyToMatch
+                          ? 'bg-[#F2B84B] text-[#091510] shadow-md'
+                          : 'bg-[#152E24] text-[#4FD1C5] border border-[#2C4C3E] hover:bg-[#1E3F32]'
+                      }`}
+                    >
+                      Ring Echo [E]
+                    </button>
+                  </div>
+                )}
+
+                {/* Compact Square SVG Utility Buttons: Codex [C], Atmosphere, Zen [Z], 10Hz α, Reminder, Mute [M], Restart [R], Fullscreen, Pause [P] */}
+                <div className="flex items-center gap-1 p-1 rounded-xl bg-[#091510]/88 border border-[#233D32]">
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    data-testid="hud-codex-button"
+                    aria-label="Open Clinical Evidence Codex"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      setIsCodexOpen(true);
+                    }}
+                    className="px-2 h-8 flex items-center gap-1.5 rounded-lg bg-[#132A21] hover:bg-[#1E3F32] text-[#68D391] border border-[#2C4C3E] text-[10px] font-mono font-semibold whitespace-nowrap shrink-0 cursor-pointer"
+                    title="Open Clinical Evidence Codex [C]"
+                  >
+                    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-none stroke-current shrink-0" strokeWidth="2">
+                      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                    </svg>
+                    <span>Codex [C]</span>
+                  </button>
+
+                  {/* Sanctuary Atmosphere Switcher (Forest / Rain / Meadow) */}
+                  <div
+                    data-testid="hud-atmosphere-selector"
+                    className="hidden 2xl:flex items-center gap-1 p-0.5 rounded-lg bg-[#0D1F18] border border-[#233D32]"
+                    title={`Sanctuary Atmosphere: ${activeAtmosphere.label} — ${activeAtmosphere.subtitle}`}
+                  >
+                    {SANCTUARY_ATMOSPHERES.map((atm) => {
+                      const isSelected = atmosphereId === atm.id;
+                      return (
+                        <button
+                          key={atm.id}
+                          type="button"
+                          tabIndex={-1}
+                          data-testid={`hud-atmosphere-${atm.id}`}
+                          onClick={(e) => {
+                            e.currentTarget.blur();
+                            handleSelectAtmosphere(atm.id);
+                          }}
+                          className={`px-2 h-7 rounded-md text-[10px] font-mono font-semibold transition-colors cursor-pointer ${
+                            isSelected
+                              ? 'bg-[#1D4032] text-[#F4EFE6] border border-[#68D391]/60'
+                              : 'text-[#A3B8B0] hover:text-[#F4EFE6]'
+                          }`}
+                        >
+                          {atm.shortLabel}
                         </button>
                       );
                     })}
                   </div>
 
-                  <div
-                    data-testid="sanctuary-bloom-slider-wrapper"
-                    data-target-intensity-pct={sanctuaryBloomIntensityPct}
-                    data-animated-intensity-pct={Math.round(animatedBloomIntensityPct)}
-                    data-intensity-is-transitioning={
-                      isBloomIntensityTransitioning ? 'true' : 'false'
-                    }
-                    data-intensity-transition-duration-ms={
-                      SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_MS
-                    }
-                    onMouseEnter={() => setIsBloomSliderHovered(true)}
-                    onMouseLeave={() => setIsBloomSliderHovered(false)}
-                    className="relative flex items-center gap-1 pl-1.5 border-l border-[#2C4C3E]"
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    data-testid="toggle-zen-mode-btn"
+                    aria-pressed={isZenMode}
+                    aria-label="Toggle Zen Mode [Z] — Minimalist HRV Breathing View"
+                    onClick={handleToggleZenMode}
+                    className={`px-2 h-8 flex items-center gap-1 rounded-lg text-[10px] font-mono font-semibold border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                      isZenMode
+                        ? 'bg-[#1A4231] text-[#68D391] border-[#68D391] shadow-md'
+                        : 'bg-[#132A21] text-[#A3B8B0] hover:text-[#F4EFE6] border-[#2C4C3E]'
+                    }`}
+                    title="Toggle Zen Mode [Z] — Hide non-essential telemetry (nectar, trees, flow) for focused 0.1 Hz HRV breathing"
                   >
-                    <label
-                      htmlFor="sanctuary-bloom-intensity-slider"
-                      className="sr-only"
-                    >
-                      Sanctuary Bloom Bioluminescence Intensity
-                    </label>
-                    <div className="relative flex items-center w-14 h-3">
-                      {/* Smoothly Animated Bioluminescent Slider Track Fill */}
-                      <div
-                        aria-hidden="true"
-                        className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 h-1.5 rounded-full bg-[#08130F] overflow-hidden border border-[#1E3A2F]"
-                      >
-                        <div
-                          data-testid="sanctuary-bloom-slider-fill"
-                          data-fill-pct={Math.round(animatedBloomIntensityPct)}
-                          className="h-full rounded-full"
-                          style={{
-                            width: `${sanctuaryBloomIntensityPct}%`,
-                            backgroundColor: activeBloomPreset.primaryHex,
-                            boxShadow: `0 0 8px ${activeBloomPreset.primaryHex}`,
-                            transition: isBloomSliderDragging
-                              ? 'width 120ms ease-out, background-color 300ms ease'
-                              : `width ${SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_MS}ms cubic-bezier(0.65, 0, 0.35, 1), background-color ${SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_MS}ms cubic-bezier(0.65, 0, 0.35, 1), box-shadow ${SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_MS}ms cubic-bezier(0.65, 0, 0.35, 1)`,
-                          }}
-                        />
-                      </div>
-
-                      <input
-                        id="sanctuary-bloom-intensity-slider"
-                        type="range"
-                        min={0}
-                        max={100}
-                        step={1}
-                        value={
-                          isBloomSliderDragging
-                            ? sanctuaryBloomIntensityPct
-                            : Math.round(animatedBloomIntensityPct)
-                        }
-                        onChange={handleChangeBloomIntensity}
-                        onPointerDown={() => setIsBloomSliderDragging(true)}
-                        onMouseDown={() => setIsBloomSliderDragging(true)}
-                        onTouchStart={() => setIsBloomSliderDragging(true)}
-                        onFocus={() => setIsBloomSliderFocused(true)}
-                        onBlur={() => setIsBloomSliderFocused(false)}
-                        aria-describedby="sanctuary-bloom-intensity-tooltip"
-                        data-testid="sanctuary-bloom-intensity-slider"
-                        aria-label="Sanctuary Bloom Bioluminescence Intensity"
-                        className="relative z-10 w-14 h-1.5 bg-transparent rounded-lg cursor-pointer transition-all duration-300"
-                        style={{ accentColor: activeBloomPreset.primaryHex }}
-                      />
-
-                      {/* Interactive Floating Tooltip on Hover / Drag / Focus */}
-                      {bloomSliderTooltip.isVisible && (
-                        <div
-                          id="sanctuary-bloom-intensity-tooltip"
-                          role="tooltip"
-                          data-testid="sanctuary-bloom-intensity-tooltip"
-                          data-intensity-pct={bloomSliderTooltip.intensityPct}
-                          data-preset-label={bloomSliderTooltip.presetLabel}
-                          className="absolute top-full mt-2.5 z-50 px-2.5 py-1 rounded-lg bg-[#08130F]/95 border shadow-xl pointer-events-none whitespace-nowrap transition-all duration-200 ease-out"
-                          style={{
-                            left: `${Math.max(10, Math.min(90, bloomSliderTooltip.thumbOffsetPct))}%`,
-                            transform: 'translateX(-50%)',
-                            borderColor: bloomSliderTooltip.accentHex,
-                          }}
-                        >
-                          <span
-                            className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-[#08130F]"
-                            style={{
-                              borderTop: `1px solid ${bloomSliderTooltip.accentHex}`,
-                              borderLeft: `1px solid ${bloomSliderTooltip.accentHex}`,
-                            }}
-                          />
-                          <div className="flex items-center gap-1.5">
-                            <span
-                              className="w-1.5 h-1.5 rounded-full shrink-0"
-                              style={{ backgroundColor: bloomSliderTooltip.accentHex }}
-                            />
-                            <span
-                              data-testid="bloom-slider-tooltip-label"
-                              className="text-[10.5px] font-mono font-bold tabular-nums text-[#F4EFE6]"
-                            >
-                              {bloomSliderTooltip.primaryLabel}
-                            </span>
-                          </div>
-                          <div
-                            data-testid="bloom-slider-tooltip-subtitle"
-                            className="text-[9px] font-mono text-[#A3B8B0]"
-                          >
-                            {bloomSliderTooltip.presetLabel} · {bloomSliderTooltip.intensityTierLabel}
-                          </div>
-                        </div>
-                      )}
-                    </div>
                     <span
-                      data-testid="sanctuary-bloom-intensity-value"
-                      data-animated-value={Math.round(animatedBloomIntensityPct)}
-                      className="text-[10px] font-mono font-semibold tabular-nums w-7 text-right transition-colors duration-300"
-                      style={{ color: activeBloomPreset.primaryHex }}
-                    >
-                      {Math.round(animatedBloomIntensityPct)}%
-                    </span>
-                  </div>
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        isZenMode ? 'bg-[#68D391]' : 'bg-[#526B61]'
+                      }`}
+                    />
+                    <span>{isZenMode ? 'Zen: ON' : 'Zen [Z]'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    data-testid="toggle-binaural-btn"
+                    aria-label="Toggle 10 Hz Alpha Binaural Entrainment"
+                    onClick={handleToggleBinaural}
+                    className={`px-2 h-8 flex items-center gap-1 rounded-lg text-[10px] font-mono font-semibold border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                      isBinauralEnabled && !isMuted
+                        ? 'bg-[#17362B] text-[#4FD1C5] border-[#4FD1C5]/60'
+                        : 'bg-[#132A21] text-[#6E857C] border-[#2C4C3E]'
+                    }`}
+                    title="10 Hz Alpha Wave Binaural Acoustic Entrainment (200 Hz L / 210 Hz R)"
+                  >
+                    <span>10Hz α</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    data-testid="hud-gentle-reminder-btn"
+                    aria-label="Gentle Habit Notification (+30m Post-Practice NSDR & Reframing Reminder)"
+                    onClick={handleToggleGentleReminderPreview}
+                    className={`relative w-8 h-8 flex items-center justify-center rounded-lg border transition-colors shrink-0 cursor-pointer ${
+                      forceGentleToastPreview
+                        ? 'bg-[#2B2112] text-[#F2B84B] border-[#F2B84B]'
+                        : gentleNotificationEval.allHabitsLogged
+                        ? 'bg-[#132A21] text-[#68D391] border-[#68D391]/50'
+                        : 'bg-[#132A21] hover:bg-[#1E3F32] text-[#F4EFE6] border-[#2C4C3E]'
+                    }`}
+                    title={`${gentleNotificationEval.statusBadgeLabel} — Usual Practice ${gentleNotificationEval.usualPracticeTimeHm} → +30m Trigger @ ${gentleNotificationEval.triggerTimeHm}`}
+                  >
+                    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-none stroke-current" strokeWidth="2">
+                      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                    </svg>
+                    {!gentleNotificationEval.allHabitsLogged && (
+                      <span
+                        className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full"
+                        style={{
+                          backgroundColor: forceGentleToastPreview
+                            ? '#F2B84B'
+                            : '#4FD1C5',
+                        }}
+                      />
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    aria-label={isMuted ? 'Unmute Audio [M]' : 'Mute Audio [M]'}
+                    onClick={handleToggleMute}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#132A21] hover:bg-[#1E3F32] text-[#F4EFE6] border border-[#2C4C3E] cursor-pointer"
+                    title="Toggle Mute [M]"
+                  >
+                    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-none stroke-current" strokeWidth="2">
+                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                      {!isMuted ? (
+                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14" />
+                      ) : (
+                        <line x1="23" y1="9" x2="17" y2="15" />
+                      )}
+                    </svg>
+                  </button>
+
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    aria-label="Restart Stage [R]"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      startOrRestartGame(stageIndex);
+                    }}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#132A21] hover:bg-[#1E3F32] text-[#F4EFE6] border border-[#2C4C3E] cursor-pointer"
+                    title="Restart Stage"
+                  >
+                    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-none stroke-current" strokeWidth="2">
+                      <polyline points="23 4 23 10 17 10" />
+                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                    </svg>
+                  </button>
+
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    aria-label="Toggle macOS Fullscreen"
+                    onClick={handleToggleFullscreen}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#132A21] hover:bg-[#1E3F32] text-[#F4EFE6] border border-[#2C4C3E] cursor-pointer"
+                    title="Toggle macOS Fullscreen"
+                  >
+                    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-none stroke-current" strokeWidth="2">
+                      <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+                    </svg>
+                  </button>
+
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    data-testid="hud-pause-button"
+                    aria-label="Pause Sanctuary [P / ⎋ Esc]"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      handleTogglePause();
+                    }}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#132A21] hover:bg-[#1E3F32] text-[#F4EFE6] border border-[#2C4C3E] cursor-pointer"
+                    title="Pause [⎋ Esc / P]"
+                  >
+                    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-none stroke-current" strokeWidth="2">
+                      <rect x="6" y="4" width="4" height="16" />
+                      <rect x="14" y="4" width="4" height="16" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              {/* Row 2: Dedicated Sanctuary Bloom Toggle + 4-Preset Menu + Bioluminescence Intensity Slider Control */}
+              <div
+                data-testid="hud-sanctuary-bloom-section"
+                data-active-bloom-preset={sanctuaryBloomPresetId}
+                data-bloom-primary-hex={activeBloomPreset.primaryHex}
+                data-bloom-crossfade-pct={
+                  hud.sanctuaryBloomCrossfadePct ?? (isSanctuaryBloomActive ? 100 : 0)
+                }
+                data-bloom-is-transitioning={hud.sanctuaryBloomIsTransitioning ? 'true' : 'false'}
+                className={`flex flex-wrap items-center gap-1.5 px-2.5 py-1 rounded-xl border transition-all duration-500 whitespace-nowrap shadow-lg ${
+                  isSanctuaryBloomActive
+                    ? 'bg-[#171B2A]/92'
+                    : 'bg-[#091510]/88 border-[#2C4C3E]'
+                }`}
+                style={
+                  isSanctuaryBloomActive
+                    ? { borderColor: activeBloomPreset.primaryHex }
+                    : undefined
+                }
+              >
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  data-testid="toggle-sanctuary-bloom-btn"
+                  aria-pressed={isSanctuaryBloomActive}
+                  aria-label="Toggle 4-Stage Sanctuary Bloom Post-Processing & Orbital Camera [B]"
+                  onClick={handleToggleSanctuaryBloom}
+                  className={`flex items-center gap-1 text-[10px] font-mono font-semibold transition-colors cursor-pointer ${
+                    isSanctuaryBloomActive
+                      ? 'text-[#F4EFE6]'
+                      : 'text-[#A3B8B0] hover:text-[#F4EFE6]'
+                  }`}
+                  style={
+                    isSanctuaryBloomActive
+                      ? { color: activeBloomPreset.primaryHex }
+                      : undefined
+                  }
+                  title="Sanctuary Bloom [B] — 4-Stage Full-Canvas Bioluminescence Saturation & Slow Orbital Camera Rotation"
+                >
+                  <span
+                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                    style={{
+                      backgroundColor: isSanctuaryBloomActive
+                        ? activeBloomPreset.primaryHex
+                        : '#526B61',
+                    }}
+                  />
+                  <span>{isSanctuaryBloomActive ? 'Bloom: ON' : 'Bloom [B]'}</span>
+                </button>
+
+                {/* Bloom Preset Menu: Morning Glow, Midnight Forest, Neural Zenith, Neuro-Zenith */}
+                <div
+                  role="group"
+                  aria-label="Sanctuary Bloom Presets"
+                  data-testid="hud-sanctuary-bloom-preset-menu"
+                  className="flex items-center gap-1 pl-1.5 border-l border-[#2C4C3E]"
+                >
+                  {SANCTUARY_BLOOM_PRESET_LIST.map((preset) => {
+                    const isSelected = sanctuaryBloomPresetId === preset.id;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        tabIndex={-1}
+                        data-testid={`bloom-preset-${preset.id}`}
+                        data-preset-id={preset.id}
+                        data-default-intensity={preset.defaultIntensityPct}
+                        data-primary-hex={preset.primaryHex}
+                        aria-pressed={isSelected}
+                        onClick={(e) => handleSelectBloomPreset(preset.id, e)}
+                        title={`${preset.label} (${preset.defaultIntensityPct}% Intensity) — ${preset.subtitle}`}
+                        className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-mono font-semibold border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#0E1E18] text-[#F4EFE6] shadow-xs'
+                            : 'bg-[#0B1712]/70 text-[#A3B8B0] border-transparent hover:text-[#F4EFE6] hover:bg-[#152B22]'
+                        }`}
+                        style={
+                          isSelected
+                            ? {
+                                borderColor: preset.primaryHex,
+                                color: preset.primaryHex,
+                              }
+                            : undefined
+                        }
+                      >
+                        <span
+                          className="w-1.5 h-1.5 rounded-full shrink-0"
+                          style={{ backgroundColor: preset.primaryHex }}
+                        />
+                        <span>{preset.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
 
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  data-testid="toggle-binaural-btn"
-                  aria-label="Toggle 10 Hz Alpha Binaural Entrainment"
-                  onClick={handleToggleBinaural}
-                  className={`px-2 h-8 flex items-center gap-1 rounded-lg text-[10px] font-mono font-semibold border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                    isBinauralEnabled && !isMuted
-                      ? 'bg-[#17362B] text-[#4FD1C5] border-[#4FD1C5]/60'
-                      : 'bg-[#132A21] text-[#6E857C] border-[#2C4C3E]'
-                  }`}
-                  title="10 Hz Alpha Wave Binaural Acoustic Entrainment (200 Hz L / 210 Hz R)"
+                <div
+                  data-testid="sanctuary-bloom-slider-wrapper"
+                  data-target-intensity-pct={sanctuaryBloomIntensityPct}
+                  data-animated-intensity-pct={Math.round(animatedBloomIntensityPct)}
+                  data-intensity-is-transitioning={
+                    isBloomIntensityTransitioning ? 'true' : 'false'
+                  }
+                  data-intensity-transition-duration-ms={
+                    SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_MS
+                  }
+                  onMouseEnter={() => setIsBloomSliderHovered(true)}
+                  onMouseLeave={() => setIsBloomSliderHovered(false)}
+                  className="relative flex items-center gap-1 pl-1.5 border-l border-[#2C4C3E]"
                 >
-                  <span>10Hz α</span>
-                </button>
+                  <label
+                    htmlFor="sanctuary-bloom-intensity-slider"
+                    className="sr-only"
+                  >
+                    Sanctuary Bloom Bioluminescence Intensity
+                  </label>
+                  <div className="relative flex items-center w-16 h-3">
+                    {/* Smoothly Animated Bioluminescent Slider Track Fill */}
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 h-1.5 rounded-full bg-[#08130F] overflow-hidden border border-[#1E3A2F]"
+                    >
+                      <div
+                        data-testid="sanctuary-bloom-slider-fill"
+                        data-fill-pct={Math.round(animatedBloomIntensityPct)}
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${sanctuaryBloomIntensityPct}%`,
+                          backgroundColor: activeBloomPreset.primaryHex,
+                          boxShadow: `0 0 8px ${activeBloomPreset.primaryHex}`,
+                          transition: isBloomSliderDragging
+                            ? 'width 120ms ease-out, background-color 300ms ease'
+                            : `width ${SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_MS}ms cubic-bezier(0.65, 0, 0.35, 1), background-color ${SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_MS}ms cubic-bezier(0.65, 0, 0.35, 1), box-shadow ${SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_MS}ms cubic-bezier(0.65, 0, 0.35, 1)`,
+                        }}
+                      />
+                    </div>
 
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  data-testid="hud-gentle-reminder-btn"
-                  aria-label="Gentle Habit Notification (+30m Post-Practice NSDR & Reframing Reminder)"
-                  onClick={handleToggleGentleReminderPreview}
-                  className={`relative w-8 h-8 flex items-center justify-center rounded-lg border transition-colors shrink-0 cursor-pointer ${
-                    gentleNotificationEval.shouldShowToast
-                      ? 'bg-[#2B2112] text-[#F2B84B] border-[#F2B84B]'
-                      : gentleNotificationEval.allHabitsLogged
-                      ? 'bg-[#132A21] text-[#68D391] border-[#68D391]/50'
-                      : 'bg-[#132A21] hover:bg-[#1E3F32] text-[#F4EFE6] border-[#2C4C3E]'
-                  }`}
-                  title={`${gentleNotificationEval.statusBadgeLabel} — Usual Practice ${gentleNotificationEval.usualPracticeTimeHm} → +30m Trigger @ ${gentleNotificationEval.triggerTimeHm}`}
-                >
-                  <svg viewBox="0 0 24 24" className="w-4 h-4 fill-none stroke-current" strokeWidth="2">
-                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-                    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-                  </svg>
-                  {!gentleNotificationEval.allHabitsLogged && (
-                    <span
-                      className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full"
-                      style={{
-                        backgroundColor: gentleNotificationEval.shouldShowToast
-                          ? '#F2B84B'
-                          : '#4FD1C5',
-                      }}
+                    <input
+                      id="sanctuary-bloom-intensity-slider"
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={
+                        isBloomSliderDragging
+                          ? sanctuaryBloomIntensityPct
+                          : Math.round(animatedBloomIntensityPct)
+                      }
+                      onChange={handleChangeBloomIntensity}
+                      onPointerDown={() => setIsBloomSliderDragging(true)}
+                      onMouseDown={() => setIsBloomSliderDragging(true)}
+                      onTouchStart={() => setIsBloomSliderDragging(true)}
+                      onFocus={() => setIsBloomSliderFocused(true)}
+                      onBlur={() => setIsBloomSliderFocused(false)}
+                      aria-describedby="sanctuary-bloom-intensity-tooltip"
+                      data-testid="sanctuary-bloom-intensity-slider"
+                      aria-label="Sanctuary Bloom Bioluminescence Intensity"
+                      className="relative z-10 w-16 h-1.5 bg-transparent rounded-lg cursor-pointer transition-all duration-300"
+                      style={{ accentColor: activeBloomPreset.primaryHex }}
                     />
-                  )}
-                </button>
 
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  aria-label={isMuted ? 'Unmute Audio [M]' : 'Mute Audio [M]'}
-                  onClick={handleToggleMute}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#132A21] hover:bg-[#1E3F32] text-[#F4EFE6] border border-[#2C4C3E] cursor-pointer"
-                  title="Toggle Mute [M]"
-                >
-                  <svg viewBox="0 0 24 24" className="w-4 h-4 fill-none stroke-current" strokeWidth="2">
-                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                    {!isMuted ? (
-                      <path d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14" />
-                    ) : (
-                      <line x1="23" y1="9" x2="17" y2="15" />
+                    {/* Interactive Floating Tooltip on Hover / Drag / Focus */}
+                    {bloomSliderTooltip.isVisible && (
+                      <div
+                        id="sanctuary-bloom-intensity-tooltip"
+                        role="tooltip"
+                        data-testid="sanctuary-bloom-intensity-tooltip"
+                        data-intensity-pct={bloomSliderTooltip.intensityPct}
+                        data-preset-label={bloomSliderTooltip.presetLabel}
+                        className="absolute top-full mt-2.5 z-50 px-2.5 py-1 rounded-lg bg-[#08130F]/95 border shadow-xl pointer-events-none whitespace-nowrap transition-all duration-200 ease-out"
+                        style={{
+                          left: `${Math.max(10, Math.min(90, bloomSliderTooltip.thumbOffsetPct))}%`,
+                          transform: 'translateX(-50%)',
+                          borderColor: bloomSliderTooltip.accentHex,
+                        }}
+                      >
+                        <span
+                          className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-[#08130F]"
+                          style={{
+                            borderTop: `1px solid ${bloomSliderTooltip.accentHex}`,
+                            borderLeft: `1px solid ${bloomSliderTooltip.accentHex}`,
+                          }}
+                        />
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className="w-1.5 h-1.5 rounded-full shrink-0"
+                            style={{ backgroundColor: bloomSliderTooltip.accentHex }}
+                          />
+                          <span
+                            data-testid="bloom-slider-tooltip-label"
+                            className="text-[10.5px] font-mono font-bold tabular-nums text-[#F4EFE6]"
+                          >
+                            {bloomSliderTooltip.primaryLabel}
+                          </span>
+                        </div>
+                        <div
+                          data-testid="bloom-slider-tooltip-subtitle"
+                          className="text-[9px] font-mono text-[#A3B8B0]"
+                        >
+                          {bloomSliderTooltip.presetLabel} · {bloomSliderTooltip.intensityTierLabel}
+                        </div>
+                      </div>
                     )}
-                  </svg>
-                </button>
-
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  aria-label="Restart Stage [R]"
-                  onClick={(e) => {
-                    e.currentTarget.blur();
-                    startOrRestartGame(stageIndex);
-                  }}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#132A21] hover:bg-[#1E3F32] text-[#F4EFE6] border border-[#2C4C3E] cursor-pointer"
-                  title="Restart Stage"
-                >
-                  <svg viewBox="0 0 24 24" className="w-4 h-4 fill-none stroke-current" strokeWidth="2">
-                    <polyline points="23 4 23 10 17 10" />
-                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-                  </svg>
-                </button>
-
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  aria-label="Toggle macOS Fullscreen"
-                  onClick={handleToggleFullscreen}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#132A21] hover:bg-[#1E3F32] text-[#F4EFE6] border border-[#2C4C3E] cursor-pointer"
-                  title="Toggle macOS Fullscreen"
-                >
-                  <svg viewBox="0 0 24 24" className="w-4 h-4 fill-none stroke-current" strokeWidth="2">
-                    <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
-                  </svg>
-                </button>
-
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  aria-label="Pause Sanctuary [P / ⎋ Esc]"
-                  onClick={(e) => {
-                    e.currentTarget.blur();
-                    handleTogglePause();
-                  }}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#132A21] hover:bg-[#1E3F32] text-[#F4EFE6] border border-[#2C4C3E] cursor-pointer"
-                  title="Pause [⎋ Esc / P]"
-                >
-                  <svg viewBox="0 0 24 24" className="w-4 h-4 fill-none stroke-current" strokeWidth="2">
-                    <rect x="6" y="4" width="4" height="16" />
-                    <rect x="14" y="4" width="4" height="16" />
-                  </svg>
-                </button>
+                  </div>
+                  <span
+                    data-testid="sanctuary-bloom-intensity-value"
+                    data-animated-value={Math.round(animatedBloomIntensityPct)}
+                    className="text-[10px] font-mono font-semibold tabular-nums w-7 text-right transition-colors duration-300"
+                    style={{ color: activeBloomPreset.primaryHex }}
+                  >
+                    {Math.round(animatedBloomIntensityPct)}%
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -3374,8 +3393,9 @@ export default function App() {
           aria-labelledby="gameover-modal-title"
           className="fixed inset-0 z-30 flex items-center justify-center p-4 md:p-5 bg-[#07120E]/88 pointer-events-auto"
         >
-          <div className="w-full max-w-3xl max-h-[94vh] overflow-y-auto rounded-2xl bg-[#10231C] border border-[#2C4C3E] p-4 shadow-2xl space-y-2.5">
-            <div className="text-center space-y-0.5">
+          <div className="w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden rounded-2xl bg-[#10231C] border border-[#2C4C3E] p-4 shadow-2xl">
+            {/* Pinned Modal Header */}
+            <div className="text-center space-y-0.5 pb-2 border-b border-[#233D32] shrink-0">
               <p className="text-[11px] font-mono uppercase tracking-wider text-[#68D391]">
                 {gameOutcome === 'victory'
                   ? 'Hippocampal & Prefrontal Circuitry Illuminated'
@@ -3402,178 +3422,182 @@ export default function App() {
               )}
             </div>
 
-            {/* 3 Primary Tabular-Nums Stat Tiles */}
-            <div className="grid grid-cols-3 gap-2.5 p-2.5 rounded-xl bg-[#0B1914] border border-[#233D32] text-center">
-              <div>
-                <div className="text-[10px] font-mono text-[#A3B8B0]">REJUVENATION SCORE</div>
-                <div className="text-xl font-mono font-bold text-[#F2B84B] tabular-nums">
-                  {endSummary.rejuvenationScore}
+            {/* Scrollable Telemetry & Journal Body */}
+            <div className="flex-1 overflow-y-auto space-y-2.5 py-2.5 pr-1">
+              {/* 3 Primary Tabular-Nums Stat Tiles */}
+              <div className="grid grid-cols-3 gap-2.5 p-2.5 rounded-xl bg-[#0B1914] border border-[#233D32] text-center">
+                <div>
+                  <div className="text-[10px] font-mono text-[#A3B8B0]">REJUVENATION SCORE</div>
+                  <div className="text-xl font-mono font-bold text-[#F2B84B] tabular-nums">
+                    {endSummary.rejuvenationScore}
+                  </div>
+                  <div className="text-[10px] font-mono text-[#68D391] tabular-nums">
+                    Peak: {lifetimeProgress.peakRejuvenationScore}
+                  </div>
                 </div>
-                <div className="text-[10px] font-mono text-[#68D391] tabular-nums">
-                  Peak: {lifetimeProgress.peakRejuvenationScore}
+                <div>
+                  <div className="text-[10px] font-mono text-[#A3B8B0]">UFOV &amp; N-BACK</div>
+                  <div className="text-xl font-mono font-bold text-[#4FD1C5] tabular-nums">
+                    {Math.round((endSummary.processingSpeedPct + endSummary.workingMemoryPct) / 2)}%
+                  </div>
+                  <div className="text-[10px] font-mono text-[#A3B8B0]">Accuracy</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-mono text-[#A3B8B0]">TOTAL TREES GRAFTED</div>
+                  <div className="text-xl font-mono font-bold text-[#B794F4] tabular-nums">
+                    {lifetimeProgress.totalTreesGrafted}
+                  </div>
+                  <div className="text-[10px] font-mono text-[#A3B8B0]">
+                    {milestoneEval.highestUnlockedBadge.title}
+                  </div>
                 </div>
               </div>
-              <div>
-                <div className="text-[10px] font-mono text-[#A3B8B0]">UFOV &amp; N-BACK</div>
-                <div className="text-xl font-mono font-bold text-[#4FD1C5] tabular-nums">
-                  {Math.round((endSummary.processingSpeedPct + endSummary.workingMemoryPct) / 2)}%
+
+              {/* COGNITIVE BLOOM IMPACT SUMMARY PANEL (N-Back Accuracy vs. UFOV Response Times & Mechanic Score Breakdown) */}
+              <section
+                data-testid="cognitive-bloom-impact-panel"
+                data-total-score={bloomImpact.totalRejuvenationScore}
+                data-primary-driver={bloomImpact.primaryDriverId}
+                data-avg-ufov-ms={bloomImpact.avgUfovResponseMs}
+                className="p-3 rounded-xl bg-[#0B1914] border border-[#2C4C3E] space-y-2"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-[#4FD1C5] shrink-0" />
+                    <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-[#F4EFE6]">
+                      Cognitive Bloom Impact · Rejuvenation Score Breakdown
+                    </h3>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      data-testid="bloom-impact-synergy-tier"
+                      className="px-2 py-0.5 rounded bg-[#142D23] border border-[#68D391]/50 text-[10px] font-mono font-semibold text-[#68D391]"
+                    >
+                      {bloomImpact.bloomSynergyTier}
+                    </span>
+                    <span
+                      data-testid="bloom-impact-total-score"
+                      className="px-2 py-0.5 rounded bg-[#1A2922] border border-[#F2B84B]/50 text-[10px] font-mono font-bold text-[#F2B84B] tabular-nums"
+                    >
+                      {bloomImpact.totalRejuvenationScore} BRI pts (100%)
+                    </span>
+                  </div>
                 </div>
-                <div className="text-[10px] font-mono text-[#A3B8B0]">Accuracy</div>
-              </div>
-              <div>
-                <div className="text-[10px] font-mono text-[#A3B8B0]">TOTAL TREES GRAFTED</div>
-                <div className="text-xl font-mono font-bold text-[#B794F4] tabular-nums">
-                  {lifetimeProgress.totalTreesGrafted}
+
+                {/* Stacked Proportional Contribution Bar */}
+                <div
+                  data-testid="bloom-impact-stacked-bar"
+                  className="w-full h-2.5 rounded-full bg-[#07120E] overflow-hidden flex border border-[#1E352B]"
+                  title="Proportional contribution of each cognitive mechanic to the final Rejuvenation Score"
+                >
+                  {bloomImpact.contributors.map((item) => (
+                    <div
+                      key={item.id}
+                      data-testid={`bloom-impact-segment-${item.id}`}
+                      style={{
+                        width: `${item.contributionPct}%`,
+                        backgroundColor: item.accentHex,
+                      }}
+                      className="h-full transition-all duration-300"
+                      title={`${item.label}: +${item.scorePoints} pts (${item.contributionPct}%)`}
+                    />
+                  ))}
                 </div>
-                <div className="text-[10px] font-mono text-[#A3B8B0]">
-                  {milestoneEval.highestUnlockedBadge.title}
+
+                {/* N-Back Accuracy vs. UFOV Response Time Direct Comparison Callout */}
+                <div
+                  data-testid="bloom-impact-nback-vs-ufov-banner"
+                  className="px-3 py-1.5 rounded-lg bg-[#10241C] border border-[#233D32] flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono"
+                >
+                  <span className="text-[#D5E2DC]">
+                    {bloomImpact.nBackVsUfovComparisonLabel}
+                  </span>
+                  <span className="text-[#4FD1C5] font-semibold shrink-0">
+                    Lead Driver: {bloomImpact.primaryDriverLabel}
+                  </span>
                 </div>
-              </div>
+
+                {/* 4-Mechanic Contribution Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {bloomImpact.contributors.map((item) => (
+                    <div
+                      key={item.id}
+                      data-testid={`bloom-impact-card-${item.id}`}
+                      data-score-points={item.scorePoints}
+                      data-contribution-pct={item.contributionPct}
+                      className="p-2.5 rounded-xl bg-[#0F221B] border border-[#1F3A2E] space-y-1"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span
+                            className="w-2 h-2 rounded-full shrink-0"
+                            style={{ backgroundColor: item.accentHex }}
+                          />
+                          <span className="text-[11px] font-semibold text-[#F4EFE6] truncate">
+                            {item.label}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0 font-mono tabular-nums">
+                          <span
+                            data-testid={`bloom-impact-points-${item.id}`}
+                            className="text-xs font-bold"
+                            style={{ color: item.accentHex }}
+                          >
+                            +{item.scorePoints} pts
+                          </span>
+                          <span
+                            data-testid={`bloom-impact-pct-${item.id}`}
+                            className="px-1.5 py-0.5 rounded bg-[#091510] text-[10px] font-semibold text-[#A3B8B0]"
+                          >
+                            {item.contributionPct}%
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[10px] font-mono text-[#A3B8B0]">
+                        <span
+                          data-testid={`bloom-impact-metric-${item.id}`}
+                          className="text-[#D5E2DC] font-semibold"
+                        >
+                          {item.performanceMetricLabel}
+                        </span>
+                        <span>{item.protocolCitation}</span>
+                      </div>
+
+                      <div className="w-full h-1.5 rounded-full bg-[#091510] overflow-hidden">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${item.contributionPct}%`,
+                            backgroundColor: item.accentHex,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              {/* Post-Session Cognitive Insight Journal (Linked to Daily Streak) */}
+              <CognitiveInsightJournal
+                neuralLogs={neuralLogs}
+                streakDayCount={dailyStreak.currentStreak}
+                stageName={hud.stageName}
+                outcome={gameOutcome === 'victory' ? 'victory' : 'defeat'}
+                rejuvenationScore={endSummary.rejuvenationScore}
+                onAddNeuralLog={handleAddNeuralLog}
+                compact
+              />
             </div>
 
-            {/* COGNITIVE BLOOM IMPACT SUMMARY PANEL (N-Back Accuracy vs. UFOV Response Times & Mechanic Score Breakdown) */}
-            <section
-              data-testid="cognitive-bloom-impact-panel"
-              data-total-score={bloomImpact.totalRejuvenationScore}
-              data-primary-driver={bloomImpact.primaryDriverId}
-              data-avg-ufov-ms={bloomImpact.avgUfovResponseMs}
-              className="p-3 rounded-xl bg-[#0B1914] border border-[#2C4C3E] space-y-2"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-[#4FD1C5] shrink-0" />
-                  <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-[#F4EFE6]">
-                    Cognitive Bloom Impact · Rejuvenation Score Breakdown
-                  </h3>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span
-                    data-testid="bloom-impact-synergy-tier"
-                    className="px-2 py-0.5 rounded bg-[#142D23] border border-[#68D391]/50 text-[10px] font-mono font-semibold text-[#68D391]"
-                  >
-                    {bloomImpact.bloomSynergyTier}
-                  </span>
-                  <span
-                    data-testid="bloom-impact-total-score"
-                    className="px-2 py-0.5 rounded bg-[#1A2922] border border-[#F2B84B]/50 text-[10px] font-mono font-bold text-[#F2B84B] tabular-nums"
-                  >
-                    {bloomImpact.totalRejuvenationScore} BRI pts (100%)
-                  </span>
-                </div>
-              </div>
-
-              {/* Stacked Proportional Contribution Bar */}
-              <div
-                data-testid="bloom-impact-stacked-bar"
-                className="w-full h-2.5 rounded-full bg-[#07120E] overflow-hidden flex border border-[#1E352B]"
-                title="Proportional contribution of each cognitive mechanic to the final Rejuvenation Score"
-              >
-                {bloomImpact.contributors.map((item) => (
-                  <div
-                    key={item.id}
-                    data-testid={`bloom-impact-segment-${item.id}`}
-                    style={{
-                      width: `${item.contributionPct}%`,
-                      backgroundColor: item.accentHex,
-                    }}
-                    className="h-full transition-all duration-300"
-                    title={`${item.label}: +${item.scorePoints} pts (${item.contributionPct}%)`}
-                  />
-                ))}
-              </div>
-
-              {/* N-Back Accuracy vs. UFOV Response Time Direct Comparison Callout */}
-              <div
-                data-testid="bloom-impact-nback-vs-ufov-banner"
-                className="px-3 py-1.5 rounded-lg bg-[#10241C] border border-[#233D32] flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono"
-              >
-                <span className="text-[#D5E2DC]">
-                  {bloomImpact.nBackVsUfovComparisonLabel}
-                </span>
-                <span className="text-[#4FD1C5] font-semibold shrink-0">
-                  Lead Driver: {bloomImpact.primaryDriverLabel}
-                </span>
-              </div>
-
-              {/* 4-Mechanic Contribution Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {bloomImpact.contributors.map((item) => (
-                  <div
-                    key={item.id}
-                    data-testid={`bloom-impact-card-${item.id}`}
-                    data-score-points={item.scorePoints}
-                    data-contribution-pct={item.contributionPct}
-                    className="p-2.5 rounded-xl bg-[#0F221B] border border-[#1F3A2E] space-y-1"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span
-                          className="w-2 h-2 rounded-full shrink-0"
-                          style={{ backgroundColor: item.accentHex }}
-                        />
-                        <span className="text-[11px] font-semibold text-[#F4EFE6] truncate">
-                          {item.label}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0 font-mono tabular-nums">
-                        <span
-                          data-testid={`bloom-impact-points-${item.id}`}
-                          className="text-xs font-bold"
-                          style={{ color: item.accentHex }}
-                        >
-                          +{item.scorePoints} pts
-                        </span>
-                        <span
-                          data-testid={`bloom-impact-pct-${item.id}`}
-                          className="px-1.5 py-0.5 rounded bg-[#091510] text-[10px] font-semibold text-[#A3B8B0]"
-                        >
-                          {item.contributionPct}%
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between text-[10px] font-mono text-[#A3B8B0]">
-                      <span
-                        data-testid={`bloom-impact-metric-${item.id}`}
-                        className="text-[#D5E2DC] font-semibold"
-                      >
-                        {item.performanceMetricLabel}
-                      </span>
-                      <span>{item.protocolCitation}</span>
-                    </div>
-
-                    <div className="w-full h-1.5 rounded-full bg-[#091510] overflow-hidden">
-                      <div
-                        className="h-full rounded-full"
-                        style={{
-                          width: `${item.contributionPct}%`,
-                          backgroundColor: item.accentHex,
-                        }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            {/* Post-Session Cognitive Insight Journal (Linked to Daily Streak) */}
-            <CognitiveInsightJournal
-              neuralLogs={neuralLogs}
-              streakDayCount={dailyStreak.currentStreak}
-              stageName={hud.stageName}
-              outcome={gameOutcome === 'victory' ? 'victory' : 'defeat'}
-              rejuvenationScore={endSummary.rejuvenationScore}
-              onAddNeuralLog={handleAddNeuralLog}
-              compact
-            />
-
-            <div className="flex flex-col sm:flex-row gap-3">
+            {/* Pinned Bottom Action Footer — Always Visible Above the Fold */}
+            <div className="shrink-0 pt-2.5 border-t border-[#233D32] flex flex-col sm:flex-row gap-3">
               {gameOutcome === 'victory' && stageIndex < SANCTUARY_STAGES.length - 1 ? (
                 <button
                   type="button"
                   data-start="true"
                   onClick={() => startOrRestartGame(stageIndex + 1, false)}
-                  className="flex-1 py-3 px-5 rounded-xl bg-[#F2B84B] hover:bg-[#F6AD55] text-[#091510] font-semibold text-sm transition-colors cursor-pointer"
+                  className="flex-1 py-2.5 px-5 rounded-xl bg-[#F2B84B] hover:bg-[#F6AD55] text-[#091510] font-semibold text-sm transition-colors cursor-pointer"
                 >
                   Advance to Stage {stageIndex + 2}
                 </button>
@@ -3582,7 +3606,7 @@ export default function App() {
                   type="button"
                   data-start="true"
                   onClick={() => startOrRestartGame(stageIndex, false)}
-                  className="flex-1 py-3 px-5 rounded-xl bg-[#F2B84B] hover:bg-[#F6AD55] text-[#091510] font-semibold text-sm transition-colors cursor-pointer"
+                  className="flex-1 py-2.5 px-5 rounded-xl bg-[#F2B84B] hover:bg-[#F6AD55] text-[#091510] font-semibold text-sm transition-colors cursor-pointer"
                 >
                   {gameOutcome === 'victory' ? 'Play Sanctuary Again' : 'Try Sanctuary Again'}
                 </button>
@@ -3595,7 +3619,7 @@ export default function App() {
                   soundEngine.pauseAmbient();
                   setGameState('title');
                 }}
-                className="py-3 px-5 rounded-xl bg-[#152E24] hover:bg-[#1E3F32] text-[#F4EFE6] border border-[#2C4C3E] font-medium text-sm transition-colors cursor-pointer"
+                className="py-2.5 px-5 rounded-xl bg-[#152E24] hover:bg-[#1E3F32] text-[#F4EFE6] border border-[#2C4C3E] font-medium text-sm transition-colors cursor-pointer"
               >
                 Title Screen
               </button>
@@ -3657,7 +3681,8 @@ export default function App() {
       />
 
       {/* 7. GENTLE HABIT NOTIFICATION TOAST (+30 Minutes Post-Practice NSDR & Reframing Reminder) */}
-      {gentleNotificationEval.shouldShowToast &&
+      {forceGentleToastPreview &&
+        gentleNotificationEval.shouldShowToast &&
         !isCodexOpen &&
         gameState !== 'gameover' &&
         gameState !== 'paused' && (
