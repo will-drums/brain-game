@@ -574,6 +574,104 @@ export function computeHrvTrendSummary(history: readonly HrvSessionRecord[]): {
   };
 }
 
+export interface TenSessionHrvChartPoint extends HrvSessionRecord {
+  rollingThreeSessionAvg: number; // 3-session rolling average (0..100)
+  linearTrendScore: number; // Least-squares linear trendline value across the 10 sessions
+  clinicalTargetThreshold: number; // 75% clinical vagal resonance target
+  deltaFromBaseline: number; // coherenceScore - firstSession.coherenceScore
+  isOptimalResonance: boolean; // coherenceScore >= 75
+}
+
+export interface TenSessionHrvTrendChartSummary {
+  points: TenSessionHrvChartPoint[];
+  averageCoherence: number;
+  peakCoherence: number;
+  latestCoherence: number;
+  baselineCoherence: number;
+  trendDelta: number;
+  linearSlopePerSession: number;
+  optimalSessionCount: number;
+  relaxationStatus: 'Optimal Vagal Resonance' | 'Building Vagal Tone' | 'Baseline Calibration';
+}
+
+/**
+ * Prepare enriched Recharts dataset and trend line regression metrics across the user's last 10 HRV coherence sessions.
+ */
+export function computeTenSessionHrvChartData(
+  history?: readonly HrvSessionRecord[] | null
+): TenSessionHrvTrendChartSummary {
+  const source =
+    history && history.length > 0
+      ? history.slice(-10)
+      : DEFAULT_HRV_HISTORY_SEED.slice(-10);
+
+  const normalized: HrvSessionRecord[] = source.map((item, idx) => ({
+    ...item,
+    sessionIndex: idx + 1,
+    sessionLabel: `S${idx + 1}`,
+    coherenceScore: Math.max(0, Math.min(100, Math.round(item.coherenceScore))),
+    coherenceSeconds: Number(Math.max(0, Number(item.coherenceSeconds) || 0).toFixed(1)),
+  }));
+
+  const summary = computeHrvTrendSummary(normalized);
+  const n = normalized.length;
+  const baselineCoherence = n > 0 ? normalized[0].coherenceScore : 0;
+
+  // Least-squares linear regression over session indices (0..n-1)
+  let sumX = 0;
+  let sumY = 0;
+  let sumXY = 0;
+  let sumXX = 0;
+  for (let i = 0; i < n; i++) {
+    const x = i;
+    const y = normalized[i].coherenceScore;
+    sumX += x;
+    sumY += y;
+    sumXY += x * y;
+    sumXX += x * x;
+  }
+  const denom = n * sumXX - sumX * sumX;
+  const slope = n > 1 && denom !== 0 ? (n * sumXY - sumX * sumY) / denom : 0;
+  const intercept = n > 0 ? (sumY - slope * sumX) / n : 0;
+  const linearSlopePerSession = Number(slope.toFixed(2));
+
+  let optimalSessionCount = 0;
+  const points: TenSessionHrvChartPoint[] = normalized.map((rec, idx) => {
+    const windowSlice = normalized.slice(Math.max(0, idx - 2), idx + 1);
+    const rollingSum = windowSlice.reduce((acc, s) => acc + s.coherenceScore, 0);
+    const rollingThreeSessionAvg = Math.round(rollingSum / windowSlice.length);
+    const linearTrendScore = Math.max(
+      0,
+      Math.min(100, Number((intercept + slope * idx).toFixed(1)))
+    );
+    const isOptimalResonance = rec.coherenceScore >= 75;
+    if (isOptimalResonance) {
+      optimalSessionCount += 1;
+    }
+
+    return {
+      ...rec,
+      rollingThreeSessionAvg,
+      linearTrendScore,
+      clinicalTargetThreshold: 75,
+      deltaFromBaseline: rec.coherenceScore - baselineCoherence,
+      isOptimalResonance,
+    };
+  });
+
+  return {
+    points,
+    averageCoherence: summary.averageCoherence,
+    peakCoherence: summary.peakCoherence,
+    latestCoherence: summary.latestCoherence,
+    baselineCoherence,
+    trendDelta: summary.trendDelta,
+    linearSlopePerSession,
+    optimalSessionCount,
+    relaxationStatus: summary.relaxationStatus,
+  };
+}
+
 /**
  * Cognitive Milestone Badge System & Sanctuary Aesthetic Upgrades
  * Grants visual flora palette & firefly density upgrades based on total 'Neural Trees Grafted',

@@ -16,6 +16,7 @@ import {
   DEFAULT_HRV_HISTORY_SEED,
   appendHrvSessionRecord,
   computeHrvTrendSummary,
+  computeTenSessionHrvChartData,
   COGNITIVE_MILESTONE_BADGES,
   ZEN_MASTERY_REQUIRED_CONSECUTIVE_DAYS,
   evaluateZenModeStreakOnLoad,
@@ -1534,6 +1535,17 @@ test('HRV coherence session history maintains rolling 10 sessions and computes p
   assert.equal(updated[0].coherenceScore, 66); // Previous S2 shifted to S1
   assert.equal(updated[9].sessionLabel, 'S10');
   assert.equal(updated[9].coherenceScore, 96);
+
+  const rechartsSummary = computeTenSessionHrvChartData(DEFAULT_HRV_HISTORY_SEED);
+  assert.equal(rechartsSummary.points.length, 10);
+  assert.equal(rechartsSummary.baselineCoherence, 62);
+  assert.equal(rechartsSummary.latestCoherence, 92);
+  assert.equal(rechartsSummary.trendDelta, 30);
+  assert.ok(rechartsSummary.linearSlopePerSession > 2.5);
+  assert.equal(rechartsSummary.optimalSessionCount, 5); // S5(75), S7(79), S8(84), S9(88), S10(92)
+  assert.equal(rechartsSummary.points[0].rollingThreeSessionAvg, 62);
+  assert.equal(rechartsSummary.points[9].deltaFromBaseline, 30);
+  assert.equal(rechartsSummary.points[9].clinicalTargetThreshold, 75);
 });
 
 test('daily streak tracking increments on consecutive days, stays idempotent on same day, and resets after missed day', () => {

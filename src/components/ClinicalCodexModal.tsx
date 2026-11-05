@@ -17,6 +17,7 @@ import {
   HRV_HISTORY_STORAGE_KEY,
   DEFAULT_HRV_HISTORY_SEED,
   computeHrvTrendSummary,
+  computeTenSessionHrvChartData,
   computeVagalToneTrend30Days,
   computeCognitiveDomainProfile,
   NEURO_NUTRITION_SLEEP_TIPS,
@@ -63,6 +64,7 @@ import {
   type NeuralLogEntry,
   type NeuralLogMoodTag,
   type HrvSessionRecord,
+  type TenSessionHrvChartPoint,
   type ProtocolId,
 } from '../game/rules';
 import { CognitiveInsightJournal } from './CognitiveInsightJournal';
@@ -457,7 +459,14 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
   }, [hrvHistory]);
 
   const sessions = resolvedHistory;
+  useEffect(() => {
+    setHoveredSession(null);
+  }, [hrvHistory]);
   const trendSummary = computeHrvTrendSummary(sessions);
+  const tenSessionHrvChart = React.useMemo(
+    () => computeTenSessionHrvChartData(sessions),
+    [sessions]
+  );
   const [vagalWindowMode, setVagalWindowMode] = useState<'30d' | '14d'>('30d');
   const vagalToneTrend = React.useMemo(
     () => computeVagalToneTrend30Days({ hrvHistory: sessions }),
@@ -1247,27 +1256,36 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
           </div>
         </div>
 
-        {/* 1. D3.js Physiological Relaxation & HRV Coherence Line Chart (Last 10 Practice Sessions from HRV_HISTORY_STORAGE_KEY) */}
+        {/* 1. Recharts 10-Session HRV Coherence Trend Line Chart (Last 10 Practice Sessions from HRV_HISTORY_STORAGE_KEY) */}
         <section
           aria-labelledby="hrv-chart-heading"
           data-testid="clinical-codex-hrv-chart"
+          data-session-count={tenSessionHrvChart.points.length}
+          data-latest-coherence={tenSessionHrvChart.latestCoherence}
+          data-mean-coherence={tenSessionHrvChart.averageCoherence}
+          data-trend-delta={tenSessionHrvChart.trendDelta}
+          data-linear-slope={tenSessionHrvChart.linearSlopePerSession}
+          data-optimal-sessions={tenSessionHrvChart.optimalSessionCount}
           className="mt-6 p-5 rounded-xl bg-[#0B1914] border border-[#233D32] space-y-4 codex-section-cascade"
         >
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs font-mono uppercase tracking-wider text-[#4FD1C5]">
-                  0.1 Hz Resonance Biofeedback · Last {sessions.length} Practice Sessions
+                  0.1 Hz Resonance Biofeedback · Last {tenSessionHrvChart.points.length} Practice Sessions · Recharts Trend Line
                 </span>
-                <span className="px-2 py-0.5 rounded bg-[#142D23] text-[#68D391] border border-[#2C4C3E] text-[10px] font-mono font-semibold tabular-nums">
-                  ▲ {trendSummary.trendDelta >= 0 ? `+${trendSummary.trendDelta}%` : `${trendSummary.trendDelta}%`} Vagal Coherence Growth
+                <span
+                  data-testid="hrv-10-session-growth-badge"
+                  className="px-2 py-0.5 rounded bg-[#142D23] text-[#68D391] border border-[#2C4C3E] text-[10px] font-mono font-semibold tabular-nums"
+                >
+                  ▲ {tenSessionHrvChart.trendDelta >= 0 ? `+${tenSessionHrvChart.trendDelta}%` : `${tenSessionHrvChart.trendDelta}%`} Vagal Coherence Growth ({tenSessionHrvChart.linearSlopePerSession >= 0 ? `+${tenSessionHrvChart.linearSlopePerSession}` : tenSessionHrvChart.linearSlopePerSession}%/session)
                 </span>
               </div>
               <h3
                 id="hrv-chart-heading"
                 className="text-lg font-display font-semibold text-[#F4EFE6] mt-0.5"
               >
-                HRV Coherence Score Trajectory &amp; Vagal Growth (D3.js Visualization)
+                10-Session HRV Coherence Score Trajectory &amp; Trend Line (Recharts Visualization)
               </h3>
             </div>
 
@@ -1287,10 +1305,13 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
             <div className="p-3 rounded-lg bg-[#10231C] border border-[#1E3A2F]">
               <div className="text-[10px] font-mono uppercase text-[#A3B8B0]">
-                LATEST COHERENCE
+                LATEST COHERENCE (S{tenSessionHrvChart.points.length})
               </div>
-              <div className="text-xl font-mono font-bold text-[#68D391] tabular-nums">
-                {trendSummary.latestCoherence}%
+              <div
+                data-testid="hrv-10-session-latest-kpi"
+                className="text-xl font-mono font-bold text-[#68D391] tabular-nums"
+              >
+                {tenSessionHrvChart.latestCoherence}%
               </div>
             </div>
 
@@ -1298,8 +1319,11 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
               <div className="text-[10px] font-mono uppercase text-[#A3B8B0]">
                 10-SESSION MEAN
               </div>
-              <div className="text-xl font-mono font-bold text-[#4FD1C5] tabular-nums">
-                {trendSummary.averageCoherence}%
+              <div
+                data-testid="hrv-10-session-mean-kpi"
+                className="text-xl font-mono font-bold text-[#4FD1C5] tabular-nums"
+              >
+                {tenSessionHrvChart.averageCoherence}%
               </div>
             </div>
 
@@ -1307,35 +1331,265 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
               <div className="text-[10px] font-mono uppercase text-[#A3B8B0]">
                 VAGAL COHERENCE GROWTH
               </div>
-              <div className="text-xl font-mono font-bold text-[#F2B84B] tabular-nums">
-                {trendSummary.trendDelta >= 0 ? `+${trendSummary.trendDelta}%` : `${trendSummary.trendDelta}%`}
+              <div
+                data-testid="hrv-10-session-delta-kpi"
+                className="text-xl font-mono font-bold text-[#F2B84B] tabular-nums"
+              >
+                {tenSessionHrvChart.trendDelta >= 0 ? `+${tenSessionHrvChart.trendDelta}%` : `${tenSessionHrvChart.trendDelta}%`}
               </div>
             </div>
 
             <div className="p-3 rounded-lg bg-[#10231C] border border-[#1E3A2F]">
               <div className="text-[10px] font-mono uppercase text-[#A3B8B0]">
-                AUTONOMIC STATE
+                OPTIMAL SESSIONS (≥75%)
               </div>
-              <div className="text-xs font-mono font-semibold text-[#F4EFE6] mt-1">
-                {trendSummary.relaxationStatus}
+              <div
+                data-testid="hrv-10-session-optimal-kpi"
+                className="text-sm font-mono font-bold text-[#F4EFE6] tabular-nums mt-1"
+              >
+                {tenSessionHrvChart.optimalSessionCount}/{tenSessionHrvChart.points.length} · {tenSessionHrvChart.relaxationStatus}
               </div>
             </div>
           </div>
 
-          {/* D3 Responsive SVG Line Chart */}
-          <div className="w-full overflow-x-auto pt-1">
-            <svg
-              ref={svgRef}
-              viewBox="0 0 760 250"
-              role="img"
-              aria-label="D3 Line Chart of HRV Coherence Scores over the last 10 practice sessions"
-              className="w-full h-auto min-w-[540px] select-none"
-            />
+          {/* Recharts 10-Session HRV Coherence Trend Line Chart */}
+          <div
+            data-testid="codex-hrv-10-session-recharts"
+            className="p-3.5 rounded-xl bg-[#091510] border border-[#1E3A2F] space-y-3"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-[#A3B8B0]">
+              <div className="flex flex-wrap items-center gap-4">
+                <span className="inline-flex items-center gap-1.5 text-[#68D391]">
+                  <span className="w-3 h-0.5 bg-[#68D391] inline-block" />
+                  Session HRV Coherence Score (%)
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-[#B794F4]">
+                  <span className="w-3 h-0.5 bg-[#B794F4] inline-block" />
+                  3-Session Rolling Mean (%)
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-[#4FD1C5]">
+                  <span className="w-3 h-0.5 border-t border-dashed border-[#4FD1C5] inline-block" />
+                  Linear Regression Trend ({tenSessionHrvChart.linearSlopePerSession >= 0 ? `+${tenSessionHrvChart.linearSlopePerSession}` : tenSessionHrvChart.linearSlopePerSession}%/sess)
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-[#F2B84B]">
+                  <span className="w-3 h-0.5 border-t border-dashed border-[#F2B84B] inline-block" />
+                  0.1 Hz Clinical Target (75%)
+                </span>
+              </div>
+              <span className="text-[10px] text-[#68D391] tabular-nums">
+                Baseline S1: {tenSessionHrvChart.baselineCoherence}% → S{tenSessionHrvChart.points.length}: {tenSessionHrvChart.latestCoherence}%
+              </span>
+            </div>
+
+            <div className="w-full h-[250px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart
+                  data={tenSessionHrvChart.points}
+                  margin={{ top: 14, right: 20, left: 0, bottom: 6 }}
+                >
+                  <defs>
+                    <linearGradient
+                      id="rechartsHrv10SessionGrad"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop offset="0%" stopColor="#68D391" stopOpacity={0.38} />
+                      <stop offset="100%" stopColor="#4FD1C5" stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid
+                    stroke="#1E3A2F"
+                    strokeDasharray="3 3"
+                    vertical={false}
+                  />
+                  <XAxis
+                    dataKey="sessionLabel"
+                    stroke="#233D32"
+                    tick={{
+                      fill: '#D5E2DC',
+                      fontSize: 11,
+                      fontFamily: 'JetBrains Mono, monospace',
+                    }}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    domain={[40, 100]}
+                    ticks={[40, 55, 70, 85, 100]}
+                    tickFormatter={(v) => `${v}%`}
+                    stroke="#233D32"
+                    tick={{
+                      fill: '#A3B8B0',
+                      fontSize: 11,
+                      fontFamily: 'JetBrains Mono, monospace',
+                    }}
+                    tickLine={false}
+                    width={42}
+                  />
+                  <RechartsTooltip
+                    content={({ active, payload }) => {
+                      if (!active || !payload || payload.length === 0) {
+                        return null;
+                      }
+                      const pt = payload[0]
+                        .payload as TenSessionHrvChartPoint | undefined;
+                      if (!pt) return null;
+                      return (
+                        <div
+                          data-testid="hrv-10-session-recharts-tooltip"
+                          className="p-3 rounded-xl bg-[#07120E] border border-[#68D391]/70 shadow-xl text-xs font-mono space-y-1 tabular-nums"
+                        >
+                          <div className="flex items-center justify-between gap-3 text-[#F4EFE6] font-bold">
+                            <span>
+                              Session {pt.sessionLabel} · {pt.recordedAtIso}
+                            </span>
+                            <span className="text-[#68D391]">
+                              {pt.coherenceScore}% Coherence
+                            </span>
+                          </div>
+                          <div className="text-[10.5px] text-[#A3B8B0]">
+                            {pt.stageName}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 pt-1 border-t border-[#1E3A2F] text-[10.5px]">
+                            <span className="text-[#B794F4]">
+                              3-Sess Mean: {pt.rollingThreeSessionAvg}%
+                            </span>
+                            <span className="text-[#4FD1C5]">
+                              Trend Line: {pt.linearTrendScore}%
+                            </span>
+                            <span className="text-[#F2B84B]">
+                              vs Baseline: {pt.deltaFromBaseline >= 0 ? `+${pt.deltaFromBaseline}%` : `${pt.deltaFromBaseline}%`}
+                            </span>
+                            <span className="text-[#D5E2DC]">
+                              Breath: {pt.coherenceSeconds.toFixed(1)}s
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    }}
+                  />
+                  <ReferenceLine
+                    y={75}
+                    stroke="#F2B84B"
+                    strokeDasharray="6 4"
+                    strokeWidth={1.5}
+                    label={{
+                      value: '0.1 Hz Clinical Target (75%)',
+                      position: 'insideTopRight',
+                      fill: '#F2B84B',
+                      fontSize: 10,
+                      fontFamily: 'JetBrains Mono, monospace',
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="coherenceScore"
+                    fill="url(#rechartsHrv10SessionGrad)"
+                    stroke="none"
+                    isAnimationActive={false}
+                  />
+                  <Line
+                    type="linear"
+                    dataKey="linearTrendScore"
+                    name="Linear Regression Trend"
+                    stroke="#4FD1C5"
+                    strokeWidth={1.75}
+                    strokeDasharray="5 4"
+                    dot={false}
+                    isAnimationActive={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="rollingThreeSessionAvg"
+                    name="3-Session Rolling Mean"
+                    stroke="#B794F4"
+                    strokeWidth={2}
+                    strokeDasharray="3 3"
+                    dot={{ r: 3, fill: '#B794F4', stroke: '#091510', strokeWidth: 1.5 }}
+                    isAnimationActive={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="coherenceScore"
+                    name="HRV Coherence Score (%)"
+                    stroke="#68D391"
+                    strokeWidth={3}
+                    dot={{
+                      r: 5,
+                      fill: '#68D391',
+                      stroke: '#091510',
+                      strokeWidth: 2,
+                    }}
+                    activeDot={{
+                      r: 7,
+                      fill: '#F2B84B',
+                      stroke: '#091510',
+                      strokeWidth: 2,
+                    }}
+                    isAnimationActive={false}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Interactive 10-Session Selector Buttons (S1..S10) */}
+            <div
+              data-testid="hrv-10-session-selector-row"
+              className="grid grid-cols-5 sm:grid-cols-10 gap-1.5 pt-1"
+            >
+              {tenSessionHrvChart.points.map((pt) => {
+                const isSelected = activeInspect?.sessionLabel === pt.sessionLabel;
+                return (
+                  <button
+                    key={pt.sessionLabel}
+                    type="button"
+                    data-testid={`hrv-10-session-pill-${pt.sessionLabel}`}
+                    aria-pressed={isSelected}
+                    onClick={() => setHoveredSession(pt)}
+                    onMouseEnter={() => setHoveredSession(pt)}
+                    className={`px-1.5 py-1 rounded-lg border text-[10px] font-mono tabular-nums transition-colors cursor-pointer flex flex-col items-center ${
+                      isSelected
+                        ? 'bg-[#17382C] border-[#68D391] text-[#F4EFE6]'
+                        : 'bg-[#0D1E18] border-[#1E3A2F] text-[#A3B8B0] hover:text-[#F4EFE6]'
+                    }`}
+                  >
+                    <span className="font-bold">{pt.sessionLabel}</span>
+                    <span
+                      className={
+                        pt.isOptimalResonance ? 'text-[#68D391]' : 'text-[#4FD1C5]'
+                      }
+                    >
+                      {pt.coherenceScore}%
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
+
+          {/* Preserve D3 SVG Vector Plot Reference for Backwards Compatibility */}
+          <details className="text-[11px] font-mono text-[#A3B8B0]">
+            <summary className="cursor-pointer hover:text-[#F4EFE6] select-none">
+              View D3.js Vector Curve Overlay (S1–S{tenSessionHrvChart.points.length})
+            </summary>
+            <div className="w-full overflow-x-auto pt-2">
+              <svg
+                ref={svgRef}
+                viewBox="0 0 760 250"
+                role="img"
+                aria-label="D3 Line Chart of HRV Coherence Scores over the last 10 practice sessions"
+                className="w-full h-auto min-w-[540px] select-none"
+              />
+            </div>
+          </details>
 
           {/* Interactive Session Inspector Footer */}
           {activeInspect && (
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#1E3A2F] text-xs font-mono text-[#A3B8B0] tabular-nums">
+            <div
+              data-testid="hrv-10-session-inspector-footer"
+              className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#1E3A2F] text-xs font-mono text-[#A3B8B0] tabular-nums"
+            >
               <div>
                 <span className="text-[#F4EFE6] font-semibold">
                   Session {activeInspect.sessionLabel}
