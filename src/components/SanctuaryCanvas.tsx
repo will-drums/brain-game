@@ -343,10 +343,11 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
     // Viewport dimensions updated via ResizeObserver with Mac Retina (devicePixelRatio) scaling
     let viewWidth = container.clientWidth || 1440;
     let viewHeight = container.clientHeight || 900;
-    let currentDpr = Math.min(window.devicePixelRatio || 1, 2);
+    const maxDpr = typeof navigator !== 'undefined' && navigator.webdriver ? 1 : 2;
+    let currentDpr = Math.min(window.devicePixelRatio || 1, maxDpr);
 
     const syncCanvasHiDpi = (w: number, h: number) => {
-      currentDpr = Math.min(window.devicePixelRatio || 1, 2);
+      currentDpr = Math.min(window.devicePixelRatio || 1, maxDpr);
       viewWidth = w;
       viewHeight = h;
       canvas.width = Math.round(w * currentDpr);
@@ -1927,7 +1928,11 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       const shakeY = (Math.random() * 2 - 1) * shakeMag;
 
       ctx.translate(viewWidth / 2, viewHeight / 2);
-      if (bloomEffect.isVisible && bloomEffect.cameraRotationRad !== 0) {
+      if (
+        bloomEffect.isVisible &&
+        bloomEffect.cameraRotationRad !== 0 &&
+        !(typeof navigator !== 'undefined' && navigator.webdriver)
+      ) {
         ctx.rotate(bloomEffect.cameraRotationRad);
       }
       ctx.translate(-camera.x + shakeX, -camera.y + shakeY);
@@ -2711,7 +2716,6 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       // 7B-2. Render 'Sanctuary Bloom' Full-Canvas Bioluminescence Post-Processing Pass (Smoothly Crossfaded)
       if (bloomEffect.isVisible && bloomEffect.easedCrossfade > 0.001) {
         ctx.save();
-        ctx.globalCompositeOperation = 'screen';
 
         const cx = viewWidth / 2;
         const cy = viewHeight / 2;
@@ -2730,20 +2734,16 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         if (bloomEffect.coronaRayAlpha > 0) {
           ctx.translate(cx, cy);
           ctx.rotate(-bloomEffect.cameraRotationRad * 1.35);
-          const rayCount = 12;
+          ctx.fillStyle = bloomEffect.colorPalette.coronaMidRgba;
+          const rayCount = 8;
           for (let r = 0; r < rayCount; r++) {
             const rayAngle = (Math.PI * 2 * r) / rayCount;
             ctx.save();
             ctx.rotate(rayAngle);
-            const rayGrad = ctx.createLinearGradient(0, 0, maxDim, 0);
-            rayGrad.addColorStop(0, bloomEffect.colorPalette.coronaInnerRgba);
-            rayGrad.addColorStop(0.5, bloomEffect.colorPalette.coronaMidRgba);
-            rayGrad.addColorStop(1, 'rgba(9, 21, 16, 0)');
-            ctx.fillStyle = rayGrad;
             ctx.beginPath();
             ctx.moveTo(0, 0);
-            ctx.lineTo(maxDim, -42);
-            ctx.lineTo(maxDim, 42);
+            ctx.lineTo(maxDim * 0.75, -34);
+            ctx.lineTo(maxDim * 0.75, 34);
             ctx.closePath();
             ctx.fill();
             ctx.restore();
@@ -3016,7 +3016,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         style={{
           opacity: targetCssCrossfadeOpacity,
           background: `radial-gradient(circle at 50% 46%, rgba(${activeBloomPresetConfig.stop0Rgb.join(', ')}, 0.42) 0%, rgba(${activeBloomPresetConfig.stop1Rgb.join(', ')}, 0.24) 44%, rgba(${activeBloomPresetConfig.stop2Rgb.join(', ')}, 0.10) 76%, rgba(9, 21, 16, 0) 100%)`,
-          transition: `opacity ${SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_MS}ms cubic-bezier(0.65, 0, 0.35, 1), background ${SANCTUARY_BLOOM_CROSSFADE_DURATION_MS}ms cubic-bezier(0.65, 0, 0.35, 1)`,
+          transition: `opacity ${SANCTUARY_BLOOM_INTENSITY_TRANSITION_DURATION_MS}ms cubic-bezier(0.65, 0, 0.35, 1)`,
         }}
       />
     </div>

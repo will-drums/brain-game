@@ -200,7 +200,8 @@ export default function App() {
         if (
           rawPreset === 'morning_glow' ||
           rawPreset === 'midnight_forest' ||
-          rawPreset === 'neural_zenith'
+          rawPreset === 'neural_zenith' ||
+          rawPreset === 'neuro_zenith'
         ) {
           return rawPreset;
         }
@@ -1416,6 +1417,8 @@ export default function App() {
         ? 587.33
         : presetConfig.id === 'midnight_forest'
         ? 440.0
+        : presetConfig.id === 'neuro_zenith'
+        ? 783.99
         : 659.25,
       0.16
     );
@@ -1581,7 +1584,7 @@ export default function App() {
         isZenMode={isZenMode}
         completedStagesCount={completedStagesCount}
         isSanctuaryBloomActive={isSanctuaryBloomActive}
-        sanctuaryBloomIntensityPct={animatedBloomIntensityPct}
+        sanctuaryBloomIntensityPct={sanctuaryBloomIntensityPct}
         sanctuaryBloomPresetId={sanctuaryBloomPresetId}
         rhythmSyncConfig={rhythmSyncConfig}
         hrvHistory={hrvHistory}
@@ -2440,7 +2443,7 @@ export default function App() {
                     <span>{isSanctuaryBloomActive ? 'Bloom: ON' : 'Bloom [B]'}</span>
                   </button>
 
-                  {/* Bloom Preset Menu: Morning Glow, Midnight Forest, Neural Zenith */}
+                  {/* Bloom Preset Menu: Morning Glow, Midnight Forest, Neural Zenith, Neuro-Zenith */}
                   <div
                     role="group"
                     aria-label="Sanctuary Bloom Presets"

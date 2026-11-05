@@ -1786,7 +1786,11 @@ export const SANCTUARY_BLOOM_INTENSITY_STORAGE_KEY = 'sylvan_synapse_bloom_inten
 export const SANCTUARY_BLOOM_PRESET_STORAGE_KEY = 'sylvan_synapse_bloom_preset_v1';
 export const DEFAULT_SANCTUARY_BLOOM_INTENSITY_PCT = 100;
 
-export type SanctuaryBloomPresetId = 'morning_glow' | 'midnight_forest' | 'neural_zenith';
+export type SanctuaryBloomPresetId =
+  | 'morning_glow'
+  | 'midnight_forest'
+  | 'neural_zenith'
+  | 'neuro_zenith';
 export const DEFAULT_SANCTUARY_BLOOM_PRESET_ID: SanctuaryBloomPresetId = 'neural_zenith';
 
 export interface SanctuaryBloomPresetConfig {
@@ -1859,12 +1863,30 @@ export const SANCTUARY_BLOOM_PRESETS: Record<SanctuaryBloomPresetId, SanctuaryBl
     coronaMidRgb: [104, 211, 145],
     tendrilPaletteHex: ['#4FD1C5', '#68D391', '#81E6D9', '#38B2AC', '#9AE6B4', '#76E4F7'],
   },
+  neuro_zenith: {
+    id: 'neuro_zenith',
+    label: 'Neuro-Zenith',
+    shortLabel: 'Neuro-Zenith',
+    subtitle: 'Prismatic rose-orchid, amethyst & golden-aurora neuro-bioluminescence',
+    defaultIntensityPct: 88,
+    primaryHex: '#F687B3',
+    secondaryHex: '#B794F4',
+    accentHex: '#FBB6CE',
+    stop0Rgb: [246, 135, 179],
+    stop1Rgb: [183, 148, 244],
+    stop2Rgb: [251, 182, 206],
+    stop3Rgb: [242, 184, 75],
+    coronaInnerRgb: [246, 135, 179],
+    coronaMidRgb: [183, 148, 244],
+    tendrilPaletteHex: ['#F687B3', '#B794F4', '#FBB6CE', '#F2B84B', '#D53F8C', '#4FD1C5'],
+  },
 };
 
 export const SANCTUARY_BLOOM_PRESET_LIST: SanctuaryBloomPresetConfig[] = [
   SANCTUARY_BLOOM_PRESETS.morning_glow,
   SANCTUARY_BLOOM_PRESETS.midnight_forest,
   SANCTUARY_BLOOM_PRESETS.neural_zenith,
+  SANCTUARY_BLOOM_PRESETS.neuro_zenith,
 ];
 
 export function getSanctuaryBloomPresetConfig(
@@ -1873,7 +1895,8 @@ export function getSanctuaryBloomPresetConfig(
   if (
     rawPresetId === 'morning_glow' ||
     rawPresetId === 'midnight_forest' ||
-    rawPresetId === 'neural_zenith'
+    rawPresetId === 'neural_zenith' ||
+    rawPresetId === 'neuro_zenith'
   ) {
     return SANCTUARY_BLOOM_PRESETS[rawPresetId];
   }
@@ -2159,6 +2182,11 @@ const PRESET_BIOLUM_FLOOR_RGB: Record<
     centerRgb: [24, 72, 64],
     midRgb: [16, 48, 43],
     outerRgb: [9, 25, 22],
+  },
+  neuro_zenith: {
+    centerRgb: [62, 28, 56],
+    midRgb: [38, 19, 36],
+    outerRgb: [19, 11, 20],
   },
 };
 
@@ -5386,15 +5414,22 @@ function inferBloomPresetFromIntensity(
   if (
     explicitPresetId === 'morning_glow' ||
     explicitPresetId === 'midnight_forest' ||
-    explicitPresetId === 'neural_zenith'
+    explicitPresetId === 'neural_zenith' ||
+    explicitPresetId === 'neuro_zenith'
   ) {
     const cfg = SANCTUARY_BLOOM_PRESETS[explicitPresetId];
     return { presetId: cfg.id, presetLabel: cfg.label };
   }
-  if (intensityPct >= 84) {
+  if (intensityPct >= 92) {
     return {
       presetId: 'neural_zenith',
       presetLabel: SANCTUARY_BLOOM_PRESETS.neural_zenith.label,
+    };
+  }
+  if (intensityPct >= 84) {
+    return {
+      presetId: 'neuro_zenith',
+      presetLabel: SANCTUARY_BLOOM_PRESETS.neuro_zenith.label,
     };
   }
   if (intensityPct >= 66) {
@@ -5606,6 +5641,7 @@ export function computeSanctuaryBloomIntensityTrend30Days(params?: {
     morning_glow: 0,
     midnight_forest: 0,
     neural_zenith: 0,
+    neuro_zenith: 0,
   };
   for (const d of days) {
     presetCounts[d.presetId] = (presetCounts[d.presetId] || 0) + 1;

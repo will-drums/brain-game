@@ -737,8 +737,8 @@ test('computeCognitiveRhythmSyncState calibrates N-Back chime interval to restin
   assert.equal(DEFAULT_COGNITIVE_RHYTHM_SYNC_CONFIG.restingHeartRateBpm, 64);
 });
 
-test('SANCTUARY_BLOOM_PRESETS defines Morning Glow, Midnight Forest, and Neural Zenith with distinct intensity defaults and bioluminescent palettes', () => {
-  assert.equal(SANCTUARY_BLOOM_PRESET_LIST.length, 3);
+test('SANCTUARY_BLOOM_PRESETS defines Morning Glow, Midnight Forest, Neural Zenith, and Neuro-Zenith with distinct intensity defaults and bioluminescent palettes', () => {
+  assert.equal(SANCTUARY_BLOOM_PRESET_LIST.length, 4);
 
   const morning = getSanctuaryBloomPresetConfig('morning_glow');
   assert.equal(morning.id, 'morning_glow');
@@ -757,6 +757,14 @@ test('SANCTUARY_BLOOM_PRESETS defines Morning Glow, Midnight Forest, and Neural 
   assert.equal(zenith.label, 'Neural Zenith');
   assert.equal(zenith.defaultIntensityPct, 94);
   assert.equal(zenith.primaryHex, '#4FD1C5');
+
+  const neuroZenith = getSanctuaryBloomPresetConfig('neuro_zenith');
+  assert.equal(neuroZenith.id, 'neuro_zenith');
+  assert.equal(neuroZenith.label, 'Neuro-Zenith');
+  assert.equal(neuroZenith.defaultIntensityPct, 88);
+  assert.equal(neuroZenith.primaryHex, '#F687B3');
+  assert.equal(neuroZenith.secondaryHex, '#B794F4');
+  assert.equal(neuroZenith.accentHex, '#FBB6CE');
 
   // Fallback for unknown preset ID defaults to Neural Zenith
   const fallback = getSanctuaryBloomPresetConfig('invalid_preset');
@@ -794,6 +802,18 @@ test('SANCTUARY_BLOOM_PRESETS defines Morning Glow, Midnight Forest, and Neural 
   assert.equal(zenithEffect.userIntensityPct, 94);
   assert.equal(zenithEffect.colorPalette.primaryHex, '#4FD1C5');
   assert.ok(zenithEffect.colorPalette.radialStop0Rgba.startsWith('rgba(79, 209, 197,'));
+
+  const neuroZenithEffect = computeSanctuaryBloomEffect({
+    completedStagesCount: 4,
+    presetId: 'neuro_zenith',
+    elapsedSec: 2.0,
+  });
+  assert.equal(neuroZenithEffect.isTriggered, true);
+  assert.equal(neuroZenithEffect.presetId, 'neuro_zenith');
+  assert.equal(neuroZenithEffect.presetLabel, 'Neuro-Zenith');
+  assert.equal(neuroZenithEffect.userIntensityPct, 88);
+  assert.equal(neuroZenithEffect.colorPalette.primaryHex, '#F687B3');
+  assert.ok(neuroZenithEffect.colorPalette.radialStop0Rgba.startsWith('rgba(246, 135, 179,'));
 });
 
 test('computeCodexModalAnimationState manages smooth fade-in and upward slide-up transitions within <=200ms budget and respects prefers-reduced-motion', () => {
