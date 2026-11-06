@@ -47,6 +47,8 @@ import {
   computeRunningFiveSessionHrvAverage,
   createInitialChimeHistoryForNBack,
   computeAdaptiveDifficultyScaling,
+  appendNBackTrialOutcome,
+  computeNBackAdaptiveChallengeState,
   computeLocalNBackSuccessRate,
   computeTreeFloweringState,
   computeSixMonthNeuroProjection,
@@ -1218,6 +1220,81 @@ test('computeHudFlowPulseState triggers expanding glow pulse when Flow Multiplie
   assert.ok(sustained.glowOpacity > 0.2);
   assert.ok(sustained.rhythmicCadenceSec < 2.0);
   assert.equal(sustained.accentHex, '#B794F4');
+});
+
+test('computeNBackAdaptiveChallengeState automatically escalates N-Back difficulty (1-Back -> 2-Back -> 3-Back) based on rolling session performance', () => {
+  // 1. Initial baseline state (0 trials recorded)
+  const initial = computeNBackAdaptiveChallengeState({
+    enabled: true,
+    baseNBackLevel: 1,
+    sessionTrialOutcomes: [],
+  });
+  assert.equal(initial.enabled, true);
+  assert.equal(initial.baseNBackLevel, 1);
+  assert.equal(initial.effectiveNBackLevel, 1);
+  assert.equal(initial.adaptationDelta, 0);
+  assert.equal(initial.isAdaptedUp, false);
+  assert.equal(initial.tierId, 'baseline_1back');
+  assert.equal(initial.rollingSampleCount, 0);
+  assert.equal(initial.rollingPips.length, 5);
+  assert.equal(initial.rollingPips[0].statusLabel, 'PENDING');
+  assert.equal(initial.chimeDisplayCount, 3);
+
+  // 2. Append 2 consecutive hits -> Rolling avg 100% (2/2) >= 60% -> Auto-promotes to 2-Back!
+  let outcomes = appendNBackTrialOutcome([], true);
+  outcomes = appendNBackTrialOutcome(outcomes, true);
+  const promoted2Back = computeNBackAdaptiveChallengeState({
+    enabled: true,
+    baseNBackLevel: 1,
+    sessionTrialOutcomes: outcomes,
+  });
+  assert.equal(promoted2Back.effectiveNBackLevel, 2);
+  assert.equal(promoted2Back.adaptationDelta, 1);
+  assert.equal(promoted2Back.isAdaptedUp, true);
+  assert.equal(promoted2Back.tierId, 'adaptive_2back');
+  assert.equal(promoted2Back.rollingAveragePct, 100);
+  assert.equal(promoted2Back.rollingSampleCount, 2);
+  assert.equal(promoted2Back.rollingHitsCount, 2);
+  assert.equal(promoted2Back.rollingPips[0].statusLabel, 'HIT');
+  assert.equal(promoted2Back.rollingPips[1].statusLabel, 'HIT');
+  assert.equal(promoted2Back.rollingPips[2].statusLabel, 'PENDING');
+
+  // 3. Append 3rd hit -> Rolling avg 100% (3/3) >= 80% -> Auto-promotes to 3-Back Apex!
+  outcomes = appendNBackTrialOutcome(outcomes, true);
+  const promoted3Back = computeNBackAdaptiveChallengeState({
+    enabled: true,
+    baseNBackLevel: 1,
+    sessionTrialOutcomes: outcomes,
+  });
+  assert.equal(promoted3Back.effectiveNBackLevel, 3);
+  assert.equal(promoted3Back.adaptationDelta, 2);
+  assert.equal(promoted3Back.isAdaptedUp, true);
+  assert.equal(promoted3Back.tierId, 'adaptive_3back');
+  assert.equal(promoted3Back.rollingAveragePct, 100);
+  assert.equal(promoted3Back.escalationMeterPct, 100);
+  assert.equal(promoted3Back.chimeDisplayCount, 4);
+
+  // 4. Rolling window of 5 trials with 3 misses -> [true, true, false, false, false] = 40% -> Recalibrates to 1-Back
+  const recalibrated = computeNBackAdaptiveChallengeState({
+    enabled: true,
+    baseNBackLevel: 1,
+    sessionTrialOutcomes: [true, true, true, false, false, false], // last 5: [true, true, false, false, false] = 40%
+  });
+  assert.equal(recalibrated.rollingSampleCount, 5);
+  assert.equal(recalibrated.rollingHitsCount, 2);
+  assert.equal(recalibrated.rollingAveragePct, 40);
+  assert.equal(recalibrated.effectiveNBackLevel, 1);
+  assert.equal(recalibrated.isAdaptedUp, false);
+
+  // 5. Disabled mode locks to baseNBackLevel regardless of rolling hits
+  const disabled = computeNBackAdaptiveChallengeState({
+    enabled: false,
+    baseNBackLevel: 1,
+    sessionTrialOutcomes: [true, true, true, true, true],
+  });
+  assert.equal(disabled.enabled, false);
+  assert.equal(disabled.effectiveNBackLevel, 1);
+  assert.equal(disabled.adaptationDelta, 0);
 });
 
 test('buildEnterpriseClinicalExportBundle compiles longitudinal DTx telemetry report', () => {

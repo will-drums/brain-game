@@ -24,6 +24,8 @@ import {
   computeLocalNBackSuccessRate,
   computeTreeFloweringState,
   computeCognitiveRhythmSyncState,
+  appendNBackTrialOutcome,
+  computeNBackAdaptiveChallengeState,
   SANCTUARY_STAGES,
   CHIME_SYMBOLS,
   type HrvSessionRecord,
@@ -39,6 +41,7 @@ import {
   type SanctuaryAtmosphereId,
   type SanctuaryBloomPresetId,
   type CognitiveRhythmSyncConfig,
+  type NBackAdaptiveChallengeTierId,
 } from '../game/rules';
 import { soundEngine } from '../game/audio';
 
@@ -50,6 +53,14 @@ export interface HudSnapshot {
   treesGrafted: number;
   targetTrees: number;
   nBackHits?: number;
+  nBackAttempts?: number;
+  nBackTrialOutcomes?: boolean[];
+  nBackAdaptiveEnabled?: boolean;
+  nBackRollingAvgPct?: number;
+  nBackEscalationMeterPct?: number;
+  nBackAdaptiveTierId?: NBackAdaptiveChallengeTierId;
+  nBackAdaptiveBadgeLabel?: string;
+  nBackAdaptationDelta?: number;
   stageIndex: number;
   stageName: string;
   nBackLevel: number;
@@ -119,6 +130,8 @@ interface SanctuaryCanvasProps {
   rhythmSyncConfig?: CognitiveRhythmSyncConfig;
   hrvHistory?: HrvSessionRecord[];
   runningFiveSessionHrvAvgOverride?: number | null;
+  nBackAdaptiveChallengeEnabled?: boolean;
+  simulatedNBackTrialOutcomes?: boolean[] | null;
 }
 
 interface NeuralTree {
@@ -224,6 +237,8 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
   rhythmSyncConfig,
   hrvHistory,
   runningFiveSessionHrvAvgOverride = null,
+  nBackAdaptiveChallengeEnabled = true,
+  simulatedNBackTrialOutcomes = null,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -251,6 +266,8 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
     rhythmSyncConfig,
     hrvHistory,
     runningFiveSessionHrvAvgOverride,
+    nBackAdaptiveChallengeEnabled,
+    simulatedNBackTrialOutcomes,
   });
 
   useEffect(() => {
@@ -276,6 +293,8 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       rhythmSyncConfig,
       hrvHistory,
       runningFiveSessionHrvAvgOverride,
+      nBackAdaptiveChallengeEnabled,
+      simulatedNBackTrialOutcomes,
     };
   }, [
     gameState,
@@ -299,6 +318,8 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
     rhythmSyncConfig,
     hrvHistory,
     runningFiveSessionHrvAvgOverride,
+    nBackAdaptiveChallengeEnabled,
+    simulatedNBackTrialOutcomes,
   ]);
 
   // Ref for signals from HUD buttons
@@ -467,6 +488,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
     let ufovAttempts = 0;
     let nBackHits = 0;
     let nBackAttempts = 0;
+    let nBackTrialOutcomes: boolean[] = [];
     let consecutiveCognitiveHits = 0;
     let coherenceSeconds = 0;
     let statusBannerText = 'Explore the Mossy Glade · Harvest Golden Dew (Space) · Match Echo Chimes (E) · Graft Neural Trees (Q)';
@@ -660,6 +682,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
       ufovAttempts = 0;
       nBackHits = 0;
       nBackAttempts = 0;
+      nBackTrialOutcomes = [];
       consecutiveCognitiveHits = 0;
       coherenceSeconds = 0;
       for (const c of callouts) c.active = false;
@@ -677,11 +700,24 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         baseUfovFlashSec: stage.ufovFlashDurationSec,
         consecutiveCognitiveHits: 0,
       });
-      statusBannerText = `${stage.name} — Harvest Nectar [Space], Match ${initScaling.effectiveNBackLevel}-Back Chimes [E], or Graft Dormant Trees [Q]`;
+      const initChallenge = computeNBackAdaptiveChallengeState({
+        enabled: stateRef.current.nBackAdaptiveChallengeEnabled ?? true,
+        baseNBackLevel:
+          stateRef.current.runningFiveSessionHrvAvgOverride !== null &&
+          stateRef.current.runningFiveSessionHrvAvgOverride !== undefined
+            ? initScaling.effectiveNBackLevel
+            : stage.nBackLevel,
+        sessionTrialOutcomes: Array.isArray(stateRef.current.simulatedNBackTrialOutcomes)
+          ? stateRef.current.simulatedNBackTrialOutcomes
+          : nBackTrialOutcomes,
+        nBackHits: 0,
+        nBackAttempts: 0,
+      });
+      statusBannerText = `${stage.name} — Harvest Nectar [Space], Match ${initChallenge.effectiveNBackLevel}-Back Chimes [E], or Graft Dormant Trees [Q]`;
       statusBannerTimer = 6.0;
 
       // Initialize sequence with an immediate 1-back/2-back/3-back match opportunity
-      chimeHistory = createInitialChimeHistoryForNBack(initScaling.effectiveNBackLevel);
+      chimeHistory = createInitialChimeHistoryForNBack(initChallenge.effectiveNBackLevel);
       chimeCycleTimer = 0;
       chimeMatchClaimedThisBeat = false;
 
@@ -973,20 +1009,52 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         baseUfovFlashSec: stage.ufovFlashDurationSec,
         consecutiveCognitiveHits,
       });
-      const activeNBack = adaptiveScaling.effectiveNBackLevel;
+      const preChallengeState = computeNBackAdaptiveChallengeState({
+        enabled: stateRef.current.nBackAdaptiveChallengeEnabled ?? true,
+        baseNBackLevel:
+          stateRef.current.runningFiveSessionHrvAvgOverride !== null &&
+          stateRef.current.runningFiveSessionHrvAvgOverride !== undefined
+            ? adaptiveScaling.effectiveNBackLevel
+            : stage.nBackLevel,
+        sessionTrialOutcomes: Array.isArray(stateRef.current.simulatedNBackTrialOutcomes)
+          ? stateRef.current.simulatedNBackTrialOutcomes
+          : nBackTrialOutcomes,
+        nBackHits,
+        nBackAttempts,
+      });
+      const activeNBack = preChallengeState.effectiveNBackLevel;
       const matched = isNBackMatch(chimeHistory, activeNBack);
+      const isValidMatch = matched && !chimeMatchClaimedThisBeat;
       nBackAttempts += 1;
+      nBackTrialOutcomes = appendNBackTrialOutcome(nBackTrialOutcomes, isValidMatch);
 
       player.chimeWaveRadius = 20;
       player.chimeWaveAlpha = 1.0;
       player.scaleX = 0.84;
       player.scaleY = 1.2;
 
-      if (matched && !chimeMatchClaimedThisBeat) {
+      if (isValidMatch) {
         chimeMatchClaimedThisBeat = true;
         nBackHits += 1;
         consecutiveCognitiveHits += 1;
         stateRef.current.onNBackMatch?.();
+        const postChallengeState = computeNBackAdaptiveChallengeState({
+          enabled: stateRef.current.nBackAdaptiveChallengeEnabled ?? true,
+          baseNBackLevel:
+            stateRef.current.runningFiveSessionHrvAvgOverride !== null &&
+            stateRef.current.runningFiveSessionHrvAvgOverride !== undefined
+              ? adaptiveScaling.effectiveNBackLevel
+              : stage.nBackLevel,
+          sessionTrialOutcomes: Array.isArray(stateRef.current.simulatedNBackTrialOutcomes)
+            ? stateRef.current.simulatedNBackTrialOutcomes
+            : nBackTrialOutcomes,
+          nBackHits,
+          nBackAttempts,
+        });
+        if (postChallengeState.effectiveNBackLevel > activeNBack) {
+          chimeHistory = createInitialChimeHistoryForNBack(postChallengeState.effectiveNBackLevel);
+          chimeMatchClaimedThisBeat = false;
+        }
         const flowState = computeAdaptiveFlowState({
           consecutiveCognitiveHits,
           coherenceSeconds,
@@ -1004,10 +1072,15 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         spawnFloatingCallout(
           player.x,
           player.y,
-          `★ ${activeNBack}-BACK COGNITIVE PULSE +${reward} (${flowState.flowMultiplier}x)`,
-          '#4FD1C5'
+          postChallengeState.effectiveNBackLevel > activeNBack
+            ? `★ PROMOTED TO ${postChallengeState.effectiveNBackLevel}-BACK (+${reward} NECTAR)`
+            : `★ ${activeNBack}-BACK COGNITIVE PULSE +${reward} (${flowState.flowMultiplier}x)`,
+          postChallengeState.effectiveNBackLevel > activeNBack ? '#B794F4' : '#4FD1C5'
         );
-        statusBannerText = `Working Memory ${activeNBack}-Back Cognitive Pulse (${flowState.flowMultiplier}x Flow)! +${reward} BDNF Nectar & +1 Calm Vitality`;
+        statusBannerText =
+          postChallengeState.effectiveNBackLevel > activeNBack
+            ? `Adaptive N-Back Challenge Promoted to ${postChallengeState.effectiveNBackLevel}-BACK (Rolling ${postChallengeState.rollingAveragePct}%)! +${reward} BDNF Nectar & +1 Calm Vitality`
+            : `Working Memory ${activeNBack}-Back Cognitive Pulse (${flowState.flowMultiplier}x Flow)! +${reward} BDNF Nectar & +1 Calm Vitality`;
         statusBannerTimer = 3.8;
 
         // Clear all hazards within 260px
@@ -1608,7 +1681,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
             player.chimeWaveAlpha = Math.max(0, player.chimeWaveAlpha - simDt * 1.6);
           }
 
-          // Update N-Back Chime Totem Sequence (Scaled by 5-Session HRV Adaptive Difficulty)
+          // Update N-Back Chime Totem Sequence (Scaled by 5-Session HRV + Rolling N-Back Adaptive Challenge)
           const liveAdaptiveScaling = computeAdaptiveDifficultyScaling({
             hrvHistory: stateRef.current.hrvHistory,
             runningFiveSessionHrvAvgOverride: stateRef.current.runningFiveSessionHrvAvgOverride,
@@ -1616,8 +1689,21 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
             baseUfovFlashSec: stage.ufovFlashDurationSec,
             consecutiveCognitiveHits,
           });
-          if (chimeHistory.length <= liveAdaptiveScaling.effectiveNBackLevel) {
-            chimeHistory = createInitialChimeHistoryForNBack(liveAdaptiveScaling.effectiveNBackLevel);
+          const liveNBackChallenge = computeNBackAdaptiveChallengeState({
+            enabled: stateRef.current.nBackAdaptiveChallengeEnabled ?? true,
+            baseNBackLevel:
+              stateRef.current.runningFiveSessionHrvAvgOverride !== null &&
+              stateRef.current.runningFiveSessionHrvAvgOverride !== undefined
+                ? liveAdaptiveScaling.effectiveNBackLevel
+                : stage.nBackLevel,
+            sessionTrialOutcomes: Array.isArray(stateRef.current.simulatedNBackTrialOutcomes)
+              ? stateRef.current.simulatedNBackTrialOutcomes
+              : nBackTrialOutcomes,
+            nBackHits,
+            nBackAttempts,
+          });
+          if (chimeHistory.length <= liveNBackChallenge.effectiveNBackLevel) {
+            chimeHistory = createInitialChimeHistoryForNBack(liveNBackChallenge.effectiveNBackLevel);
             chimeMatchClaimedThisBeat = false;
           }
           const simRhythmSync = computeCognitiveRhythmSyncState({
@@ -1632,7 +1718,7 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
             chimeMatchClaimedThisBeat = false;
             const nextSym = generateNextChimeSymbol(
               chimeHistory,
-              liveAdaptiveScaling.effectiveNBackLevel,
+              liveNBackChallenge.effectiveNBackLevel,
               Math.random()
             );
             chimeHistory = [...chimeHistory.slice(-5), nextSym];
@@ -1842,8 +1928,23 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         baseUfovFlashSec: stage.ufovFlashDurationSec,
         consecutiveCognitiveHits,
       });
-      if (chimeHistory.length <= renderAdaptiveScaling.effectiveNBackLevel) {
-        chimeHistory = createInitialChimeHistoryForNBack(renderAdaptiveScaling.effectiveNBackLevel);
+      const activeTrialOutcomes = Array.isArray(stateRef.current.simulatedNBackTrialOutcomes)
+        ? stateRef.current.simulatedNBackTrialOutcomes
+        : nBackTrialOutcomes;
+      const renderNBackChallenge = computeNBackAdaptiveChallengeState({
+        enabled: stateRef.current.nBackAdaptiveChallengeEnabled ?? true,
+        baseNBackLevel:
+          stateRef.current.runningFiveSessionHrvAvgOverride !== null &&
+          stateRef.current.runningFiveSessionHrvAvgOverride !== undefined
+            ? renderAdaptiveScaling.effectiveNBackLevel
+            : stage.nBackLevel,
+        sessionTrialOutcomes: activeTrialOutcomes,
+        nBackHits,
+        nBackAttempts,
+      });
+      const renderEffectiveNBackLevel = renderNBackChallenge.effectiveNBackLevel;
+      if (chimeHistory.length <= renderEffectiveNBackLevel) {
+        chimeHistory = createInitialChimeHistoryForNBack(renderEffectiveNBackLevel);
       }
       const isTargetBloomActive =
         typeof stateRef.current.isSanctuaryBloomActive === 'boolean'
@@ -1908,7 +2009,9 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
         defaultChimeIntervalSec: CHIME_INTERVAL_SEC,
         sampleCount: 56,
       });
-      setCanvasDataAttr('effectiveNbackLevel', String(renderAdaptiveScaling.effectiveNBackLevel));
+      setCanvasDataAttr('effectiveNbackLevel', String(renderEffectiveNBackLevel));
+      setCanvasDataAttr('nbackAdaptiveTier', renderNBackChallenge.tierId);
+      setCanvasDataAttr('nbackRollingAvgPct', String(renderNBackChallenge.rollingAveragePct));
       setCanvasDataAttr('effectiveUfovWindowMs', String(renderAdaptiveScaling.effectiveUfovWindowMs));
       setCanvasDataAttr('runningFiveHrvAvg', String(renderAdaptiveScaling.runningFiveSessionHrvAvg));
       setCanvasDataAttr('rhythmSyncEnabled', rhythmSyncState.enabled ? 'true' : 'false');
@@ -2133,13 +2236,13 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
 
       // Draw current N-Back Totem Symbol above Heart-Tree
       const currentChime = chimeHistory[chimeHistory.length - 1] || 'SUN';
-      const isCurrentlyMatching = isNBackMatch(chimeHistory, renderAdaptiveScaling.effectiveNBackLevel);
+      const isCurrentlyMatching = isNBackMatch(chimeHistory, renderEffectiveNBackLevel);
       ctx.fillStyle = isCurrentlyMatching ? '#F2B84B' : '#4FD1C5';
       ctx.font = '600 13px "JetBrains Mono", monospace';
       ctx.textAlign = 'center';
       ctx.fillText(
         isCurrentlyMatching
-          ? `★ ${renderAdaptiveScaling.effectiveNBackLevel}-BACK MATCH! [PRESS E]`
+          ? `★ ${renderEffectiveNBackLevel}-BACK MATCH! [PRESS E]`
           : `TOTEM: ${currentChime}`,
         0,
         -92
@@ -2906,12 +3009,20 @@ export const SanctuaryCanvas: React.FC<SanctuaryCanvasProps> = ({
           treesGrafted,
           targetTrees: stage.targetTreesGrafted,
           nBackHits,
+          nBackAttempts,
+          nBackTrialOutcomes: activeTrialOutcomes,
+          nBackAdaptiveEnabled: renderNBackChallenge.enabled,
+          nBackRollingAvgPct: renderNBackChallenge.rollingAveragePct,
+          nBackEscalationMeterPct: renderNBackChallenge.escalationMeterPct,
+          nBackAdaptiveTierId: renderNBackChallenge.tierId,
+          nBackAdaptiveBadgeLabel: renderNBackChallenge.tierBadgeLabel,
+          nBackAdaptationDelta: renderNBackChallenge.adaptationDelta,
           stageIndex: stateRef.current.stageIndex,
           stageName: stage.name,
-          nBackLevel: renderAdaptiveScaling.effectiveNBackLevel,
+          nBackLevel: renderEffectiveNBackLevel,
           chimeHistory,
           isNBackReadyToMatch:
-            isNBackMatch(chimeHistory, renderAdaptiveScaling.effectiveNBackLevel) &&
+            isNBackMatch(chimeHistory, renderEffectiveNBackLevel) &&
             !chimeMatchClaimedThisBeat,
           activeProtocol: stateRef.current.activeProtocol,
           breathPhaseLabel: breathState.phaseLabel,

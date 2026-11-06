@@ -2793,6 +2793,230 @@ export function computeAdaptiveDifficultyScaling(params: {
 }
 
 /**
+ * N-Back Adaptive Challenge Mode Engine
+ * Automatically increases (or gently recalibrates) in-session N-Back working-memory
+ * difficulty (`1-Back -> 2-Back -> 3-Back`) based on a rolling average of recent
+ * trial outcomes during the session, and provides structured telemetry for the
+ * HUD N-Back stream visualization.
+ */
+export const NBACK_ADAPTIVE_CHALLENGE_STORAGE_KEY =
+  'sylvan_synapse_nback_adaptive_challenge_v1';
+export const NBACK_ADAPTIVE_CHALLENGE_WINDOW_SIZE = 5;
+export const NBACK_ADAPTIVE_PROMOTE_2BACK_PCT = 60;
+export const NBACK_ADAPTIVE_PROMOTE_3BACK_PCT = 80;
+
+export type NBackAdaptiveChallengeTierId =
+  | 'baseline_1back'
+  | 'adaptive_2back'
+  | 'adaptive_3back';
+
+export interface NBackAdaptiveChallengePip {
+  slotIndex: number;
+  recorded: boolean;
+  hit: boolean;
+  statusLabel: 'HIT' | 'MISS' | 'PENDING';
+}
+
+export interface NBackAdaptiveChallengeState {
+  enabled: boolean;
+  baseNBackLevel: 1 | 2 | 3;
+  effectiveNBackLevel: 1 | 2 | 3;
+  adaptationDelta: number;
+  isAdaptedUp: boolean;
+  tierId: NBackAdaptiveChallengeTierId;
+  tierBadgeLabel: string;
+  rollingWindowSize: number;
+  rollingWindowOutcomes: boolean[];
+  rollingPips: NBackAdaptiveChallengePip[];
+  rollingSampleCount: number;
+  rollingHitsCount: number;
+  rollingAveragePct: number;
+  escalationMeterPct: number;
+  promoteTo2BackThresholdPct: number;
+  promoteTo3BackThresholdPct: number;
+  nextTargetLabel: string;
+  statusSummaryText: string;
+  accentHex: string;
+  chimeDisplayCount: 3 | 4;
+}
+
+export function appendNBackTrialOutcome(
+  history: readonly boolean[] | null | undefined,
+  wasHit: boolean,
+  maxStoredTrials = 12
+): boolean[] {
+  const safeMax = Math.max(3, Math.min(30, Math.round(maxStoredTrials || 12)));
+  const base = Array.isArray(history) ? history.map(Boolean) : [];
+  return [...base, Boolean(wasHit)].slice(-safeMax);
+}
+
+export function computeNBackAdaptiveChallengeState(params: {
+  enabled?: boolean;
+  baseNBackLevel: 1 | 2 | 3;
+  sessionTrialOutcomes?: readonly boolean[] | null;
+  nBackHits?: number;
+  nBackAttempts?: number;
+  windowSize?: number;
+}): NBackAdaptiveChallengeState {
+  const enabled = params.enabled !== false;
+  const baseNBackLevel: 1 | 2 | 3 =
+    params.baseNBackLevel === 3 ? 3 : params.baseNBackLevel === 2 ? 2 : 1;
+  const rollingWindowSize = Math.max(
+    3,
+    Math.min(10, Math.round(params.windowSize || NBACK_ADAPTIVE_CHALLENGE_WINDOW_SIZE))
+  );
+
+  let rawOutcomes: boolean[] = [];
+  if (Array.isArray(params.sessionTrialOutcomes) && params.sessionTrialOutcomes.length > 0) {
+    rawOutcomes = params.sessionTrialOutcomes.map(Boolean);
+  } else {
+    const safeAttempts = Math.max(0, Math.floor(Number(params.nBackAttempts) || 0));
+    const safeHits = Math.max(
+      0,
+      Math.min(safeAttempts, Math.floor(Number(params.nBackHits) || 0))
+    );
+    const count = Math.min(rollingWindowSize, safeAttempts);
+    const hitsInWindow =
+      safeAttempts > 0 ? Math.round((safeHits / safeAttempts) * count) : 0;
+    for (let i = 0; i < count; i++) {
+      rawOutcomes.push(i < hitsInWindow);
+    }
+  }
+
+  const rollingWindowOutcomes = rawOutcomes.slice(-rollingWindowSize);
+  const rollingSampleCount = rollingWindowOutcomes.length;
+  const rollingHitsCount = rollingWindowOutcomes.filter(Boolean).length;
+  const rollingAveragePct =
+    rollingSampleCount > 0
+      ? Math.round((rollingHitsCount / rollingSampleCount) * 100)
+      : 50;
+
+  let effectiveNBackLevel: 1 | 2 | 3 = baseNBackLevel;
+  if (enabled) {
+    if (
+      baseNBackLevel === 3 &&
+      (rollingSampleCount < 2 || rollingAveragePct >= NBACK_ADAPTIVE_PROMOTE_2BACK_PCT)
+    ) {
+      effectiveNBackLevel = 3;
+    } else if (
+      (rollingSampleCount >= 3 && rollingAveragePct >= NBACK_ADAPTIVE_PROMOTE_3BACK_PCT) ||
+      (baseNBackLevel === 2 && rollingSampleCount >= 2 && rollingAveragePct >= 75)
+    ) {
+      effectiveNBackLevel = 3;
+    } else if (
+      (rollingSampleCount >= 2 && rollingAveragePct >= NBACK_ADAPTIVE_PROMOTE_2BACK_PCT) ||
+      (baseNBackLevel === 2 && (rollingSampleCount < 2 || rollingAveragePct >= 50))
+    ) {
+      effectiveNBackLevel = 2;
+    } else {
+      effectiveNBackLevel = 1;
+    }
+  }
+
+  const adaptationDelta = effectiveNBackLevel - baseNBackLevel;
+  const isAdaptedUp = effectiveNBackLevel > baseNBackLevel;
+
+  let tierId: NBackAdaptiveChallengeTierId = 'baseline_1back';
+  let tierBadgeLabel = '1-Back Calibrating';
+  let accentHex = '#4FD1C5';
+  let nextTargetLabel = `≥${NBACK_ADAPTIVE_PROMOTE_2BACK_PCT}% (2+ trials) → 2-Back`;
+
+  if (!enabled) {
+    tierId =
+      baseNBackLevel === 3
+        ? 'adaptive_3back'
+        : baseNBackLevel === 2
+        ? 'adaptive_2back'
+        : 'baseline_1back';
+    tierBadgeLabel = `Fixed ${baseNBackLevel}-Back`;
+    accentHex = '#A3B8B0';
+    nextTargetLabel = 'Adaptive Challenge Off';
+  } else if (effectiveNBackLevel === 3) {
+    tierId = 'adaptive_3back';
+    tierBadgeLabel =
+      adaptationDelta > 0 ? `★ 3-Back Apex (+${adaptationDelta})` : '★ 3-Back Apex';
+    accentHex = '#B794F4';
+    nextTargetLabel = 'Apex 3-Back Mastery Locked';
+  } else if (effectiveNBackLevel === 2) {
+    tierId = 'adaptive_2back';
+    tierBadgeLabel =
+      adaptationDelta > 0 ? `▲ 2-Back Adaptive (+${adaptationDelta})` : '2-Back Active';
+    accentHex = '#F2B84B';
+    nextTargetLabel = `≥${NBACK_ADAPTIVE_PROMOTE_3BACK_PCT}% (3+ trials) → 3-Back`;
+  } else {
+    tierId = 'baseline_1back';
+    tierBadgeLabel = rollingSampleCount > 0 ? '1-Back Adaptive' : '1-Back Baseline';
+    accentHex = '#4FD1C5';
+    nextTargetLabel = `≥${NBACK_ADAPTIVE_PROMOTE_2BACK_PCT}% (2+ trials) → 2-Back`;
+  }
+
+  // Smooth escalation meter (0..100%) reflecting both rolling accuracy and trial maturity
+  let escalationMeterPct = 20;
+  if (rollingSampleCount === 1) {
+    escalationMeterPct = rollingHitsCount === 1 ? 48 : 15;
+  } else if (rollingSampleCount === 2) {
+    escalationMeterPct = Math.round(rollingAveragePct * 0.74);
+  } else if (rollingSampleCount >= 3) {
+    escalationMeterPct = rollingAveragePct;
+  }
+  escalationMeterPct = Math.max(0, Math.min(100, escalationMeterPct));
+
+  const rollingPips: NBackAdaptiveChallengePip[] = Array.from(
+    { length: rollingWindowSize },
+    (_, slotIndex) => {
+      if (slotIndex < rollingSampleCount) {
+        const hit = rollingWindowOutcomes[slotIndex];
+        return {
+          slotIndex,
+          recorded: true,
+          hit,
+          statusLabel: hit ? 'HIT' : 'MISS',
+        };
+      }
+      return {
+        slotIndex,
+        recorded: false,
+        hit: false,
+        statusLabel: 'PENDING',
+      };
+    }
+  );
+
+  const statusSummaryText = !enabled
+    ? `Adaptive Challenge Paused · Holding ${baseNBackLevel}-Back stage baseline`
+    : rollingSampleCount === 0
+    ? `Adaptive Challenge Active · Match Echo Chimes [E] to auto-promote N-Back difficulty`
+    : effectiveNBackLevel === 3
+    ? `Rolling Avg ${rollingAveragePct}% (${rollingHitsCount}/${rollingSampleCount}) · Auto-Promoted to 3-Back Apex`
+    : effectiveNBackLevel === 2
+    ? `Rolling Avg ${rollingAveragePct}% (${rollingHitsCount}/${rollingSampleCount}) · Auto-Promoted to 2-Back (${nextTargetLabel})`
+    : `Rolling Avg ${rollingAveragePct}% (${rollingHitsCount}/${rollingSampleCount}) · ${nextTargetLabel}`;
+
+  return {
+    enabled,
+    baseNBackLevel,
+    effectiveNBackLevel,
+    adaptationDelta,
+    isAdaptedUp,
+    tierId,
+    tierBadgeLabel,
+    rollingWindowSize,
+    rollingWindowOutcomes,
+    rollingPips,
+    rollingSampleCount,
+    rollingHitsCount,
+    rollingAveragePct,
+    escalationMeterPct,
+    promoteTo2BackThresholdPct: NBACK_ADAPTIVE_PROMOTE_2BACK_PCT,
+    promoteTo3BackThresholdPct: NBACK_ADAPTIVE_PROMOTE_3BACK_PCT,
+    nextTargetLabel,
+    statusSummaryText,
+    accentHex,
+    chimeDisplayCount: effectiveNBackLevel === 3 ? 4 : 3,
+  };
+}
+
+/**
  * Sanctuary Bloom Enhancement: Staggered Particle-Based Tree 'Flowering' Animation
  * & N-Back Success-Rate Bioluminescent Tendril Growth Engine.
  *

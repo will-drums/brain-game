@@ -58,6 +58,10 @@ import {
   computeBloomSliderTooltipState,
   HUD_VITALITY_NECTAR_PULSE_DURATION_MS,
   evaluateHudVitalityNectarPulse,
+  NBACK_ADAPTIVE_CHALLENGE_STORAGE_KEY,
+  NBACK_ADAPTIVE_PROMOTE_2BACK_PCT,
+  NBACK_ADAPTIVE_PROMOTE_3BACK_PCT,
+  computeNBackAdaptiveChallengeState,
   type HudPulseTriggerSource,
   type GentleNotificationConfig,
   type SanctuaryBloomPresetId,
@@ -1179,6 +1183,86 @@ export default function App() {
     });
   }, []);
 
+  // N-Back Adaptive Challenge Mode (Automatic Rolling Performance Difficulty Escalation: 1-Back -> 2-Back -> 3-Back)
+  const [nBackAdaptiveChallengeEnabled, setNBackAdaptiveChallengeEnabled] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = window.localStorage.getItem(NBACK_ADAPTIVE_CHALLENGE_STORAGE_KEY);
+        if (raw === 'false') return false;
+        if (raw === 'true') return true;
+        window.localStorage.setItem(NBACK_ADAPTIVE_CHALLENGE_STORAGE_KEY, 'true');
+      } catch {
+        // Ignore storage errors
+      }
+    }
+    return true;
+  });
+  const [simulatedNBackOutcomes, setSimulatedNBackOutcomes] = useState<boolean[] | null>(null);
+
+  const nBackChallengeState = computeNBackAdaptiveChallengeState({
+    enabled: nBackAdaptiveChallengeEnabled,
+    baseNBackLevel:
+      runningFiveSessionHrvAvgOverride !== null
+        ? activeAdaptiveScaling.effectiveNBackLevel
+        : activeStageDef.nBackLevel,
+    sessionTrialOutcomes:
+      simulatedNBackOutcomes !== null ? simulatedNBackOutcomes : hud.nBackTrialOutcomes,
+    nBackHits: hud.nBackHits,
+    nBackAttempts: hud.nBackAttempts,
+  });
+
+  const handleToggleNBackAdaptiveChallenge = useCallback(
+    (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.currentTarget.blur();
+      e.stopPropagation();
+      setNBackAdaptiveChallengeEnabled((prev) => {
+        const next = !prev;
+        if (typeof window !== 'undefined') {
+          try {
+            window.localStorage.setItem(
+              NBACK_ADAPTIVE_CHALLENGE_STORAGE_KEY,
+              next ? 'true' : 'false'
+            );
+          } catch {
+            // Ignore storage errors
+          }
+        }
+        soundEngine.playLightNote(next ? 659.25 : 440.0, 0.14);
+        return next;
+      });
+    },
+    []
+  );
+
+  const handleCycleNBackAdaptiveSim = useCallback(
+    (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.currentTarget.blur();
+      e.stopPropagation();
+      if (!nBackAdaptiveChallengeEnabled) {
+        setNBackAdaptiveChallengeEnabled(true);
+      }
+      setSimulatedNBackOutcomes((prev) => {
+        if (prev === null) {
+          soundEngine.playLightNote(659.25, 0.16);
+          triggerHudVitalityNectarPulse('nback_match');
+          return [true, true]; // 2/2 (100%) -> Promotes to 2-Back
+        }
+        if (prev.length === 2 && prev.every(Boolean)) {
+          soundEngine.playHarmonicChord('nback');
+          triggerHudVitalityNectarPulse('nback_match');
+          return [true, true, true]; // 3/3 (100%) -> Promotes to 3-Back Apex
+        }
+        if (prev.length === 3 && prev.every(Boolean)) {
+          soundEngine.playLightNote(392.0, 0.15);
+          return [true, false, false, false]; // 1/4 (25%) -> Recalibrates to 1-Back Baseline
+        }
+        soundEngine.playLightNote(523.25, 0.14);
+        return null; // Back to live session tracking
+      });
+    },
+    [nBackAdaptiveChallengeEnabled, triggerHudVitalityNectarPulse]
+  );
+
   // Mirror game state to document.body.dataset.state
   useEffect(() => {
     document.body.dataset.state = gameState;
@@ -1190,6 +1274,7 @@ export default function App() {
       commitDailyPractice();
       setStageIndex(nextStage);
       setIsDemoMode(demoMode);
+      setSimulatedNBackOutcomes(null);
       setGameOutcome(null);
       setEndSummary(null);
       setIsCodexOpen(false);
@@ -1550,16 +1635,34 @@ export default function App() {
     }
   };
 
-  const renderSymbolBadge = (sym: ChimeSymbol, isHighlight: boolean) => {
+  const renderSymbolBadge = (
+    sym: ChimeSymbol,
+    isHighlight: boolean,
+    isNBackTarget = false,
+    nBackLevel = 1
+  ) => {
     return (
       <span
-        className={`inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[11px] font-mono font-semibold ${
+        data-testid={isNBackTarget ? 'hud-nback-target-symbol' : undefined}
+        className={`inline-flex items-center gap-0.5 justify-center px-1.5 py-0.5 rounded text-[11px] font-mono font-semibold transition-colors ${
           isHighlight
             ? 'bg-[#F2B84B] text-[#091510]'
+            : isNBackTarget
+            ? 'bg-[#122D26] text-[#4FD1C5] border border-[#4FD1C5]/80'
             : 'bg-[#152E24] text-[#D5E2DC] border border-[#2C4C3E]'
         }`}
+        title={
+          isNBackTarget
+            ? `Active ${nBackLevel}-Back Comparison Target (${nBackLevel} step${nBackLevel === 1 ? '' : 's'} ago)`
+            : undefined
+        }
       >
-        {sym}
+        {isNBackTarget && (
+          <span className="text-[8.5px] font-mono text-[#68D391] opacity-90">
+            -{nBackLevel}B
+          </span>
+        )}
+        <span>{sym}</span>
       </span>
     );
   };
@@ -1597,6 +1700,8 @@ export default function App() {
         rhythmSyncConfig={rhythmSyncConfig}
         hrvHistory={hrvHistory}
         runningFiveSessionHrvAvgOverride={runningFiveSessionHrvAvgOverride}
+        nBackAdaptiveChallengeEnabled={nBackAdaptiveChallengeEnabled}
+        simulatedNBackTrialOutcomes={simulatedNBackOutcomes}
       />
 
       {/* 2. TITLE SCREEN OVERLAY (30%-40% negative space left column over live world camera pan) */}
@@ -2240,22 +2345,28 @@ export default function App() {
             >
               {/* Row 1: N-Back Stream + Core Utility Controls (100% within 1440px viewport) */}
               <div className="flex flex-wrap items-center justify-end gap-1.5">
-                {/* Live N-Back Totem Sequence Indicator + 5-Session HRV Adaptive Difficulty Scaling (Hidden in Zen Mode) */}
+                {/* Live N-Back Totem Sequence Indicator + Rolling N-Back Adaptive Challenge & 5-Session HRV Scaling (Hidden in Zen Mode) */}
                 {zenHud.showNBackStream && (
                   <div
                     data-testid="hud-nback-stream"
-                    data-effective-nback-level={hud.nBackLevel}
+                    data-effective-nback-level={nBackChallengeState.effectiveNBackLevel}
                     data-effective-ufov-window-ms={hud.adaptiveUfovWindowMs}
                     data-running-five-hrv-avg={hud.runningFiveSessionHrvAvg ?? activeAdaptiveScaling.runningFiveSessionHrvAvg}
                     data-adaptive-tier-id={activeAdaptiveScaling.tierId}
+                    data-adaptive-challenge-enabled={nBackChallengeState.enabled ? 'true' : 'false'}
+                    data-adaptive-challenge-tier={nBackChallengeState.tierId}
+                    data-adaptive-tier-badge={nBackChallengeState.tierBadgeLabel}
+                    data-rolling-avg-pct={nBackChallengeState.rollingAveragePct}
+                    data-adaptation-delta={nBackChallengeState.adaptationDelta}
+                    data-escalation-meter-pct={nBackChallengeState.escalationMeterPct}
                     data-rhythm-sync-enabled={rhythmSyncConfig.enabled ? 'true' : 'false'}
                     data-rhythm-chime-interval-sec={activeRhythmSync.effectiveChimeIntervalSec}
                     className="hidden md:flex items-center gap-2 px-2.5 py-1.5 rounded-2xl bg-[#091510]/88 border border-[#233D32] shadow-xl whitespace-nowrap"
                   >
-                    <div>
+                    <div className="space-y-1">
                       <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0] flex items-center gap-1.5">
-                        <span data-testid="hud-effective-nback-label">
-                          {hud.nBackLevel}-BACK CHIME STREAM
+                        <span data-testid="hud-effective-nback-label" className="font-semibold text-[#F4EFE6]">
+                          {nBackChallengeState.effectiveNBackLevel}-BACK CHIME STREAM
                         </span>
                         <button
                           type="button"
@@ -2305,18 +2416,136 @@ export default function App() {
                           </span>
                         </button>
                       </div>
-                      <div className="flex items-center gap-1 mt-1">
-                        {hud.chimeHistory.slice(-(hud.nBackLevel === 3 ? 4 : 3)).map((sym, idx, arr) => {
-                          const isLatest = idx === arr.length - 1;
-                          return (
-                            <React.Fragment key={idx}>
-                              {renderSymbolBadge(sym, isLatest && hud.isNBackReadyToMatch)}
-                              {idx < arr.length - 1 && (
-                                <span className="text-xs text-[#526B61]">→</span>
-                              )}
-                            </React.Fragment>
-                          );
-                        })}
+
+                      {/* Symbol Stream + Rolling N-Back Adaptive Challenge Strip */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1">
+                          {hud.chimeHistory
+                            .slice(-nBackChallengeState.chimeDisplayCount)
+                            .map((sym, idx, arr) => {
+                              const isLatest = idx === arr.length - 1;
+                              const isTarget =
+                                idx === arr.length - 1 - nBackChallengeState.effectiveNBackLevel;
+                              return (
+                                <React.Fragment key={idx}>
+                                  {renderSymbolBadge(
+                                    sym,
+                                    isLatest && hud.isNBackReadyToMatch,
+                                    isTarget,
+                                    nBackChallengeState.effectiveNBackLevel
+                                  )}
+                                  {idx < arr.length - 1 && (
+                                    <span className="text-xs text-[#526B61]">→</span>
+                                  )}
+                                </React.Fragment>
+                              );
+                            })}
+                        </div>
+
+                        {/* Rolling Performance Pips + Adaptive Tier Badge + Sim Escalation Control */}
+                        <div
+                          data-testid="hud-nback-adaptive-strip"
+                          className="flex items-center gap-1.5 pl-1.5 border-l border-[#233D32]"
+                        >
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            data-testid="hud-nback-adaptive-challenge-badge"
+                            aria-pressed={nBackChallengeState.enabled}
+                            onClick={handleToggleNBackAdaptiveChallenge}
+                            title={`${nBackChallengeState.tierBadgeLabel} — ${nBackChallengeState.statusSummaryText} (Click to toggle Adaptive N-Back Challenge mode)`}
+                            className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold border transition-colors cursor-pointer"
+                            style={{
+                              color: nBackChallengeState.accentHex,
+                              borderColor: `${nBackChallengeState.accentHex}70`,
+                              backgroundColor: nBackChallengeState.isAdaptedUp
+                                ? 'rgba(20, 45, 35, 0.95)'
+                                : '#11251D',
+                            }}
+                          >
+                            {nBackChallengeState.tierBadgeLabel}
+                          </button>
+
+                          {/* 5-Pip Rolling Window Telemetry */}
+                          <div
+                            data-testid="hud-nback-rolling-pips"
+                            className="flex items-center gap-0.5"
+                            title={`Rolling ${nBackChallengeState.rollingWindowSize}-Trial Performance Window: ${nBackChallengeState.rollingHitsCount}/${nBackChallengeState.rollingSampleCount} Hits (${nBackChallengeState.rollingAveragePct}%)`}
+                          >
+                            {nBackChallengeState.rollingPips.map((pip) => (
+                              <span
+                                key={pip.slotIndex}
+                                data-testid={`hud-nback-pip-${pip.slotIndex}`}
+                                data-pip-status={pip.statusLabel}
+                                className={`w-2 h-2 rounded-[2px] border transition-colors ${
+                                  pip.statusLabel === 'HIT'
+                                    ? 'bg-[#68D391] border-[#C6F6D5]'
+                                    : pip.statusLabel === 'MISS'
+                                    ? 'bg-[#F6AD55] border-[#FBD38D]'
+                                    : 'bg-[#12261E] border-[#2C4C3E]'
+                                }`}
+                              />
+                            ))}
+                          </div>
+
+                          <span
+                            data-testid="hud-nback-rolling-avg"
+                            className="text-[9.5px] font-mono font-bold tabular-nums"
+                            style={{ color: nBackChallengeState.accentHex }}
+                          >
+                            {nBackChallengeState.rollingAveragePct}%
+                          </span>
+
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            data-testid="hud-nback-adaptive-sim-btn"
+                            onClick={handleCycleNBackAdaptiveSim}
+                            title="Simulate Rolling N-Back Performance Escalation (1-Back → 2-Back → 3-Back Apex → Recalibrate)"
+                            className="px-1 py-0.2 rounded bg-[#142D23] hover:bg-[#1E4435] text-[#4FD1C5] border border-[#2C4C3E] text-[8.5px] font-mono font-semibold cursor-pointer"
+                          >
+                            {simulatedNBackOutcomes !== null ? 'Sim ↺' : 'Sim ↑'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Rolling Adaptive Escalation Progress Bar & Threshold Telemetry */}
+                      <div className="flex items-center gap-2 pt-0.5">
+                        <div
+                          role="progressbar"
+                          aria-label="N-Back Adaptive Challenge Escalation Progress"
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-valuenow={nBackChallengeState.escalationMeterPct}
+                          data-testid="hud-nback-adaptive-progress-bar"
+                          className="relative flex-1 h-1.5 rounded-full bg-[#11261E] border border-[#233D32] overflow-hidden"
+                          title={`Escalation Meter: ${nBackChallengeState.escalationMeterPct}% (2-Back @ ≥${NBACK_ADAPTIVE_PROMOTE_2BACK_PCT}%, 3-Back @ ≥${NBACK_ADAPTIVE_PROMOTE_3BACK_PCT}%)`}
+                        >
+                          <div
+                            className="h-full rounded-full transition-all duration-300"
+                            style={{
+                              width: `${nBackChallengeState.escalationMeterPct}%`,
+                              backgroundColor: nBackChallengeState.accentHex,
+                            }}
+                          />
+                          {/* 60% (2-Back) and 80% (3-Back) Promotion Threshold Markers */}
+                          <span
+                            aria-hidden="true"
+                            className="absolute top-0 bottom-0 w-[1px] bg-[#F2B84B]/70"
+                            style={{ left: `${NBACK_ADAPTIVE_PROMOTE_2BACK_PCT}%` }}
+                          />
+                          <span
+                            aria-hidden="true"
+                            className="absolute top-0 bottom-0 w-[1px] bg-[#B794F4]/80"
+                            style={{ left: `${NBACK_ADAPTIVE_PROMOTE_3BACK_PCT}%` }}
+                          />
+                        </div>
+                        <span
+                          data-testid="hud-nback-adaptive-status-text"
+                          className="text-[8.5px] font-mono text-[#A3B8B0] tabular-nums"
+                        >
+                          {nBackChallengeState.nextTargetLabel}
+                        </span>
                       </div>
                     </div>
                     <button
