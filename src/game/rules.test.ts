@@ -98,6 +98,7 @@ import {
   computeSanctuaryBloomIntensityTrend30Days,
   HUD_VITALITY_NECTAR_PULSE_DURATION_MS,
   evaluateHudVitalityNectarPulse,
+  computeHudCognitiveReserveTooltips,
   type ChimeSymbol,
 } from './rules';
 
@@ -1811,3 +1812,57 @@ test('CLINICAL_PROTOCOLS contains all 4 peer-reviewed medical citations', () => 
   assert.ok(CLINICAL_PROTOCOLS.coherence_breath.studyTitle.includes('Heart Rate Variability'));
   assert.ok(CLINICAL_PROTOCOLS.dendrite_graft.studyTitle.includes('Hippocampal'));
 });
+
+test('computeHudCognitiveReserveTooltips generates descriptive daily cognitive reserve tooltips for Trees Grafted and Rejuvenation Score', () => {
+  const baseline = computeHudCognitiveReserveTooltips({
+    sessionTreesGrafted: 1,
+    targetTrees: 4,
+    lifetimeTreesGrafted: 4,
+    sessionRejuvenationScore: 420,
+    peakRejuvenationScore: 1420,
+    averageHrvCoherence: 82,
+    currentStreakDays: 3,
+    treeTendrilCount: 11,
+    localNBackSuccessPct: 80,
+  });
+
+  assert.equal(baseline.treesGrafted.id, 'trees_grafted');
+  assert.ok(baseline.treesGrafted.titleAttributeText.includes('Daily Cognitive Reserve'));
+  assert.ok(baseline.treesGrafted.reserveContributionLine.includes(`${baseline.bdnfDomainScorePct}/100`));
+  assert.ok(baseline.treesGrafted.clinicalMechanism.includes('BDNF'));
+  assert.equal(baseline.treesGrafted.accentHex, '#B794F4');
+
+  assert.equal(baseline.rejuvenationScore.id, 'rejuvenation_score');
+  assert.ok(baseline.rejuvenationScore.titleAttributeText.includes('Daily Cognitive Reserve'));
+  assert.ok(
+    baseline.rejuvenationScore.reserveContributionLine.includes(
+      `UFOV (${baseline.ufovDomainScorePct}/100)`
+    )
+  );
+  assert.ok(
+    baseline.rejuvenationScore.reserveContributionLine.includes(
+      `Working Memory (${baseline.nBackDomainScorePct}/100)`
+    )
+  );
+  assert.equal(baseline.rejuvenationScore.accentHex, '#4FD1C5');
+
+  // Increasing grafted trees and rejuvenation score increases daily cognitive reserve index
+  const elevated = computeHudCognitiveReserveTooltips({
+    sessionTreesGrafted: 4,
+    targetTrees: 4,
+    lifetimeTreesGrafted: 16,
+    sessionRejuvenationScore: 2450,
+    peakRejuvenationScore: 2450,
+    averageHrvCoherence: 90,
+    currentStreakDays: 7,
+    treeTendrilCount: 14,
+    localNBackSuccessPct: 100,
+  });
+
+  assert.ok(elevated.bdnfDomainScorePct > baseline.bdnfDomainScorePct);
+  assert.ok(elevated.ufovDomainScorePct > baseline.ufovDomainScorePct);
+  assert.ok(elevated.nBackDomainScorePct > baseline.nBackDomainScorePct);
+  assert.ok(elevated.compositeReserveIndex > baseline.compositeReserveIndex);
+  assert.ok(elevated.estimatedPlasticityGainPct > baseline.estimatedPlasticityGainPct);
+});
+

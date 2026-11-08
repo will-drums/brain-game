@@ -6364,3 +6364,132 @@ export function evaluateHudVitalityNectarPulse(params: {
   };
 }
 
+/**
+ * Descriptive HUD Tooltips for 'Trees Grafted' and 'Rejuvenation Score'
+ * Explains how each metric directly contributes to the user's composite
+ * Daily Cognitive Reserve Index (0..100) and Estimated Synaptic Plasticity Gain (%).
+ */
+export type HudCognitiveReserveTooltipMetricId = 'trees_grafted' | 'rejuvenation_score';
+
+export interface HudCognitiveReserveMetricTooltip {
+  id: HudCognitiveReserveTooltipMetricId;
+  metricTitle: string;
+  pillarBadge: string;
+  reserveWeightLabel: string;
+  liveTelemetryLine: string;
+  reserveContributionLine: string;
+  clinicalMechanism: string;
+  citationLabel: string;
+  titleAttributeText: string;
+  accentHex: string;
+}
+
+export interface HudCognitiveReserveTooltipsState {
+  compositeReserveIndex: number; // 0 .. 100
+  estimatedPlasticityGainPct: number; // 8 .. 38
+  bdnfDomainScorePct: number; // 60 .. 100
+  ufovDomainScorePct: number; // 64 .. 99
+  nBackDomainScorePct: number; // 62 .. 99
+  vagalDomainScorePct: number; // 55 .. 99
+  effectiveTreesCount: number;
+  effectivePeakRejuvenation: number;
+  treesGrafted: HudCognitiveReserveMetricTooltip;
+  rejuvenationScore: HudCognitiveReserveMetricTooltip;
+}
+
+export function computeHudCognitiveReserveTooltips(params: {
+  sessionTreesGrafted: number;
+  targetTrees: number;
+  lifetimeTreesGrafted: number;
+  sessionRejuvenationScore: number;
+  peakRejuvenationScore: number;
+  averageHrvCoherence?: number;
+  currentStreakDays?: number;
+  treeTendrilCount?: number;
+  localNBackSuccessPct?: number;
+}): HudCognitiveReserveTooltipsState {
+  const sessionTrees = Math.max(0, Math.floor(Number(params.sessionTreesGrafted) || 0));
+  const targetTrees = Math.max(1, Math.floor(Number(params.targetTrees) || 4));
+  const lifetimeTrees = Math.max(
+    sessionTrees,
+    Math.floor(Number(params.lifetimeTreesGrafted) || 0)
+  );
+  const sessionRejuv = Math.max(0, Math.round(Number(params.sessionRejuvenationScore) || 0));
+  const effectivePeakRejuvenation = Math.max(
+    sessionRejuv,
+    Math.round(Number(params.peakRejuvenationScore) || 0)
+  );
+  const avgHrv = Math.max(0, Math.min(100, Math.round(Number(params.averageHrvCoherence) || 80)));
+  const streakDays = Math.max(0, Math.floor(Number(params.currentStreakDays) || 0));
+  const tendrilCount = Math.max(6, Math.round(Number(params.treeTendrilCount) || 10));
+  const nBackSuccessPct = Math.max(
+    0,
+    Math.min(100, Math.round(Number(params.localNBackSuccessPct) || 75))
+  );
+
+  const profile = computeCognitiveDomainProfile({
+    totalTreesGrafted: lifetimeTrees,
+    peakRejuvenationScore: effectivePeakRejuvenation,
+    averageHrvCoherence: avgHrv,
+    currentStreakDays: streakDays,
+  });
+
+  const ufovDomainScorePct =
+    profile.domains.find((d) => d.id === 'ufov_speed')?.scorePct ?? 64;
+  const nBackDomainScorePct =
+    profile.domains.find((d) => d.id === 'nback_memory')?.scorePct ?? 62;
+  const vagalDomainScorePct =
+    profile.domains.find((d) => d.id === 'vagal_hrv')?.scorePct ?? 78;
+  const bdnfDomainScorePct =
+    profile.domains.find((d) => d.id === 'hippocampal_bdnf')?.scorePct ?? 60;
+
+  const treesLiveLine = `Stage: ${sessionTrees}/${targetTrees} Grafted · Lifetime: ${lifetimeTrees} Trees · ${tendrilCount}✦ Tendrils (${nBackSuccessPct}% N-Back)`;
+  const treesContributionLine = `Hippocampal BDNF Pillar: ${bdnfDomainScorePct}/100 (+2.2 Domain Pts/Tree → Daily Reserve ${profile.compositeReserveIndex}/100 · +${profile.estimatedPlasticityGainPct}% Plasticity)`;
+  const treesClinicalMechanism =
+    'Each grafted neural tree models activity-dependent BDNF release and dendritic arborization in the hippocampal dentate gyrus, directly powering 25% of your composite Daily Cognitive Reserve Index.';
+  const treesCitation = 'Erickson et al., PNAS (2011) · Hippocampal Spatial Neurogenesis';
+  const treesTitleAttr = `Trees Grafted (${sessionTrees}/${targetTrees} Stage · ${lifetimeTrees} Lifetime) — Contributes 25% of Daily Cognitive Reserve via the Hippocampal BDNF Synaptogenesis pillar (${bdnfDomainScorePct}/100, +2.2 domain pts per tree up to 20 trees). Composite Daily Reserve: ${profile.compositeReserveIndex}/100 (+${profile.estimatedPlasticityGainPct}% Est. Synaptic Plasticity Gain). ${treesClinicalMechanism}`;
+
+  const rejuvLiveLine = `Session Score: ${sessionRejuv} pts · Peak Benchmark: ${effectivePeakRejuvenation} pts · Streak: ${streakDays}d`;
+  const rejuvContributionLine = `UFOV (${ufovDomainScorePct}/100) & Working Memory (${nBackDomainScorePct}/100) Pillars → Daily Reserve ${profile.compositeReserveIndex}/100 (+${profile.estimatedPlasticityGainPct}% Plasticity)`;
+  const rejuvClinicalMechanism =
+    'Synthesizes real-time UFOV divided visual attention, N-Back working memory accuracy, and 0.1 Hz vagal coherence to drive 50% of your composite Daily Cognitive Reserve Index across prefrontal and parietal networks.';
+  const rejuvCitation = 'Ball et al., JAMA (ACTIVE Trial); Jaeggi et al., PNAS (2008)';
+  const rejuvTitleAttr = `Rejuvenation Score (${sessionRejuv} pts Session · ${effectivePeakRejuvenation} pts Peak) — Contributes 50% of Daily Cognitive Reserve by driving the UFOV Visual Speed (${ufovDomainScorePct}/100) and Prefrontal Working Memory (${nBackDomainScorePct}/100) pillars. Composite Daily Reserve: ${profile.compositeReserveIndex}/100 (+${profile.estimatedPlasticityGainPct}% Est. Synaptic Plasticity Gain). ${rejuvClinicalMechanism}`;
+
+  return {
+    compositeReserveIndex: profile.compositeReserveIndex,
+    estimatedPlasticityGainPct: profile.estimatedPlasticityGainPct,
+    bdnfDomainScorePct,
+    ufovDomainScorePct,
+    nBackDomainScorePct,
+    vagalDomainScorePct,
+    effectiveTreesCount: lifetimeTrees,
+    effectivePeakRejuvenation,
+    treesGrafted: {
+      id: 'trees_grafted',
+      metricTitle: 'Hippocampal Trees Grafted · BDNF Reserve Pillar',
+      pillarBadge: '25% DAILY COGNITIVE RESERVE WEIGHT',
+      reserveWeightLabel: 'Hippocampal BDNF Synaptogenesis (25% Reserve Weight)',
+      liveTelemetryLine: treesLiveLine,
+      reserveContributionLine: treesContributionLine,
+      clinicalMechanism: treesClinicalMechanism,
+      citationLabel: treesCitation,
+      titleAttributeText: treesTitleAttr,
+      accentHex: '#B794F4',
+    },
+    rejuvenationScore: {
+      id: 'rejuvenation_score',
+      metricTitle: 'Rejuvenation Score · Prefrontal & Visual Reserve',
+      pillarBadge: '50% DAILY COGNITIVE RESERVE WEIGHT',
+      reserveWeightLabel: 'UFOV Speed + Working Memory (50% Reserve Weight)',
+      liveTelemetryLine: rejuvLiveLine,
+      reserveContributionLine: rejuvContributionLine,
+      clinicalMechanism: rejuvClinicalMechanism,
+      citationLabel: rejuvCitation,
+      titleAttributeText: rejuvTitleAttr,
+      accentHex: '#4FD1C5',
+    },
+  };
+}
+

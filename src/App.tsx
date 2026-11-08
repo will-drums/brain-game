@@ -62,6 +62,8 @@ import {
   NBACK_ADAPTIVE_PROMOTE_2BACK_PCT,
   NBACK_ADAPTIVE_PROMOTE_3BACK_PCT,
   computeNBackAdaptiveChallengeState,
+  computeHudCognitiveReserveTooltips,
+  type HudCognitiveReserveTooltipMetricId,
   type HudPulseTriggerSource,
   type GentleNotificationConfig,
   type SanctuaryBloomPresetId,
@@ -1263,6 +1265,22 @@ export default function App() {
     [nBackAdaptiveChallengeEnabled, triggerHudVitalityNectarPulse]
   );
 
+  // Descriptive Daily Cognitive Reserve Tooltips for 'Trees Grafted' and 'Rejuvenation Score' HUD Components
+  const [activeHudReserveTooltipId, setActiveHudReserveTooltipId] =
+    useState<HudCognitiveReserveTooltipMetricId | null>(null);
+
+  const hudCognitiveReserveTooltips = computeHudCognitiveReserveTooltips({
+    sessionTreesGrafted: hud.treesGrafted,
+    targetTrees: hud.targetTrees,
+    lifetimeTreesGrafted: lifetimeProgress.totalTreesGrafted,
+    sessionRejuvenationScore: hud.rejuvenationScore,
+    peakRejuvenationScore: lifetimeProgress.peakRejuvenationScore,
+    averageHrvCoherence: hud.runningFiveSessionHrvAvg ?? liveFiveSessionHrvAvg,
+    currentStreakDays: dailyStreak.currentStreak,
+    treeTendrilCount: hud.treeTendrilCount ?? 10,
+    localNBackSuccessPct: hud.localNBackSuccessPct ?? 75,
+  });
+
   // Mirror game state to document.body.dataset.state
   useEffect(() => {
     document.body.dataset.state = gameState;
@@ -2201,15 +2219,39 @@ export default function App() {
                 </div>
               )}
 
-              {/* Hippocampal Trees Grafted + Staggered Flowering Tendrils (Hidden in Zen Mode) */}
+              {/* Hippocampal Trees Grafted + Staggered Flowering Tendrils + Daily Cognitive Reserve Tooltip (Hidden in Zen Mode) */}
               {zenHud.showTreesGrafted && (
                 <div
                   data-testid="hud-trees-grafted"
                   data-tree-tendril-count={hud.treeTendrilCount ?? 10}
                   data-local-nback-success-pct={hud.localNBackSuccessPct ?? 75}
                   data-flowering-trees-count={hud.floweringTreesCount ?? hud.treesGrafted}
-                  className="pl-2 border-l border-[#233D32] whitespace-nowrap"
-                  title={`Hippocampal Trees Grafted: ${hud.treesGrafted}/${hud.targetTrees} · Flowering Tendrils per Tree: ${hud.treeTendrilCount ?? 10} (${hud.localNBackSuccessPct ?? 75}% N-Back Success Rate)`}
+                  data-daily-cognitive-reserve={hudCognitiveReserveTooltips.compositeReserveIndex}
+                  data-bdnf-domain-score={hudCognitiveReserveTooltips.bdnfDomainScorePct}
+                  data-tooltip-active={
+                    activeHudReserveTooltipId === 'trees_grafted' ? 'true' : 'false'
+                  }
+                  tabIndex={0}
+                  aria-describedby="hud-trees-grafted-tooltip"
+                  onMouseEnter={() => setActiveHudReserveTooltipId('trees_grafted')}
+                  onMouseLeave={() =>
+                    setActiveHudReserveTooltipId((prev) =>
+                      prev === 'trees_grafted' ? null : prev
+                    )
+                  }
+                  onFocus={() => setActiveHudReserveTooltipId('trees_grafted')}
+                  onBlur={() =>
+                    setActiveHudReserveTooltipId((prev) =>
+                      prev === 'trees_grafted' ? null : prev
+                    )
+                  }
+                  onClick={() =>
+                    setActiveHudReserveTooltipId((prev) =>
+                      prev === 'trees_grafted' ? null : 'trees_grafted'
+                    )
+                  }
+                  className="relative pl-2 pr-1 py-0.5 border-l border-[#233D32] whitespace-nowrap cursor-help outline-none"
+                  title={hudCognitiveReserveTooltips.treesGrafted.titleAttributeText}
                 >
                   <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0] flex items-center gap-1">
                     <span>TREES</span>
@@ -2221,27 +2263,142 @@ export default function App() {
                         {hud.treeTendrilCount ?? 10}✦
                       </span>
                     )}
+                    <span
+                      aria-hidden="true"
+                      className="text-[8.5px] font-mono text-[#B794F4]/80"
+                    >
+                      ⓘ
+                    </span>
                   </div>
                   <div className="flex items-baseline gap-1">
                     <span className="text-lg font-mono font-bold text-[#B794F4] tabular-nums hud-text-stroke">
                       {hud.treesGrafted}/{hud.targetTrees}
                     </span>
                   </div>
+
+                  {/* Descriptive Daily Cognitive Reserve Floating Tooltip for 'Trees Grafted' */}
+                  {activeHudReserveTooltipId === 'trees_grafted' && (
+                    <div
+                      id="hud-trees-grafted-tooltip"
+                      role="tooltip"
+                      data-testid="hud-trees-grafted-tooltip"
+                      data-reserve-index={hudCognitiveReserveTooltips.compositeReserveIndex}
+                      data-bdnf-score={hudCognitiveReserveTooltips.bdnfDomainScorePct}
+                      className="absolute left-0 top-full mt-2.5 z-50 w-[330px] p-3 rounded-xl bg-[#08130F]/96 border border-[#B794F4]/70 shadow-2xl pointer-events-none whitespace-normal text-left space-y-1.5"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="absolute -top-1.5 left-6 w-2.5 h-2.5 rotate-45 bg-[#08130F] border-t border-l border-[#B794F4]/70"
+                      />
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-1.5 text-[10.5px] font-mono font-bold text-[#F4EFE6]">
+                          <span className="w-2 h-2 rounded-full bg-[#B794F4] shrink-0" />
+                          <span>{hudCognitiveReserveTooltips.treesGrafted.metricTitle}</span>
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded bg-[#1E1636] text-[#B794F4] border border-[#B794F4]/40 text-[8.5px] font-mono font-semibold shrink-0">
+                          25% RESERVE
+                        </span>
+                      </div>
+                      <div
+                        data-testid="hud-trees-grafted-tooltip-contribution"
+                        className="px-2 py-1 rounded-lg bg-[#10241C] border border-[#233D32] text-[9.5px] font-mono text-[#68D391] font-semibold"
+                      >
+                        {hudCognitiveReserveTooltips.treesGrafted.reserveContributionLine}
+                      </div>
+                      <p className="text-[10.5px] text-[#D5E2DC] leading-snug">
+                        {hudCognitiveReserveTooltips.treesGrafted.clinicalMechanism}
+                      </p>
+                      <div className="flex items-center justify-between gap-2 pt-1 border-t border-[#1D352B] text-[9px] font-mono text-[#A3B8B0]">
+                        <span>{hudCognitiveReserveTooltips.treesGrafted.liveTelemetryLine}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* Rejuvenation Index (Hidden in Zen Mode) */}
+              {/* Rejuvenation Score + Daily Cognitive Reserve Tooltip (Hidden in Zen Mode) */}
               {zenHud.showRejuvenation && (
                 <div
                   data-testid="hud-rejuvenation"
-                  className="pl-2 border-l border-[#233D32] whitespace-nowrap hidden 2xl:block"
+                  data-daily-cognitive-reserve={hudCognitiveReserveTooltips.compositeReserveIndex}
+                  data-ufov-domain-score={hudCognitiveReserveTooltips.ufovDomainScorePct}
+                  data-nback-domain-score={hudCognitiveReserveTooltips.nBackDomainScorePct}
+                  data-tooltip-active={
+                    activeHudReserveTooltipId === 'rejuvenation_score' ? 'true' : 'false'
+                  }
+                  tabIndex={0}
+                  aria-describedby="hud-rejuvenation-tooltip"
+                  onMouseEnter={() => setActiveHudReserveTooltipId('rejuvenation_score')}
+                  onMouseLeave={() =>
+                    setActiveHudReserveTooltipId((prev) =>
+                      prev === 'rejuvenation_score' ? null : prev
+                    )
+                  }
+                  onFocus={() => setActiveHudReserveTooltipId('rejuvenation_score')}
+                  onBlur={() =>
+                    setActiveHudReserveTooltipId((prev) =>
+                      prev === 'rejuvenation_score' ? null : prev
+                    )
+                  }
+                  onClick={() =>
+                    setActiveHudReserveTooltipId((prev) =>
+                      prev === 'rejuvenation_score' ? null : 'rejuvenation_score'
+                    )
+                  }
+                  className="relative pl-2 pr-1 py-0.5 border-l border-[#233D32] whitespace-nowrap cursor-help outline-none"
+                  title={hudCognitiveReserveTooltips.rejuvenationScore.titleAttributeText}
                 >
-                  <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0]">
-                    REJUVENATION
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-[#A3B8B0] flex items-center gap-1">
+                    <span>REJUV</span>
+                    <span
+                      aria-hidden="true"
+                      className="text-[8.5px] font-mono text-[#4FD1C5]/85"
+                    >
+                      ⓘ
+                    </span>
                   </div>
                   <div className="text-lg font-mono font-bold text-[#4FD1C5] tabular-nums hud-text-stroke">
                     {Math.round(hud.rejuvenationScore)}
                   </div>
+
+                  {/* Descriptive Daily Cognitive Reserve Floating Tooltip for 'Rejuvenation Score' */}
+                  {activeHudReserveTooltipId === 'rejuvenation_score' && (
+                    <div
+                      id="hud-rejuvenation-tooltip"
+                      role="tooltip"
+                      data-testid="hud-rejuvenation-tooltip"
+                      data-reserve-index={hudCognitiveReserveTooltips.compositeReserveIndex}
+                      data-ufov-score={hudCognitiveReserveTooltips.ufovDomainScorePct}
+                      data-nback-score={hudCognitiveReserveTooltips.nBackDomainScorePct}
+                      className="absolute left-0 top-full mt-2.5 z-50 w-[345px] p-3 rounded-xl bg-[#08130F]/96 border border-[#4FD1C5]/75 shadow-2xl pointer-events-none whitespace-normal text-left space-y-1.5"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="absolute -top-1.5 left-6 w-2.5 h-2.5 rotate-45 bg-[#08130F] border-t border-l border-[#4FD1C5]/75"
+                      />
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-1.5 text-[10.5px] font-mono font-bold text-[#F4EFE6]">
+                          <span className="w-2 h-2 rounded-full bg-[#4FD1C5] shrink-0" />
+                          <span>{hudCognitiveReserveTooltips.rejuvenationScore.metricTitle}</span>
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded bg-[#122D26] text-[#4FD1C5] border border-[#4FD1C5]/40 text-[8.5px] font-mono font-semibold shrink-0">
+                          50% RESERVE
+                        </span>
+                      </div>
+                      <div
+                        data-testid="hud-rejuvenation-tooltip-contribution"
+                        className="px-2 py-1 rounded-lg bg-[#10241C] border border-[#233D32] text-[9.5px] font-mono text-[#68D391] font-semibold"
+                      >
+                        {hudCognitiveReserveTooltips.rejuvenationScore.reserveContributionLine}
+                      </div>
+                      <p className="text-[10.5px] text-[#D5E2DC] leading-snug">
+                        {hudCognitiveReserveTooltips.rejuvenationScore.clinicalMechanism}
+                      </p>
+                      <div className="flex items-center justify-between gap-2 pt-1 border-t border-[#1D352B] text-[9px] font-mono text-[#A3B8B0]">
+                        <span>{hudCognitiveReserveTooltips.rejuvenationScore.liveTelemetryLine}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
