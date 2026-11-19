@@ -3642,13 +3642,22 @@ export type CodexModalTransitionPhase = 'closed' | 'entering' | 'entered' | 'exi
 export const CLINICAL_CODEX_ENTER_DURATION_MS = 200;
 export const CLINICAL_CODEX_EXIT_DURATION_MS = 160;
 export const CLINICAL_CODEX_EASING_CURVE = 'cubic-bezier(0.16, 1, 0.3, 1)';
+export const CLINICAL_CODEX_BACKDROP_BLUR_PX = 12;
+export const CLINICAL_CODEX_PANEL_BLUR_PX = 24;
 
 export interface CodexModalAnimationState {
   phase: CodexModalTransitionPhase;
   shouldRender: boolean;
   isInteractive: boolean;
+  isGlassmorphismActive: boolean;
+  backdropBlurPx: number;
+  panelBlurPx: number;
+  backdropSaturationPct: number;
   backdropClassName: string;
   panelClassName: string;
+  backdropGlassTailwind: string;
+  panelGlassTailwind: string;
+  headerGlassTailwind: string;
   backdropOpacity: number;
   panelOpacity: number;
   panelTranslateYpx: number;
@@ -3656,6 +3665,12 @@ export interface CodexModalAnimationState {
   durationMs: number;
   easingCurve: string;
 }
+
+const BASE_PANEL_GLASS_TAILWIND =
+  'bg-[#10231C]/82 backdrop-blur-xl backdrop-saturate-150 border border-[#68D391]/30 ring-1 ring-inset ring-white/10 shadow-[0_24px_64px_rgba(4,12,9,0.82),0_0_42px_rgba(79,209,197,0.14)] transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]';
+
+const BASE_HEADER_GLASS_TAILWIND =
+  'bg-[#10231C]/85 backdrop-blur-xl backdrop-saturate-150 border-b border-[#68D391]/25 shadow-[0_8px_28px_rgba(4,12,9,0.55)] transition-colors duration-200';
 
 export function computeCodexModalAnimationState(
   phase: CodexModalTransitionPhase,
@@ -3666,8 +3681,20 @@ export function computeCodexModalAnimationState(
       phase: 'closed',
       shouldRender: false,
       isInteractive: false,
+      isGlassmorphismActive: false,
+      backdropBlurPx: 0,
+      panelBlurPx: 0,
+      backdropSaturationPct: 100,
       backdropClassName: 'codex-modal-backdrop codex-backdrop-exit',
       panelClassName: 'codex-modal-panel codex-panel-exit',
+      backdropGlassTailwind:
+        'bg-[#07120E]/0 backdrop-blur-none backdrop-saturate-100 transition-all duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] opacity-0',
+      panelGlassTailwind: `${BASE_PANEL_GLASS_TAILWIND} ${
+        prefersReducedMotion
+          ? 'opacity-0 translate-y-0 scale-100'
+          : 'opacity-0 translate-y-3 scale-[0.985]'
+      }`,
+      headerGlassTailwind: BASE_HEADER_GLASS_TAILWIND,
       backdropOpacity: 0,
       panelOpacity: 0,
       panelTranslateYpx: prefersReducedMotion ? 0 : 12,
@@ -3682,8 +3709,20 @@ export function computeCodexModalAnimationState(
       phase: 'exiting',
       shouldRender: true,
       isInteractive: false,
+      isGlassmorphismActive: false,
+      backdropBlurPx: 0,
+      panelBlurPx: 0,
+      backdropSaturationPct: 100,
       backdropClassName: 'codex-modal-backdrop codex-backdrop-exit',
       panelClassName: 'codex-modal-panel codex-panel-exit',
+      backdropGlassTailwind:
+        'bg-[#07120E]/0 backdrop-blur-none backdrop-saturate-100 transition-all duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] opacity-0',
+      panelGlassTailwind: `${BASE_PANEL_GLASS_TAILWIND} ${
+        prefersReducedMotion
+          ? 'opacity-0 translate-y-0 scale-100'
+          : 'opacity-0 translate-y-2.5 scale-[0.985]'
+      }`,
+      headerGlassTailwind: BASE_HEADER_GLASS_TAILWIND,
       backdropOpacity: 0,
       panelOpacity: 0,
       panelTranslateYpx: prefersReducedMotion ? 0 : 10,
@@ -3698,8 +3737,20 @@ export function computeCodexModalAnimationState(
       phase: 'entering',
       shouldRender: true,
       isInteractive: true,
+      isGlassmorphismActive: true,
+      backdropBlurPx: CLINICAL_CODEX_BACKDROP_BLUR_PX,
+      panelBlurPx: CLINICAL_CODEX_PANEL_BLUR_PX,
+      backdropSaturationPct: 150,
       backdropClassName: 'codex-modal-backdrop codex-backdrop-enter',
       panelClassName: 'codex-modal-panel codex-panel-enter',
+      backdropGlassTailwind:
+        'bg-[#07120E]/75 backdrop-blur-md backdrop-saturate-150 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] opacity-100',
+      panelGlassTailwind: `${BASE_PANEL_GLASS_TAILWIND} ${
+        prefersReducedMotion
+          ? 'opacity-100 translate-y-0 scale-100'
+          : 'opacity-0 translate-y-3.5 scale-[0.985]'
+      }`,
+      headerGlassTailwind: BASE_HEADER_GLASS_TAILWIND,
       backdropOpacity: 1,
       panelOpacity: 1,
       panelTranslateYpx: prefersReducedMotion ? 0 : 14,
@@ -3713,8 +3764,16 @@ export function computeCodexModalAnimationState(
     phase: 'entered',
     shouldRender: true,
     isInteractive: true,
+    isGlassmorphismActive: true,
+    backdropBlurPx: CLINICAL_CODEX_BACKDROP_BLUR_PX,
+    panelBlurPx: CLINICAL_CODEX_PANEL_BLUR_PX,
+    backdropSaturationPct: 150,
     backdropClassName: 'codex-modal-backdrop codex-backdrop-entered',
     panelClassName: 'codex-modal-panel codex-panel-entered',
+    backdropGlassTailwind:
+      'bg-[#07120E]/75 backdrop-blur-md backdrop-saturate-150 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] opacity-100',
+    panelGlassTailwind: `${BASE_PANEL_GLASS_TAILWIND} opacity-100 translate-y-0 scale-100`,
+    headerGlassTailwind: BASE_HEADER_GLASS_TAILWIND,
     backdropOpacity: 1,
     panelOpacity: 1,
     panelTranslateYpx: 0,

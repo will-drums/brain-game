@@ -1225,12 +1225,14 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
       data-animation-phase={modalAnimState.phase}
       data-animation-easing={modalAnimState.easingCurve}
       data-animation-duration-ms={modalAnimState.durationMs}
+      data-glassmorphism={modalAnimState.isGlassmorphismActive ? 'active' : 'inactive'}
+      data-backdrop-blur-px={modalAnimState.backdropBlurPx}
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           onClose();
         }
       }}
-      className={`fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8 bg-[#07120E]/90 ${modalAnimState.backdropClassName} ${
+      className={`fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8 ${modalAnimState.backdropGlassTailwind} ${modalAnimState.backdropClassName} ${
         modalAnimState.isInteractive ? 'pointer-events-auto' : 'pointer-events-none'
       }`}
     >
@@ -1239,11 +1241,14 @@ export const ClinicalCodexModal: React.FC<ClinicalCodexModalProps> = ({
         data-animation-phase={modalAnimState.phase}
         data-translate-y-px={modalAnimState.panelTranslateYpx}
         data-scale={modalAnimState.panelScale}
-        className={`w-full max-w-5xl max-h-[88vh] overflow-y-auto rounded-2xl bg-[#10231C] border border-[#2C4C3E] shadow-2xl px-6 pb-6 md:px-8 md:pb-8 text-[#F4EFE6] ${modalAnimState.panelClassName}`}
+        data-glassmorphism={modalAnimState.isGlassmorphismActive ? 'active' : 'inactive'}
+        data-panel-blur-px={modalAnimState.panelBlurPx}
+        className={`w-full max-w-5xl max-h-[88vh] overflow-y-auto rounded-2xl px-6 pb-6 md:px-8 md:pb-8 text-[#F4EFE6] ${modalAnimState.panelGlassTailwind} ${modalAnimState.panelClassName}`}
       >
         <div
           data-testid="codex-sticky-header"
-          className="sticky top-0 z-30 -mx-6 md:-mx-8 px-6 pt-4 pb-3 md:px-8 md:pt-5 bg-[#10231C] border-b border-[#233D32] shadow-lg space-y-2.5"
+          data-glassmorphism={modalAnimState.isGlassmorphismActive ? 'active' : 'inactive'}
+          className={`sticky top-0 z-30 -mx-6 md:-mx-8 px-6 pt-4 pb-3 md:px-8 md:pt-5 space-y-2.5 ${modalAnimState.headerGlassTailwind}`}
         >
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
             <div className="min-w-0">

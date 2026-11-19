@@ -58,6 +58,8 @@ import {
   CLINICAL_CODEX_ENTER_DURATION_MS,
   CLINICAL_CODEX_EXIT_DURATION_MS,
   CLINICAL_CODEX_EASING_CURVE,
+  CLINICAL_CODEX_BACKDROP_BLUR_PX,
+  CLINICAL_CODEX_PANEL_BLUR_PX,
   computeCodexModalAnimationState,
   CODEX_SECTION_CASCADE_STAGGER_STEP_MS,
   CODEX_SECTION_CASCADE_DURATION_MS,
@@ -844,31 +846,53 @@ test('SANCTUARY_BLOOM_PRESETS defines Morning Glow, Midnight Forest, Neural Zeni
   assert.ok(neuroZenithEffect.colorPalette.radialStop0Rgba.startsWith('rgba(246, 135, 179,'));
 });
 
-test('computeCodexModalAnimationState manages smooth fade-in and upward slide-up transitions within <=200ms budget and respects prefers-reduced-motion', () => {
+test('computeCodexModalAnimationState manages smooth fade-in, upward slide-up transitions, and glassmorphism Tailwind blur classes within <=200ms budget and respects prefers-reduced-motion', () => {
   const closed = computeCodexModalAnimationState('closed');
   assert.equal(closed.shouldRender, false);
   assert.equal(closed.isInteractive, false);
+  assert.equal(closed.isGlassmorphismActive, false);
+  assert.equal(closed.backdropBlurPx, 0);
+  assert.equal(closed.panelBlurPx, 0);
   assert.equal(closed.backdropOpacity, 0);
+  assert.ok(closed.backdropGlassTailwind.includes('backdrop-blur-none'));
+  assert.ok(closed.panelGlassTailwind.includes('opacity-0'));
 
   const entering = computeCodexModalAnimationState('entering');
   assert.equal(entering.shouldRender, true);
   assert.equal(entering.isInteractive, true);
+  assert.equal(entering.isGlassmorphismActive, true);
+  assert.equal(entering.backdropBlurPx, CLINICAL_CODEX_BACKDROP_BLUR_PX);
+  assert.equal(entering.panelBlurPx, CLINICAL_CODEX_PANEL_BLUR_PX);
   assert.equal(entering.panelTranslateYpx, 14);
   assert.equal(entering.panelScale, 0.985);
   assert.equal(entering.durationMs, CLINICAL_CODEX_ENTER_DURATION_MS);
   assert.ok(entering.durationMs <= 200);
   assert.equal(entering.easingCurve, CLINICAL_CODEX_EASING_CURVE);
+  assert.ok(entering.backdropGlassTailwind.includes('backdrop-blur-md'));
+  assert.ok(entering.backdropGlassTailwind.includes('transition-all'));
+  assert.ok(entering.panelGlassTailwind.includes('backdrop-blur-xl'));
+  assert.ok(entering.panelGlassTailwind.includes('bg-[#10231C]/82'));
 
   const entered = computeCodexModalAnimationState('entered');
   assert.equal(entered.shouldRender, true);
   assert.equal(entered.isInteractive, true);
+  assert.equal(entered.isGlassmorphismActive, true);
+  assert.equal(entered.backdropBlurPx, CLINICAL_CODEX_BACKDROP_BLUR_PX);
+  assert.equal(entered.panelBlurPx, CLINICAL_CODEX_PANEL_BLUR_PX);
   assert.equal(entered.panelTranslateYpx, 0);
   assert.equal(entered.panelScale, 1);
   assert.equal(entered.backdropOpacity, 1);
+  assert.ok(entered.backdropGlassTailwind.includes('backdrop-blur-md'));
+  assert.ok(entered.panelGlassTailwind.includes('backdrop-blur-xl'));
+  assert.ok(entered.panelGlassTailwind.includes('opacity-100 translate-y-0 scale-100'));
+  assert.ok(entered.headerGlassTailwind.includes('backdrop-blur-xl'));
 
   const exiting = computeCodexModalAnimationState('exiting');
   assert.equal(exiting.shouldRender, true);
   assert.equal(exiting.isInteractive, false);
+  assert.equal(exiting.isGlassmorphismActive, false);
+  assert.equal(exiting.backdropBlurPx, 0);
+  assert.equal(exiting.panelBlurPx, 0);
   assert.equal(exiting.backdropOpacity, 0);
   assert.equal(exiting.panelOpacity, 0);
   assert.equal(exiting.durationMs, CLINICAL_CODEX_EXIT_DURATION_MS);
@@ -877,6 +901,7 @@ test('computeCodexModalAnimationState manages smooth fade-in and upward slide-up
   assert.equal(reduced.panelTranslateYpx, 0);
   assert.equal(reduced.panelScale, 1);
   assert.equal(reduced.durationMs, 0);
+  assert.ok(reduced.panelGlassTailwind.includes('opacity-100 translate-y-0 scale-100'));
 });
 
 test('computeCodexSectionCascadeConfig and computeAllCodexSectionCascades generate staggered codex-section-cascade animations for Habit Tracker, Research Notes, Bloom Settings, and all modal sections', () => {
